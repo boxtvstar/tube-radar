@@ -520,8 +520,13 @@ export default function App() {
   const [explorerTargetGroupId, setExplorerTargetGroupId] = useState('unassigned');
   const [isExplorerSearching, setIsExplorerSearching] = useState(false);
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
+  const [batchResult, setBatchResult] = useState<{ added: number; duplicates: string[] } | null>(null);
   
+  const [channelFilterQuery, setChannelFilterQuery] = useState('');
+  const [channelSortMode, setChannelSortMode] = useState<'latest' | 'name'>('latest');
+
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
 
   const [usage, setUsage] = useState<ApiUsage>(getApiUsage());
 
@@ -537,10 +542,20 @@ export default function App() {
   }, [savedChannels]);
 
   const currentGroupChannels = useMemo(() => {
-    return activeGroupId === 'all' 
+    let channels = activeGroupId === 'all' 
       ? savedChannels 
       : savedChannels.filter(c => (c.groupId || 'unassigned') === activeGroupId);
-  }, [savedChannels, activeGroupId]);
+
+    if (channelFilterQuery.trim()) {
+      channels = channels.filter(ch => ch.title.toLowerCase().includes(channelFilterQuery.toLowerCase()));
+    }
+    
+    if (channelSortMode === 'name') {
+      return [...channels].sort((a, b) => a.title.localeCompare(b.title));
+    }
+    // Default 'latest' is roughly array order (newest first)
+    return channels;
+  }, [savedChannels, activeGroupId, channelFilterQuery, channelSortMode]);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -562,6 +577,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let isActive = true;
     const validateYtKey = async () => {
       if (!ytKey) {
         setYtApiStatus('idle');
@@ -577,13 +593,25 @@ export default function App() {
       try {
         const res = await fetch(`https://www.googleapis.com/youtube/v3/videoCategories?part=snippet&regionCode=KR&key=${ytKey}`);
         const data = await res.json();
+        if (!isActive) return;
+        
         if (data.error) throw new Error();
         setYtApiStatus('valid');
       } catch {
+        if (!isActive) return;
         setYtApiStatus('invalid');
       }
     };
-    validateYtKey();
+    
+    // Debounce slightly to avoid rapid flashing
+    const timer = setTimeout(() => {
+      validateYtKey();
+    }, 500);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timer);
+    };
   }, [ytKey]);
 
   // [Security Fix] Load/Save User-Specific Settings
@@ -639,7 +667,7 @@ export default function App() {
 
   useEffect(() => {
     if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode) {
-      if (!hasPendingSync) {
+      if (!isMyMode || !hasPendingSync) {
         loadVideos();
       }
     }
@@ -717,27 +745,37 @@ export default function App() {
     const queries = channelInput.split(/[\s,\n]+/).filter(q => q.trim().length > 0);
     setLoading(true);
     const newChannels: SavedChannel[] = [];
+    const duplicates: string[] = [];
     const existingIds = new Set(savedChannels.map(c => c.id));
     const targetGroupId = (activeGroupId === 'all') ? 'unassigned' : activeGroupId;
 
     for (let i = 0; i < queries.length; i++) {
       setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
       const infoFinal = await getChannelInfo(ytKey, queries[i]);
-      if (infoFinal && !existingIds.has(infoFinal.id)) {
-        const newChannel = { ...infoFinal, groupId: targetGroupId };
-        newChannels.push(newChannel);
-        existingIds.add(infoFinal.id);
-        if (user) await saveChannelToDb(user.uid, newChannel);
+      
+      if (infoFinal) {
+        if (existingIds.has(infoFinal.id)) {
+          duplicates.push(infoFinal.title);
+        } else {
+          const newChannel = { ...infoFinal, groupId: targetGroupId };
+          newChannels.push(newChannel);
+          existingIds.add(infoFinal.id);
+          if (user) await saveChannelToDb(user.uid, newChannel);
+        }
       }
     }
+
     if (newChannels.length > 0) {
-      setSavedChannels(prev => [...prev, ...newChannels]);
+      setSavedChannels(prev => [...newChannels, ...prev]);
       setHasPendingSync(true);
       setIsSyncNoticeDismissed(false);
     }
+    
     setChannelInput('');
     setBatchStatus(null);
     setLoading(false);
+
+    setBatchResult({ added: newChannels.length, duplicates });
   };
 
   const handleExplorerSearch = async () => {
@@ -773,7 +811,7 @@ export default function App() {
       .map(ch => ({ ...ch, groupId: targetGroupId }));
       
     if (newChannels.length > 0) {
-      setSavedChannels(prev => [...prev, ...newChannels]);
+      setSavedChannels(prev => [...newChannels, ...prev]);
       if (user) batchSaveChannels(user.uid, newChannels);
       
       setHasPendingSync(true);
@@ -936,9 +974,9 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
       <Sidebar 
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
-        region={region} onRegionChange={setRegion}
-        selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory}
-        isMyMode={isMyMode} onToggleMyMode={setIsMyMode}
+        region={region} onRegionChange={(val) => { setLoading(true); setVideos([]); setRegion(val); }}
+        selectedCategory={selectedCategory} onCategoryChange={(val) => { setLoading(true); setVideos([]); setSelectedCategory(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(true); setVideos([]); } setIsMyMode(val); }}
         isExplorerMode={isExplorerMode} onToggleExplorerMode={setIsExplorerMode}
         isUsageMode={isUsageMode} onToggleUsageMode={setIsUsageMode}
         hasPendingSync={hasPendingSync}
@@ -1132,12 +1170,12 @@ export default function App() {
                         <p className="text-[10px] text-slate-400">추가하기 전 리스트를 확인하고 필요 없는 채널은 제외하세요.</p>
                       </div>
                       <div className="flex items-center gap-3">
-                         <div className="flex flex-col gap-1">
-                            <span className="text-[9px] font-black text-slate-400 uppercase text-center">그룹 선택</span>
+                         <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-slate-400 uppercase whitespace-nowrap">저장할 그룹:</span>
                             <select 
                                 value={explorerTargetGroupId}
                                 onChange={(e) => setExplorerTargetGroupId(e.target.value)}
-                                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-[10px] font-bold outline-none focus:border-emerald-500 transition-colors"
+                                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-3 pr-8 py-2 text-[11px] font-bold outline-none focus:border-emerald-500 transition-colors cursor-pointer"
                             >
                                 {groups.filter(g => g.id !== 'all').map(g => (
                                     <option key={g.id} value={g.id}>{g.name}</option>
@@ -1348,23 +1386,60 @@ export default function App() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-1 gap-2 sm:gap-0">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
                   <button 
                     onClick={handleSelectAllInCurrentGroup}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-black uppercase text-slate-500 hover:text-primary transition-all"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-black uppercase text-slate-500 hover:text-primary transition-all shrink-0"
                   >
                     <span className="material-symbols-outlined text-[16px]">
                       {currentGroupChannels.length > 0 && currentGroupChannels.every(c => selectedChannelIds.includes(c.id)) ? 'check_box' : 'check_box_outline_blank'}
                     </span>
                     {currentGroupChannels.length > 0 && currentGroupChannels.every(c => selectedChannelIds.includes(c.id)) ? '전체 해제' : '전체 선택'}
                   </button>
+
+                  <div className="relative flex-1 sm:flex-initial">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-[14px] text-slate-400">search</span>
+                    <input 
+                      type="text" 
+                      value={channelFilterQuery}
+                      onChange={(e) => setChannelFilterQuery(e.target.value)}
+                      placeholder="채널 검색..." 
+                      className="w-full sm:w-40 pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[11px] font-bold focus:ring-1 focus:ring-primary focus:border-primary transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
+                    />
+                    {channelFilterQuery && (
+                      <button 
+                        onClick={() => setChannelFilterQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">cancel</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <button 
+                    onClick={() => setChannelSortMode(prev => prev === 'latest' ? 'name' : 'latest')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-500 hover:text-primary transition-all shrink-0"
+                    title={channelSortMode === 'latest' ? '최신순 (등록 역순)' : '이름순 (가나다)'}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{channelSortMode === 'latest' ? 'schedule' : 'sort_by_alpha'}</span>
+                    <span className="hidden sm:inline">{channelSortMode === 'latest' ? '최신순' : '이름순'}</span>
+                  </button>
                 </div>
-                {selectedChannelIds.length > 0 && (
-                  <p className="text-[10px] font-black text-primary animate-pulse uppercase tracking-tighter">
-                    {selectedChannelIds.length}개 채널 선택됨. 일괄 그룹 이동 기능을 활용하세요!
+                
+                {selectedChannelIds.length > 0 ? (
+                  <p className="hidden sm:block text-[10px] font-black text-primary animate-pulse uppercase tracking-tighter ml-auto mr-4">
+                    {selectedChannelIds.length}개 선택됨
                   </p>
-                )}
+                ) : null}
+
+                <button 
+                  onClick={() => setIsChannelListExpanded(!isChannelListExpanded)}
+                  className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-primary transition-colors ml-auto sm:ml-0 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg shrink-0"
+                >
+                  <span className="material-symbols-outlined text-[16px]">{isChannelListExpanded ? 'expand_less' : 'expand_more'}</span>
+                  {isChannelListExpanded ? '접기' : `전체 보기 (${currentGroupChannels.length})`}
+                </button>
               </div>
 
               {selectedChannelIds.length > 0 && (
@@ -1423,13 +1498,13 @@ export default function App() {
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-3 pt-2">
-                {currentGroupChannels.map((ch) => {
+               <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pt-2 transition-all duration-500 ease-in-out ${isChannelListExpanded ? 'opacity-100' : 'opacity-100'}`}>
+                {currentGroupChannels.slice(0, isChannelListExpanded ? undefined : 6).map((ch) => {
                   const isSelected = selectedChannelIds.includes(ch.id);
                   return (
                     <div 
                       key={ch.id} 
-                      className={`group/chip relative flex items-center gap-3 bg-slate-50 dark:bg-white/5 border pl-2 pr-4 py-2 rounded-2xl transition-all min-w-[180px] ${
+                      className={`group/chip relative flex items-center gap-3 bg-slate-50 dark:bg-white/5 border pl-2 pr-4 py-2 rounded-2xl transition-all ${
                         isSelected ? 'border-primary ring-1 ring-primary/30 bg-primary/5 dark:bg-primary/5' : 'border-slate-100 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'
                       }`}
                     >
@@ -1443,12 +1518,12 @@ export default function App() {
                       </button>
 
                       <img src={ch.thumbnail} className="size-8 rounded-full border border-black/5 dark:border-white/10 object-cover" alt="" />
-                      <div className="flex flex-col flex-1">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[120px]">{ch.title}</span>
+                      <div className="flex flex-col flex-1 min-w-0 pr-6">
+                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight tracking-tight w-full" title={ch.title}>{ch.title}</span>
                         <span className="text-[9px] font-black text-slate-400 dark:text-slate-600 uppercase -mt-0.5">{groups.find(g => g.id === (ch.groupId || 'unassigned'))?.name}</span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover/chip:opacity-100 transition-opacity ml-auto">
+                      <div className="absolute right-2 opacity-0 group-hover/chip:opacity-100 transition-opacity">
                         <div className="relative">
                           <button 
                             onClick={(e) => { e.stopPropagation(); setIndividualMovingChannelId(prev => prev === ch.id ? null : ch.id); }}
@@ -1490,10 +1565,17 @@ export default function App() {
             <>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-                  <h2 className="text-2xl font-black tracking-tighter uppercase italic dark:text-white text-slate-900 flex items-center gap-3">
-                    <span className={`size-3 rounded-full animate-pulse ${isApiKeyMissing ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.8)]' : isMyMode ? (hasPendingSync && !isSyncNoticeDismissed ? 'bg-accent-hot shadow-[0_0_12px_#ff0055]' : 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]') : 'bg-primary'}`}></span>
-                    {isMyMode ? '실시간 통합 피드' : '트렌드 분석'}
-                  </h2>
+                  <div className="flex flex-col gap-1">
+                    <h2 className="text-2xl font-black tracking-tighter uppercase italic dark:text-white text-slate-900 flex items-center gap-3">
+                      <span className={`size-3 rounded-full animate-pulse ${isApiKeyMissing ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.8)]' : isMyMode ? (hasPendingSync && !isSyncNoticeDismissed ? 'bg-accent-hot shadow-[0_0_12px_#ff0055]' : 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]') : 'bg-primary'}`}></span>
+                      {isMyMode ? '실시간 통합 피드' : '트렌드 분석'}
+                    </h2>
+                    {!isMyMode && (
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium ml-6 animate-in slide-in-from-left-2 fade-in">
+                        단순 조회수 순위가 아닙니다. <span className="text-primary font-bold">현재 YouTube 알고리즘의 선택</span>(급상승/바이럴)을 받은 영상을 우선적으로 분석한 결과입니다.
+                      </p>
+                    )}
+                  </div>
                   
                   <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5">
                     {[3, 5, 7].map(d => (
@@ -1552,6 +1634,46 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Batch Result Modal */}
+      {batchResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="text-center space-y-2">
+              <div className="size-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <span className="material-symbols-outlined text-4xl">check_circle</span>
+              </div>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white">처리 완료</h3>
+              <p className="text-xs text-slate-500 font-medium">채널 등록 요청이 성공적으로 처리되었습니다.</p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-2xl">
+                <span className="text-xs font-bold text-slate-500">신규 추가</span>
+                <span className="text-sm font-black text-emerald-500">{batchResult.added}건</span>
+              </div>
+              <div className="flex flex-col gap-2 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500">중복 제외</span>
+                  <span className="text-sm font-black text-orange-500">{batchResult.duplicates.length}건</span>
+                </div>
+                {batchResult.duplicates.length > 0 && (
+                  <div className="text-[10px] text-slate-400 font-medium bg-white dark:bg-black/20 p-2 rounded-lg border border-slate-200 dark:border-white/5 max-h-24 overflow-y-auto custom-scrollbar">
+                    {batchResult.duplicates.join(', ')}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setBatchResult(null)}
+              className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3.5 rounded-xl text-sm font-bold hover:scale-[1.02] transition-transform"
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -127,12 +127,20 @@ export const fetchRealVideos = async (
 
     if (isMyChannelsMode) {
       const allVideoPromises = channelIds.map(async (cid) => {
-        const uploadsPlaylistId = cid.replace(/^UC/, 'UU');
-        const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=10&key=${apiKey}`);
-        trackUsage('list', 1);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
-        return data.items || [];
+        try {
+          const uploadsPlaylistId = cid.replace(/^UC/, 'UU');
+          const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=10&key=${apiKey}`);
+          trackUsage('list', 1);
+          const data = await res.json();
+          if (data.error) {
+            console.warn(`Channel skipped (${cid}): ${data.error.message}`);
+            return [];
+          }
+          return data.items || [];
+        } catch (e) {
+          console.warn(`Channel fetch skipped (${cid})`);
+          return [];
+        }
       });
       const playlistResults = await Promise.all(allVideoPromises);
       const videoIds = playlistResults.flat()
