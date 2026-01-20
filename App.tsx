@@ -481,9 +481,10 @@ export default function App() {
   const { user, role, expiresAt, loading: authLoading, logout } = useAuth();
 
   const [videos, setVideos] = useState<VideoData[]>([]);
-  const [ytKey, setYtKey] = useState(() => localStorage.getItem('yt_api_key') || '');
+  // [Security Fix] Initialize with empty, load from user-specific storage later
+  const [ytKey, setYtKey] = useState('');
   const [ytApiStatus, setYtApiStatus] = useState<'idle' | 'valid' | 'invalid' | 'loading'>('idle');
-  const [region, setRegion] = useState(() => localStorage.getItem('yt_region') || 'KR');
+  const [region, setRegion] = useState('KR');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [timeRange, setTimeRange] = useState(7);
   const [loading, setLoading] = useState(false);
@@ -585,10 +586,33 @@ export default function App() {
     validateYtKey();
   }, [ytKey]);
 
+  // [Security Fix] Load/Save User-Specific Settings
   useEffect(() => {
-    localStorage.setItem('yt_api_key', ytKey);
-    localStorage.setItem('yt_region', region);
-  }, [ytKey, region]);
+    if (user) {
+      // Load settings specific to this user
+      const savedKey = localStorage.getItem(`yt_api_key_${user.uid}`);
+      const savedRegion = localStorage.getItem(`yt_region_${user.uid}`);
+      
+      if (savedKey) setYtKey(savedKey);
+      else setYtKey(''); // Reset if new user has no key
+      
+      if (savedRegion) setRegion(savedRegion);
+    } else {
+      // Clear sensitive data on logout
+      setYtKey('');
+      setRegion('KR');
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      // Save settings specific to this user
+      if (ytKey) localStorage.setItem(`yt_api_key_${user.uid}`, ytKey);
+      else localStorage.removeItem(`yt_api_key_${user.uid}`);
+      
+      if (region) localStorage.setItem(`yt_region_${user.uid}`, region);
+    }
+  }, [ytKey, region, user]);
 
   useEffect(() => {
     if (user) {

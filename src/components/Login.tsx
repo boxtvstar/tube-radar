@@ -8,8 +8,8 @@ export const Login = () => {
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
       <div className="max-w-md w-full bg-gray-900 rounded-2xl p-8 border border-gray-800 text-center shadow-2xl">
         <div className="mb-6 flex justify-center">
-          <div className="w-16 h-16 bg-gradient-to-tr from-pink-500 to-violet-500 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20">
-            <span className="material-icons text-3xl">radar</span>
+          <div className="size-16 bg-gradient-to-tr from-pink-500 to-violet-500 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20">
+            <span className="material-symbols-outlined text-[40px] text-white">radar</span>
           </div>
         </div>
         
