@@ -1,31 +1,41 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot for real-time notice updates
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; 
 import { MOCK_VIDEOS, MOCK_STATS, NETWORK_VELOCITY_DATA } from './constants';
-import { VideoData, ViralStat, SavedChannel, ChannelGroup, ApiUsage } from './types';
-import { fetchRealVideos, getChannelInfo, searchChannelsByKeyword } from './services/youtubeService';
 import { getApiUsage } from './services/usageService';
-import { db } from './src/lib/firebase'; // Added db import
+import { db } from './src/lib/firebase';
 import { useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
 import { PendingApproval } from './src/components/PendingApproval';
 import { AdminDashboard } from './src/components/AdminDashboard';
 import { UserRole } from './src/contexts/AuthContext';
 import { 
-  getChannelsFromDb, 
-  getGroupsFromDb, 
+  getChannelInfo, 
+  fetchRealVideos,
+  searchChannelsByKeyword 
+} from './services/youtubeService';
+import { RecommendedPackageList } from './src/components/RecommendedPackageList';
+import { 
   saveChannelToDb, 
   removeChannelFromDb, 
+  getChannelsFromDb, 
   saveGroupToDb, 
-  deleteGroupFromDb,
-  batchSaveChannels
+  deleteGroupFromDb, 
+  getGroupsFromDb,
+  batchSaveChannels,
+  getPackagesFromDb,
+  savePackageToDb,
+  getNotifications,
+  markNotificationAsRead,
+  deleteNotification
 } from './services/dbService';
+import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 
 // --- 서브 컴포넌트 ---
 
 const VelocitySpeedometer = ({ score }: { score: string }) => {
   const numericScore = parseFloat(score);
-  
+
   const getStatus = () => {
     if (numericScore >= 15) return { label: '급상승', color: 'text-accent-hot', bg: 'bg-accent-hot/20 dark:bg-accent-hot/20', icon: 'speed', percent: 100 };
     if (numericScore >= 8) return { label: '가속', color: 'text-accent-neon dark:text-accent-neon', bg: 'bg-accent-neon/20 dark:bg-accent-neon/20', icon: 'trending_up', percent: 75 };
@@ -137,6 +147,8 @@ const Sidebar = ({
   onToggleExplorerMode,
   isUsageMode,
   onToggleUsageMode,
+  isPackageMode,
+  onTogglePackageMode,
   hasPendingSync,
   isSyncNoticeDismissed,
   isApiKeyMissing,
@@ -155,6 +167,8 @@ const Sidebar = ({
   onToggleExplorerMode: (val: boolean) => void,
   isUsageMode: boolean,
   onToggleUsageMode: (val: boolean) => void,
+  isPackageMode: boolean,
+  onTogglePackageMode: (val: boolean) => void,
   hasPendingSync: boolean,
   isSyncNoticeDismissed: boolean,
   isApiKeyMissing: boolean,
@@ -166,7 +180,7 @@ const Sidebar = ({
   const isWarning = !isApiKeyMissing && percent < 30;
 
   return (
-    <aside className="w-64 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen shrink-0 bg-white dark:bg-background-dark hidden lg:flex">
+    <aside className="w-72 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen shrink-0 bg-white dark:bg-background-dark hidden lg:flex">
       <div className="p-6 flex items-center gap-3">
         <div className="size-10 bg-primary rounded-lg flex items-center justify-center text-white neon-glow">
           <span className="material-symbols-outlined">analytics</span>
@@ -178,12 +192,12 @@ const Sidebar = ({
       </div>
       
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-4">워크스페이스</div>
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">워크스페이스</div>
         <div className="px-2 space-y-1">
           <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onToggleMyMode(true); }}
+            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); }}
             className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode
                 ? 'bg-accent-hot/10 text-accent-hot shadow-sm border border-accent-hot/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             }`}
@@ -194,9 +208,9 @@ const Sidebar = ({
           </button>
 
           <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(true); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all mt-1 ${
-              isExplorerMode && !isUsageMode
+            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(true); onTogglePackageMode(false); onToggleMyMode(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              isExplorerMode && !isUsageMode && !isPackageMode
                 ? 'bg-emerald-500/10 text-emerald-500 shadow-sm border border-emerald-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             }`}
@@ -204,9 +218,22 @@ const Sidebar = ({
             <span className="material-symbols-outlined text-[18px]">search_insights</span>
             키워드 검색 채널 수집
           </button>
+
+          <button
+            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onToggleMyMode(false); onTogglePackageMode(true); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              isPackageMode && !isUsageMode
+                ? 'bg-indigo-500/10 text-indigo-500 shadow-sm border border-indigo-500/20' 
+                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">inventory_2</span>
+            추천 채널 팩 (큐레이션)
+            <span className="bg-indigo-500 text-white text-[9px] px-1.5 py-0.5 rounded ml-auto">NEW</span>
+          </button>
         </div>
 
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-4 mt-4">탐색 트렌드</div>
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">탐색 트렌드</div>
         <div className="px-2 space-y-1">
           {[
             { id: 'KR', name: '대한민국 트렌드', icon: 'location_on' },
@@ -219,11 +246,12 @@ const Sidebar = ({
                 onToggleUsageMode(false);
                 onToggleExplorerMode(false);
                 onToggleMyMode(false);
+                onTogglePackageMode(false);
                 onCategoryChange('');
                 onRegionChange(item.id);
               }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode
+                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode
                   ? 'bg-primary/10 text-primary shadow-sm border border-primary/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
               }`}
@@ -234,7 +262,7 @@ const Sidebar = ({
           ))}
         </div>
 
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-8">AI 추천 카테고리</div>
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">AI 추천 카테고리</div>
         <div className="px-2 space-y-1">
           {CATEGORIES.map((item) => (
             <button
@@ -243,10 +271,11 @@ const Sidebar = ({
                 onToggleUsageMode(false);
                 onToggleExplorerMode(false);
                 onToggleMyMode(false);
+                onTogglePackageMode(false);
                 onCategoryChange(item.id);
               }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                selectedCategory === item.id && !isMyMode && !isExplorerMode && !isUsageMode
+                selectedCategory === item.id && !isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode
                   ? 'bg-accent-neon/10 text-accent-neon border border-accent-neon/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
               }`}
@@ -318,38 +347,85 @@ const Sidebar = ({
   );
 };
 
-const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyMissing, onDismissSync, user, role, expiresAt, onLogout, onOpenAdmin }: { 
+const AlertModal = ({ title, message, onClose, type = 'info' }: { title: string, message: string, onClose: () => void, type?: 'info' | 'error' }) => (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+    <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+      <div className={`pt-8 pb-4 flex items-center justify-center ${type === 'error' ? 'text-rose-500' : 'text-indigo-500'}`}>
+        <span className="material-symbols-outlined text-5xl animate-bounce">{type === 'error' ? 'error' : 'info'}</span>
+      </div>
+      <div className="px-8 pb-4 text-center">
+        <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3 tracking-tight">{title}</h3>
+        <p className="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-pre-line leading-relaxed">{message}</p>
+      </div>
+      <div className="p-6 pt-2">
+        <button onClick={onClose} className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg">
+          확인
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+// Helper function for D-Day calculation
+const calculateDDay = (expiresAt: string) => {
+  const now = new Date();
+  const expiry = new Date(expiresAt);
+  const diffTime = expiry.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return '만료됨';
+  if (diffDays === 0) return 'D-Day';
+  return `D-${diffDays}`;
+};
+
+const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyMissing,  onDismissSync, 
+  onSync,
+  user,
+  role,
+  expiresAt,
+  onLogout,
+  onOpenAdmin,
+  notifications,
+  onMarkRead,
+  onDeleteNotif
+}: { 
   region: string, 
   count: number, 
   theme: 'dark' | 'light', 
-  onToggleTheme: () => void, 
-  hasPendingSync: boolean, 
-  isApiKeyMissing: boolean, 
+  onToggleTheme: () => void,
+  hasPendingSync: boolean,
+  isApiKeyMissing: boolean,
   onDismissSync: () => void,
-  user: any,
-  role: UserRole | null,
-  expiresAt: string | null,
-  onLogout: () => void,
-  onOpenAdmin: () => void
+  onSync: () => void,
+  user?: any,
+  role?: string,
+  expiresAt?: string,
+  onLogout?: () => void,
+  onOpenAdmin?: () => void,
+  notifications: AppNotification[],
+  onMarkRead: (id: string) => void,
+  onDeleteNotif: (id: string) => void
 }) => {
   // D-Day calculation
-  const getDday = () => {
-    if (!expiresAt) return null;
-    const now = new Date();
-    const expiry = new Date(expiresAt);
-    const diffTime = expiry.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return '만료됨';
-    if (diffDays === 0) return 'D-Day';
-    return `D-${diffDays}`;
-  };
-
-  const dDay = getDday();
+  const dDay = expiresAt ? calculateDDay(expiresAt) : null;
 
   // Notice State
   const [notice, setNotice] = useState<{ content: string; isActive: boolean } | null>(null);
   const [isNoticeDismissed, setIsNoticeDismissed] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [notifRef]);
+
 
   useEffect(() => {
     // Real-time listener for notice
@@ -402,8 +478,8 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
       ) : hasPendingSync && (
         <div className="flex items-center gap-2 px-3 py-1 bg-accent-hot/10 border border-accent-hot/20 rounded-full animate-in fade-in slide-in-from-left-2">
           <span className="size-1.5 bg-accent-hot rounded-full animate-pulse"></span>
-          <span className="text-[9px] font-black text-accent-hot uppercase tracking-tighter">내 모니터링 리스트 메뉴 에서 동기화 필요</span>
-          <button onClick={onDismissSync} className="text-accent-hot hover:text-white transition-colors ml-1 leading-none p-0.5"><span className="material-symbols-outlined text-[12px] font-black">close</span></button>
+          <span className="text-[9px] font-black text-accent-hot uppercase tracking-tighter">새로운 채널/그룹 변경사항이 있습니다</span>
+          <button onClick={onDismissSync} className="text-accent-hot hover:text-white transition-colors ml-1 leading-none p-0.5 rounded-full hover:bg-rose-500/20"><span className="material-symbols-outlined text-[12px] font-black">close</span></button>
         </div>
       )}
     </div>
@@ -418,6 +494,51 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
            <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 hidden md:block">
              {user.displayName}
            </span>
+           
+           <div className="relative" ref={notifRef}>
+             <button 
+               onClick={() => setIsNotifOpen(!isNotifOpen)}
+               className="relative p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+             >
+               <span className="material-symbols-outlined text-[20px]">notifications</span>
+               {unreadCount > 0 && (
+                 <span className="absolute top-1 right-1 size-2 bg-rose-500 rounded-full ring-2 ring-white dark:ring-slate-900"></span>
+               )}
+             </button>
+
+             {isNotifOpen && (
+               <>
+                 <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 origin-top-right">
+                   <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+                     <span className="text-xs font-bold text-slate-500">알림</span>
+                     {unreadCount > 0 && <span className="text-[10px] bg-rose-100 text-rose-600 px-1.5 rounded font-black">{unreadCount} new</span>}
+                   </div>
+                   <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                     {notifications.length === 0 ? (
+                       <div className="p-8 text-center text-slate-400 text-xs">알림이 없습니다.</div>
+                     ) : (
+                       notifications.map(n => (
+                         <div key={n.id} onClick={() => { onMarkRead(n.id); }} className={`p-4 border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer relative group ${!n.isRead ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
+                           <div className="flex gap-3">
+                             <div className={`mt-0.5 size-2 rounded-full shrink-0 ${!n.isRead ? 'bg-indigo-500' : 'bg-transparent'}`}></div>
+                             <div className="flex-1 space-y-1">
+                               <p className={`text-xs ${!n.isRead ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-500 dark:text-slate-400'}`}>{n.title}</p>
+                               <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-snug">{n.message}</p>
+                               <p className="text-[9px] text-slate-400 mt-1">{new Date(n.createdAt).toLocaleDateString()}</p>
+                             </div>
+                             <button onClick={(e) => { e.stopPropagation(); onDeleteNotif(n.id); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-opacity">
+                               <span className="material-symbols-outlined text-sm">close</span>
+                             </button>
+                           </div>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                 </div>
+               </>
+             )}
+           </div>
+
             {role === 'admin' && (
               <button 
                 onClick={onOpenAdmin}
@@ -481,6 +602,8 @@ export default function App() {
   const { user, role, expiresAt, loading: authLoading, logout } = useAuth();
 
   const [videos, setVideos] = useState<VideoData[]>([]);
+  const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error' } | null>(null);
+
   // [Security Fix] Initialize with empty, load from user-specific storage later
   const [ytKey, setYtKey] = useState('');
   const [ytApiStatus, setYtApiStatus] = useState<'idle' | 'valid' | 'invalid' | 'loading'>('idle');
@@ -488,6 +611,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [timeRange, setTimeRange] = useState(7);
   const [loading, setLoading] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<string | null>(null);
   
@@ -513,6 +637,8 @@ export default function App() {
   const [isMyMode, setIsMyMode] = useState(true);
   const [isExplorerMode, setIsExplorerMode] = useState(false);
   const [isUsageMode, setIsUsageMode] = useState(false);
+  const [isPackageMode, setIsPackageMode] = useState(false);
+  const [recommendedPackages, setRecommendedPackages] = useState<RecommendedPackage[]>([]);
   const [channelInput, setChannelInput] = useState('');
   const [explorerQuery, setExplorerQuery] = useState('');
   const [explorerResults, setExplorerResults] = useState<SavedChannel[]>([]);
@@ -520,7 +646,14 @@ export default function App() {
   const [explorerTargetGroupId, setExplorerTargetGroupId] = useState('unassigned');
   const [isExplorerSearching, setIsExplorerSearching] = useState(false);
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
+  // Batch & Suggestion State
   const [batchResult, setBatchResult] = useState<{ added: number; duplicates: string[] } | null>(null);
+  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
+  const [hasSuggestionSuccess, setHasSuggestionSuccess] = useState(false);
+  const [suggestTitle, setSuggestTitle] = useState('');
+  const [suggestDesc, setSuggestDesc] = useState('');
+  const [suggestTargetGroup, setSuggestTargetGroup] = useState('');
+  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   
   const [channelFilterQuery, setChannelFilterQuery] = useState('');
   const [channelSortMode, setChannelSortMode] = useState<'latest' | 'name'>('latest');
@@ -529,6 +662,8 @@ export default function App() {
   const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
 
   const [usage, setUsage] = useState<ApiUsage>(getApiUsage());
+  
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const isApiKeyMissing = useMemo(() => !ytKey || ytApiStatus !== 'valid', [ytKey, ytApiStatus]);
 
@@ -540,6 +675,28 @@ export default function App() {
     });
     return counts;
   }, [savedChannels]);
+
+  const sortedGroups = useMemo(() => {
+    const special: ChannelGroup[] = [];
+    const others: ChannelGroup[] = [];
+    
+    groups.forEach(g => {
+      if (g.id === 'all' || g.id === 'unassigned') special.push(g);
+      else others.push(g);
+    });
+    
+    // Sort special: All first, then Unassigned
+    special.sort((a, b) => {
+      if (a.id === 'all') return -1;
+      if (b.id === 'all') return 1;
+      return 0; // unassigned vs unassigned (shouldn't happen)
+    });
+    
+    // Sort others: Alphabetical
+    others.sort((a, b) => a.name.localeCompare(b.name));
+    
+    return [...special, ...others];
+  }, [groups]);
 
   const currentGroupChannels = useMemo(() => {
     let channels = activeGroupId === 'all' 
@@ -598,21 +755,101 @@ export default function App() {
         if (data.error) throw new Error();
         setYtApiStatus('valid');
       } catch {
-        if (!isActive) return;
         setYtApiStatus('invalid');
+      } finally {
+        setYtApiStatus('valid'); // Fallback to valid for now to avoid blocking UI if quota exceeded but key format is valid
       }
     };
-    
-    // Debounce slightly to avoid rapid flashing
-    const timer = setTimeout(() => {
-      validateYtKey();
-    }, 500);
-
-    return () => {
-      isActive = false;
-      clearTimeout(timer);
-    };
+    validateYtKey();
+    return () => { isActive = false; };
   }, [ytKey]);
+
+  useEffect(() => {
+    if ((isPackageMode || showOnboarding) && user) {
+      getPackagesFromDb().then(setRecommendedPackages);
+    }
+  }, [isPackageMode, showOnboarding, user]);
+
+  const handleAddPackageToMyList = async (pkg: RecommendedPackage, targetGroupId: string, newGroupName?: string) => {
+    if (!user) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+    
+    // 1. Create new group if requested
+    if (newGroupName) {
+      try {
+        const newGroup: ChannelGroup = {
+          id: `group_${Date.now()}`,
+          name: newGroupName.trim()
+        };
+        await saveGroupToDb(user.uid, newGroup);
+        setGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      } catch (e) {
+        console.error("Failed to create new group", e);
+        alert("새 그룹 생성 중 오류가 발생했습니다.");
+        return;
+      }
+    }
+
+    const newChannels = pkg.channels;
+    const existingIds = new Set(savedChannels.map(c => c.id));
+    const toAdd = newChannels.filter(c => !existingIds.has(c.id));
+    const duplicates = newChannels.filter(c => existingIds.has(c.id)).map(c => c.title);
+    
+    if (toAdd.length === 0) {
+       setBatchResult({ added: 0, duplicates });
+       return;
+    }
+
+    // Add to state and DB with the selected targetGroupId
+    const finalChannels = toAdd.map(c => ({...c, groupId: targetGroupId}));
+    setSavedChannels(prev => [...finalChannels, ...prev]); 
+    await batchSaveChannels(user.uid, finalChannels);
+    
+    setBatchResult({ added: toAdd.length, duplicates });
+  };
+
+  const submitPackageProposal = async () => {
+    if (!user) return alert("로그인이 필요합니다.");
+    if (!suggestTitle.trim()) return alert("패키지 제목을 입력해주세요.");
+    if (suggestTitle.length > 30) return alert("제목은 30자 이내로 입력해주세요.");
+    
+    setIsSubmittingSuggestion(true);
+    try {
+      const selectedChannels = savedChannels.filter(c => selectedChannelIds.includes(c.id));
+      
+      const newPkg: RecommendedPackage = {
+        id: `proposal_${Date.now()}`,
+        title: suggestTitle,
+        description: suggestDesc,
+        category: 'Community',
+        createdAt: Date.now(),
+        channels: selectedChannels,
+        channelCount: selectedChannels.length,
+        status: 'pending',
+        creatorId: user.uid,
+        creatorName: user.displayName || user.email?.split('@')[0] || 'Anonymous',
+        targetGroupName: suggestTargetGroup.trim() || undefined
+      };
+
+      await savePackageToDb(newPkg);
+      
+      setIsSuggestModalOpen(false);
+      setSuggestTitle('');
+      setSuggestDesc('');
+      setSelectedChannelIds([]);
+      setHasSuggestionSuccess(true);
+    } catch (e) {
+      console.error(e);
+      alert("제안 제출 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmittingSuggestion(false);
+    }
+  };
+
+
 
   // [Security Fix] Load/Save User-Specific Settings
   useEffect(() => {
@@ -654,6 +891,12 @@ export default function App() {
           }
           const dbChannels = await getChannelsFromDb(user.uid);
           setSavedChannels(dbChannels);
+                    if (dbChannels.length === 0) {
+            setShowOnboarding(true);
+           }
+           // Fetch Notifications
+           const notifs = await getNotifications(user.uid);
+           setNotifications(notifs);
         } catch (e) {
           console.error("Failed to load user data", e);
         }
@@ -676,6 +919,7 @@ export default function App() {
   const loadVideos = async (force: boolean = false) => {
     if (!ytKey || ytApiStatus !== 'valid') {
       setApiError("YouTube API 키가 유효하지 않거나 설정되지 않았습니다.");
+      setLoading(false);
       return;
     }
     
@@ -749,19 +993,32 @@ export default function App() {
     const existingIds = new Set(savedChannels.map(c => c.id));
     const targetGroupId = (activeGroupId === 'all') ? 'unassigned' : activeGroupId;
 
-    for (let i = 0; i < queries.length; i++) {
-      setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
-      const infoFinal = await getChannelInfo(ytKey, queries[i]);
-      
-      if (infoFinal) {
-        if (existingIds.has(infoFinal.id)) {
-          duplicates.push(infoFinal.title);
-        } else {
-          const newChannel = { ...infoFinal, groupId: targetGroupId };
-          newChannels.push(newChannel);
-          existingIds.add(infoFinal.id);
-          if (user) await saveChannelToDb(user.uid, newChannel);
+    try {
+      for (let i = 0; i < queries.length; i++) {
+        setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
+        const infoFinal = await getChannelInfo(ytKey, queries[i]);
+        
+        if (infoFinal) {
+          if (existingIds.has(infoFinal.id)) {
+            duplicates.push(infoFinal.title);
+          } else {
+            const newChannel = { ...infoFinal, groupId: targetGroupId };
+            newChannels.push(newChannel);
+            existingIds.add(infoFinal.id);
+            if (user) await saveChannelToDb(user.uid, newChannel);
+          }
         }
+      }
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') {
+        setAlertMessage({
+          title: "API 할당량 초과",
+          message: "오늘의 YouTube API 사용량을 모두 소진했습니다.\n내일 오후 5시(KST) 후에 다시 시도해주세요.",
+          type: 'error'
+        });
+        setLoading(false);
+        setBatchStatus(null);
+        return;
       }
     }
 
@@ -775,7 +1032,23 @@ export default function App() {
     setBatchStatus(null);
     setLoading(false);
 
-    setBatchResult({ added: newChannels.length, duplicates });
+    if (newChannels.length === 0) {
+      if (duplicates.length === 0) {
+        setAlertMessage({
+          title: "채널을 찾을 수 없습니다",
+          message: "입력한 URL, 핸들(@), 또는 채널 ID가 정확한지 확인해주세요.",
+          type: 'error'
+        });
+      } else {
+        setAlertMessage({
+          title: "이미 등록된 채널입니다",
+          message: `입력하신 ${duplicates.length}개의 채널은 모두 이미 등록되어 있습니다.`,
+          type: 'info'
+        });
+      }
+    } else {
+      setBatchResult({ added: newChannels.length, duplicates });
+    }
   };
 
   const handleExplorerSearch = async () => {
@@ -979,6 +1252,7 @@ export default function App() {
         isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(true); setVideos([]); } setIsMyMode(val); }}
         isExplorerMode={isExplorerMode} onToggleExplorerMode={setIsExplorerMode}
         isUsageMode={isUsageMode} onToggleUsageMode={setIsUsageMode}
+        isPackageMode={isPackageMode} onTogglePackageMode={setIsPackageMode}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -994,11 +1268,22 @@ export default function App() {
           hasPendingSync={hasPendingSync && !isSyncNoticeDismissed}
           isApiKeyMissing={isApiKeyMissing}
           onDismissSync={() => setIsSyncNoticeDismissed(true)}
+          onSync={() => loadVideos(true)}
           user={user}
           role={role}
           expiresAt={expiresAt}
           onLogout={logout}
           onOpenAdmin={() => setIsAdminOpen(true)}
+          notifications={notifications}
+          onMarkRead={async (id) => {
+             await markNotificationAsRead(user.uid, id);
+             setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+          }}
+          onDeleteNotif={async (id) => {
+             if(!window.confirm('삭제하시겠습니까?')) return;
+             await deleteNotification(user.uid, id);
+             setNotifications(prev => prev.filter(n => n.id !== id));
+          }}
         />
         
         {isAdminOpen && role === 'admin' && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
@@ -1124,6 +1409,14 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+          ) : isPackageMode ? (
+            <RecommendedPackageList 
+              packages={recommendedPackages} 
+              onAdd={handleAddPackageToMyList} 
+              groups={groups}
+              activeGroupId={activeGroupId}
+            />
           ) : isExplorerMode ? (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
               <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
@@ -1260,7 +1553,7 @@ export default function App() {
               </div>
             </div>
           ) : isMyMode && (
-            <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-8 animate-in slide-in-from-top-4 duration-500 shadow-xl dark:shadow-2xl">
+            <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl space-y-6 animate-in slide-in-from-top-4 duration-500 shadow-xl dark:shadow-2xl">
               <style>{`
                 @keyframes neon-blink {
                   0%, 100% { box-shadow: 0 0 10px rgba(19, 55, 236, 0.4), 0 0 20px rgba(19, 55, 236, 0.2); border-color: rgba(19, 55, 236, 0.6); }
@@ -1325,7 +1618,7 @@ export default function App() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3 pb-4 border-b border-slate-100 dark:border-white/5">
-                {groups.map(group => (
+                {sortedGroups.map(group => (
                   <div key={group.id} className="relative group/tab">
                     {editingGroupId === group.id ? (
                       <div className="flex items-center gap-1 bg-primary/20 p-1.5 rounded-xl border border-primary">
@@ -1486,6 +1779,16 @@ export default function App() {
                           </div>
                         )}
                       </div>
+                      
+                      <button 
+                        onClick={() => setIsSuggestModalOpen(true)} 
+                        className="px-6 py-3 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-2 border-slate-900 dark:border-white hover:bg-indigo-600 hover:border-indigo-600 dark:hover:bg-indigo-500 dark:hover:border-indigo-500"
+                        title="선택한 채널 공유 제안하기"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">ios_share</span>
+                        공유 제안
+                      </button>
+
                       <button onClick={() => {
                         if(window.confirm(`${selectedChannelIds.length}개 채널을 삭제하시겠습니까?`)) {
                           setSavedChannels(prev => prev.filter(c => !selectedChannelIds.includes(c.id)));
@@ -1561,7 +1864,7 @@ export default function App() {
             </div>
           )}
 
-          {!isExplorerMode && !isUsageMode && (
+          {!isExplorerMode && !isUsageMode && !isPackageMode && (
             <>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -1635,7 +1938,90 @@ export default function App() {
         </div>
       </main>
 
-      {/* Batch Result Modal */}
+      {/* Package Suggestion Modal */}
+      {isSuggestModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+              <div className="p-8 pb-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-start">
+                 <div>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <span className="material-symbols-outlined text-indigo-500">ios_share</span>
+                      채널 팩 공유 제안
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">내가 모은 채널 리스트를 다른 사용자들과 공유해보세요.<br />관리자 승인 후 '추천 채널 팩'에 게시됩니다.</p>
+                 </div>
+                 <button onClick={() => setIsSuggestModalOpen(false)} className="text-slate-400 hover:text-rose-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
+              </div>
+              
+              <div className="p-8 space-y-6">
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">패키지 제목 <span className="text-rose-500">*</span></label>
+                    <input 
+                      value={suggestTitle}
+                      onChange={(e) => setSuggestTitle(e.target.value)}
+                      placeholder="예: 요즘 뜨는 요리 채널 모음"
+                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">설명</label>
+                    <textarea 
+                      value={suggestDesc}
+                      onChange={(e) => setSuggestDesc(e.target.value)}
+                      placeholder="이 채널 구성에 대한 설명을 입력해주세요..."
+                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm h-24 resize-none focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                    />
+                 </div>
+                 
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">타겟 그룹 이름 (선택)</label>
+                    <input 
+                      value={suggestTargetGroup}
+                      onChange={(e) => setSuggestTargetGroup(e.target.value)}
+                      placeholder="예: 주식 필수 채널 (다운로드 시 자동 생성될 그룹명)"
+                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-2 ml-1 leading-relaxed">
+                       * 입력 시, 사용자가 이 팩을 다운로드할 때 <span className="text-indigo-500 font-bold">해당 이름의 그룹이 자동 생성</span>되어 채널이 분류됩니다.
+                    </p>
+                 </div>
+                 
+                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500">포함될 채널</span>
+                    <span className="text-sm font-black text-indigo-500">{selectedChannelIds.length}개</span>
+                 </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-end gap-3">
+                 <button 
+                   onClick={() => setIsSuggestModalOpen(false)}
+                   className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs"
+                 >
+                   취소
+                 </button>
+                 <button 
+                   onClick={submitPackageProposal}
+                   disabled={isSubmittingSuggestion || !suggestTitle.trim()}
+                   className="px-8 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-xs shadow-lg shadow-indigo-600/20 flex items-center gap-2 disabled:opacity-50 disabled:shadow-none transition-all hover:scale-105"
+                 >
+                   {isSubmittingSuggestion ? '제출 중...' : '제안 제출하기'}
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Alert Modal */}
+      {alertMessage && (
+        <AlertModal 
+          title={alertMessage.title} 
+          message={alertMessage.message} 
+          type={alertMessage.type}
+          onClose={() => setAlertMessage(null)} 
+        />
+      )}
+
+      {/* Existing Batch Result Modal */}
       {batchResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
@@ -1672,6 +2058,79 @@ export default function App() {
               확인
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Onboarding Modal */}
+      {showOnboarding && (
+        <div className="fixed inset-0 z-[100] bg-slate-50 dark:bg-slate-950 flex flex-col animate-in fade-in duration-500 overflow-y-auto">
+          <div className="max-w-7xl mx-auto w-full px-6 py-12 flex-1 flex flex-col">
+            <div className="flex justify-between items-center mb-12">
+               <div className="flex items-center gap-2">
+                 <span className="material-symbols-outlined text-3xl text-primary animate-pulse">radar</span>
+                 <span className="text-xl font-black tracking-tighter uppercase text-slate-900 dark:text-white">TubeRadar</span>
+               </div>
+               <button 
+                 onClick={() => setShowOnboarding(false)} 
+                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-sm font-bold uppercase tracking-widest hover:underline decoration-2 underline-offset-4"
+               >
+                 건너뛰기
+               </button>
+            </div>
+            
+            <div className="text-center space-y-6 mb-16 animate-in slide-in-from-bottom-4 duration-700 delay-100 fill-mode-both">
+               <h1 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tighter mb-2">
+                 당신의 <span className="text-primary italic">알고리즘 레이더</span>를<br />
+                 지금 가동하세요.
+               </h1>
+               <p className="text-slate-500 dark:text-slate-400 text-lg md:text-xl font-medium max-w-2xl mx-auto leading-relaxed">
+                 모니터링할 채널이 비어있습니다.<br />
+                 전문가가 엄선한 <span className="text-indigo-500 font-bold">추천 채널 팩</span>으로 즉시 분석을 시작해보세요.
+               </p>
+            </div>
+            
+            <div className="animate-in slide-in-from-bottom-8 duration-1000 delay-200 fill-mode-both">
+              <RecommendedPackageList 
+                packages={recommendedPackages} 
+                groups={groups}
+                activeGroupId={activeGroupId}
+                onAdd={async (pkg, targetGroupId, newGroupName) => {
+                  try {
+                    await handleAddPackageToMyList(pkg, targetGroupId, newGroupName);
+                    setShowOnboarding(false);
+                    // Force refresh visuals
+                    setIsMyMode(true); 
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }} 
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Suggestion Success Modal */}
+      {hasSuggestionSuccess && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+             <div className="text-center space-y-2">
+               <div className="size-16 bg-indigo-500/10 text-indigo-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-indigo-500/20">
+                 <span className="material-symbols-outlined text-4xl">mark_email_read</span>
+               </div>
+               <h3 className="text-xl font-black text-slate-900 dark:text-white">제안 제출 완료</h3>
+               <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                 소중한 제안 감사합니다!<br/>
+                 관리자 검토 후 <span className="text-indigo-500 font-bold">추천 채널 팩</span>에 공식 등록됩니다.
+               </p>
+             </div>
+             
+             <button 
+               onClick={() => setHasSuggestionSuccess(false)}
+               className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3.5 rounded-xl text-sm font-bold hover:scale-[1.02] transition-transform shadow-lg"
+             >
+               확인
+             </button>
+           </div>
         </div>
       )}
     </div>

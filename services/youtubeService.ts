@@ -71,7 +71,14 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     const res = await fetch(url);
     trackUsage('list', 1);
     const data = await res.json();
-    if (data.error || !data.items?.length) return null;
+    
+    if (data.error) {
+      if (data.error.code === 403 && data.error.errors?.[0]?.reason === 'quotaExceeded') {
+        throw new Error("QUOTA_EXCEEDED");
+      }
+      return null;
+    }
+    if (!data.items?.length) return null;
     const channel = data.items[0];
     return {
       id: channel.id,
@@ -112,7 +119,8 @@ export const fetchRealVideos = async (
   forceRefresh: boolean = false
 ): Promise<VideoData[]> => {
   const isMyChannelsMode = channelIds.length > 0;
-  const cacheKey = `yt_v6_cache_${regionCode}_${query || categoryId || 'trending'}_${daysBack}_${isMyChannelsMode ? 'my' : 'all'}`;
+  const channelHash = isMyChannelsMode ? channelIds.length : 'all';
+  const cacheKey = `yt_v6_cache_${regionCode}_${query || categoryId || 'trending'}_${daysBack}_${channelHash}`;
   const cached = localStorage.getItem(cacheKey);
   
   if (!forceRefresh && cached) {

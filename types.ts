@@ -30,6 +30,7 @@ export interface SavedChannel {
   id: string;
   title: string;
   thumbnail: string;
+  customUrl?: string;
   groupId?: string; // 소속 그룹 ID (optional until saved)
 }
 
@@ -58,4 +59,28 @@ export interface ApiUsage {
     list: number;
   };
   logs: ApiUsageLog[];
+}
+
+export interface RecommendedPackage {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  createdAt: number;
+  channels: SavedChannel[];
+  channelCount: number;
+  status?: 'approved' | 'pending';
+  creatorName?: string;
+  creatorId?: string;
+  targetGroupName?: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  isRead: boolean;
+  createdAt: number;
 }
