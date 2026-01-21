@@ -12,8 +12,10 @@ import { UserRole } from './src/contexts/AuthContext';
 import { 
   getChannelInfo, 
   fetchRealVideos,
-  searchChannelsByKeyword 
+  searchChannelsByKeyword,
+  autoDetectShortsChannels
 } from './services/youtubeService';
+import { analyzeVideoVirality } from './services/geminiService';
 import { RecommendedPackageList } from './src/components/RecommendedPackageList';
 import { 
   saveChannelToDb, 
@@ -30,6 +32,26 @@ import {
   deleteNotification
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
+import type { AutoDetectResult } from './services/youtubeService';
+
+const formatNumber = (num: number) => {
+  if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
+  if (num >= 10000) return (num / 10000).toFixed(1) + "만";
+  return num.toLocaleString();
+};
+
+const getTimeAgo = (date: string) => {
+  const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
+  let interval = seconds / 31536000;
+  if (interval > 1) return Math.floor(interval) + "년 전";
+  interval = seconds / 2592000;
+  if (interval > 1) return Math.floor(interval) + "달 전";
+  interval = seconds / 86400;
+  if (interval > 1) return Math.floor(interval) + "일 전";
+  interval = seconds / 3600;
+  if (interval > 1) return Math.floor(interval) + "시간 전";
+  return "방금 전";
+};
 
 // --- 서브 컴포넌트 ---
 
@@ -133,6 +155,33 @@ const VideoCard: React.FC<{ video: VideoData }> = ({ video }) => {
   );
 };
 
+const SidebarItem = ({ 
+  icon, 
+  label, 
+  active, 
+  onClick,
+  className = ""
+}: { 
+  icon: string, 
+  label: string, 
+  active: boolean, 
+  onClick: () => void,
+  className?: string
+}) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+      active
+        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md transform scale-[1.02]' 
+        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
+    } ${className}`}
+  >
+    <span className="material-symbols-outlined text-[18px]">{icon}</span>
+    {label}
+  </button>
+);
+
+
 const Sidebar = ({ 
   ytKey, 
   onYtKeyChange,
@@ -149,6 +198,8 @@ const Sidebar = ({
   onToggleUsageMode,
   isPackageMode,
   onTogglePackageMode,
+  isShortsDetectorMode,
+  onToggleShortsDetectorMode,
   hasPendingSync,
   isSyncNoticeDismissed,
   isApiKeyMissing,
@@ -172,7 +223,9 @@ const Sidebar = ({
   hasPendingSync: boolean,
   isSyncNoticeDismissed: boolean,
   isApiKeyMissing: boolean,
-  usage: ApiUsage
+  usage: ApiUsage,
+  isShortsDetectorMode: boolean,
+  onToggleShortsDetectorMode: (val: boolean) => void
 }) => {
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
@@ -195,9 +248,9 @@ const Sidebar = ({
         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">워크스페이스</div>
         <div className="px-2 space-y-1">
           <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); }}
+            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); }}
             className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode
                 ? 'bg-accent-hot/10 text-accent-hot shadow-sm border border-accent-hot/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             }`}
@@ -206,34 +259,50 @@ const Sidebar = ({
             내 모니터링 리스트
             {hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-2 bg-accent-hot rounded-full animate-pulse shadow-[0_0_8px_#ff0055]"></span>}
           </button>
-
-          <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(true); onTogglePackageMode(false); onToggleMyMode(false); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isExplorerMode && !isUsageMode && !isPackageMode
-                ? 'bg-emerald-500/10 text-emerald-500 shadow-sm border border-emerald-500/20' 
-                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">search_insights</span>
-            키워드 검색 채널 수집
-          </button>
-
-          <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onToggleMyMode(false); onTogglePackageMode(true); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isPackageMode && !isUsageMode
-                ? 'bg-indigo-500/10 text-indigo-500 shadow-sm border border-indigo-500/20' 
-                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-            추천 채널 팩 (큐레이션)
-            <span className="bg-indigo-500 text-white text-[9px] px-1.5 py-0.5 rounded ml-auto">NEW</span>
-          </button>
         </div>
 
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">탐색 트렌드</div>
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">Discovery</div>
+        <div className="px-2 space-y-1">
+          <SidebarItem 
+            icon="inventory_2" 
+            label="추천 채널 팩" 
+            active={isPackageMode} 
+            onClick={() => {
+              onTogglePackageMode(true);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onToggleShortsDetectorMode(false);
+            }}
+          />
+          <SidebarItem 
+            icon="search_insights" 
+            label="키워드 채널 찾기" 
+            active={isExplorerMode} 
+            onClick={() => {
+              onToggleExplorerMode(true);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+              onToggleShortsDetectorMode(false);
+            }} 
+          />
+          <SidebarItem 
+            icon="bolt" 
+            label="자동 탐색 (Shorts)" 
+            active={!!isShortsDetectorMode} 
+            onClick={() => {
+              onToggleShortsDetectorMode(true);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+            }} 
+            className={`${isShortsDetectorMode ? '!bg-rose-100 dark:!bg-rose-900/30 !text-rose-700 dark:!text-rose-300 shadow-sm border border-rose-200 dark:border-rose-800' : 'text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 hover:text-rose-600'}`}
+          />
+        </div>
+
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">국가별 트렌드</div>
         <div className="px-2 space-y-1">
           {[
             { id: 'KR', name: '대한민국 트렌드', icon: 'location_on' },
@@ -247,11 +316,12 @@ const Sidebar = ({
                 onToggleExplorerMode(false);
                 onToggleMyMode(false);
                 onTogglePackageMode(false);
+                onToggleShortsDetectorMode(false);
                 onCategoryChange('');
                 onRegionChange(item.id);
               }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode
+                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode
                   ? 'bg-primary/10 text-primary shadow-sm border border-primary/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
               }`}
@@ -272,6 +342,7 @@ const Sidebar = ({
                 onToggleExplorerMode(false);
                 onToggleMyMode(false);
                 onTogglePackageMode(false);
+                onToggleShortsDetectorMode(false);
                 onCategoryChange(item.id);
               }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
@@ -318,7 +389,29 @@ const Sidebar = ({
             </div>
           </button>
 
-          <div className="pt-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">API 설정</div>
+          <div className="pt-2 flex items-center justify-between px-1">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">API 설정</span>
+            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2">
+              {ytApiStatus === 'valid' && (
+                 <>
+                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+                   <span className="text-[9px] font-bold text-emerald-500">연결됨</span>
+                 </>
+              )}
+              {ytApiStatus === 'invalid' && (
+                 <>
+                   <span className="size-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                   <span className="text-[9px] font-bold text-rose-500">오류</span>
+                 </>
+              )}
+              {ytApiStatus === 'loading' && (
+                 <>
+                   <div className="size-1.5 rounded-full border border-amber-500 border-t-transparent animate-spin"></div>
+                   <span className="text-[9px] font-bold text-amber-500">대기중...</span>
+                 </>
+              )}
+            </div>
+          </div>
           <div className="space-y-2">
             <input 
               type="password"
@@ -330,16 +423,6 @@ const Sidebar = ({
                 ytApiStatus === 'invalid' ? 'border-rose-500/30 focus:border-rose-500' : 'border-slate-200 dark:border-slate-800 focus:border-primary'
               } ${isApiKeyMissing ? 'ring-2 ring-rose-500/50 border-rose-500 animate-pulse' : ''}`}
             />
-            <div className={`flex items-center justify-between p-2 rounded-lg border transition-all ${
-                ytApiStatus === 'valid' ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' : 
-                ytApiStatus === 'invalid' ? 'bg-rose-500/5 border-rose-500/20 text-rose-400' : 'bg-slate-100 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-500'
-              }`}>
-              <span className="text-[9px] font-bold uppercase tracking-tighter">연결 상태</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[8px] font-black">{ytApiStatus === 'valid' ? '활성' : ytApiStatus === 'invalid' ? '오류' : ytApiStatus === 'loading' ? '확인 중...' : '대기'}</span>
-                <span className={`size-1.5 rounded-full ${ytApiStatus === 'valid' ? 'bg-emerald-500 animate-pulse' : ytApiStatus === 'invalid' ? 'bg-rose-500' : 'bg-slate-300 dark:bg-slate-700'}`}></span>
-              </div>
-            </div>
           </div>
         </div>
       </nav>
@@ -360,6 +443,48 @@ const AlertModal = ({ title, message, onClose, type = 'info' }: { title: string,
       <div className="p-6 pt-2">
         <button onClick={onClose} className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg">
           확인
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+const AnalysisResultModal = ({ result, onClose }: { result: AnalysisResponse, onClose: () => void }) => (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+    <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+      <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
+        <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+          <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
+          AI 바이럴 분석 결과
+        </h3>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+           <span className="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div className="p-8 space-y-6">
+        <div className="space-y-2">
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">바이럴 원인</div>
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-purple-50 dark:bg-purple-900/10 p-4 rounded-xl border border-purple-100 dark:border-purple-500/20">
+            {result.viralReason}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">시청자 반응 예상</div>
+          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            {result.engagementQuality}
+          </p>
+        </div>
+        <div className="space-y-2">
+           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">트렌드 가치</div>
+           <div className="flex items-center gap-2">
+             <span className="material-symbols-outlined text-amber-500 text-lg">trending_up</span>
+             <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{result.topicTrend}</span>
+           </div>
+        </div>
+      </div>
+      <div className="p-6 pt-2 bg-slate-50 dark:bg-slate-900/50">
+        <button onClick={onClose} className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg">
+          닫기
         </button>
       </div>
     </div>
@@ -638,6 +763,13 @@ export default function App() {
   const [isExplorerMode, setIsExplorerMode] = useState(false);
   const [isUsageMode, setIsUsageMode] = useState(false);
   const [isPackageMode, setIsPackageMode] = useState(false);
+  const [isShortsDetectorMode, setIsShortsDetectorMode] = useState(false);
+  const [shortsDetectorResults, setShortsDetectorResults] = useState<AutoDetectResult[]>([]);
+  const [isDetectingShorts, setIsDetectingShorts] = useState(false);
+  const [detectorStatus, setDetectorStatus] = useState<string | null>(null);
+  const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
+
   const [recommendedPackages, setRecommendedPackages] = useState<RecommendedPackage[]>([]);
   const [channelInput, setChannelInput] = useState('');
   const [explorerQuery, setExplorerQuery] = useState('');
@@ -757,7 +889,8 @@ export default function App() {
       } catch {
         setYtApiStatus('invalid');
       } finally {
-        setYtApiStatus('valid'); // Fallback to valid for now to avoid blocking UI if quota exceeded but key format is valid
+        if (!ytKey || ytKey.length < 20) setYtApiStatus('invalid');
+        // Do not force set to valid here, trust the try/catch flow
       }
     };
     validateYtKey();
@@ -808,6 +941,9 @@ export default function App() {
     setSavedChannels(prev => [...finalChannels, ...prev]); 
     await batchSaveChannels(user.uid, finalChannels);
     
+    setHasPendingSync(true);
+    setIsSyncNoticeDismissed(false);
+    
     setBatchResult({ added: toAdd.length, duplicates });
   };
 
@@ -852,6 +988,8 @@ export default function App() {
 
 
   // [Security Fix] Load/Save User-Specific Settings
+  const [isKeyLoaded, setIsKeyLoaded] = useState(false);
+
   useEffect(() => {
     if (user) {
       // Load settings specific to this user
@@ -862,22 +1000,25 @@ export default function App() {
       else setYtKey(''); // Reset if new user has no key
       
       if (savedRegion) setRegion(savedRegion);
+      
+      setIsKeyLoaded(true); // Mark as loaded to enable saving
     } else {
       // Clear sensitive data on logout
       setYtKey('');
       setRegion('KR');
+      setIsKeyLoaded(false);
     }
   }, [user]);
 
   useEffect(() => {
-    if (user) {
+    if (user && isKeyLoaded) { // Only save after initial load is complete
       // Save settings specific to this user
       if (ytKey) localStorage.setItem(`yt_api_key_${user.uid}`, ytKey);
       else localStorage.removeItem(`yt_api_key_${user.uid}`);
       
       if (region) localStorage.setItem(`yt_region_${user.uid}`, region);
     }
-  }, [ytKey, region, user]);
+  }, [ytKey, region, user, isKeyLoaded]);
 
   useEffect(() => {
     if (user) {
@@ -909,9 +1050,11 @@ export default function App() {
   if (!user) return <Login />;
 
   useEffect(() => {
-    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode) {
+    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode && !isShortsDetectorMode && !isPackageMode) {
       if (!isMyMode || !hasPendingSync) {
         loadVideos();
+      } else {
+        setLoading(false);
       }
     }
   }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isUsageMode, hasPendingSync]);
@@ -946,6 +1089,8 @@ export default function App() {
       
       const data = await fetchRealVideos(ytKey, "", region, timeRange, targetChannelIds, categoryId, force);
       setVideos(data);
+      setHasPendingSync(false); // Mark sync as complete
+      setIsSyncNoticeDismissed(false);
     } catch (e: any) {
       setApiError(e.message || "영상 로딩 중 오류가 발생했습니다.");
     } finally {
@@ -1097,6 +1242,135 @@ export default function App() {
     }
     setExplorerStaging([]);
   };
+
+  // Shorts Detector Features
+
+
+const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
+
+  const handleAutoDetectShorts = async () => {
+    if (!ytKey) return;
+    setIsDetectingShorts(true);
+    const regionLabel = detectRegion === 'GLOBAL' ? '전세계' : (detectRegion === 'KR' ? '한국' : '미국');
+    setDetectorStatus(`최근 7일 ${regionLabel} 트렌드 스캔 중...`);
+    // Clear previous results immediately for better UX
+    setShortsDetectorResults([]);
+    
+    try {
+      const results = await autoDetectShortsChannels(ytKey, detectRegion === 'GLOBAL' ? undefined : detectRegion);
+      
+      setShortsDetectorResults(results);
+      
+      if(results.length === 0) {
+        alert("최근 7일간의 추천 영상을 찾지 못했습니다. 잠시 후 다시 시도해주세요.");
+      } else {
+        // Save Discovery Log to DB (async)
+        if (user) {
+           // ... log saving logic if needed
+        }
+      }
+      
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') {
+        setAlertMessage({
+          title: "API 할당량 초과",
+          message: "YouTube API 일일 사용량을 모두 소진했습니다.",
+          type: 'error'
+        });
+      } else {
+        alert("탐색 중 오류가 발생했습니다: " + e.message);
+      }
+    } finally {
+      setIsDetectingShorts(false);
+      setDetectorStatus(null);
+    }
+  };
+
+// ... inside return JSX
+                   {/* Region Toggle */}
+                   <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
+                     <button 
+                       onClick={() => setDetectRegion('GLOBAL')}
+                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'GLOBAL' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🌏 전세계
+                     </button>
+                     <button 
+                       onClick={() => setDetectRegion('KR')}
+                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'KR' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🇰🇷 한국
+                     </button>
+                     <button 
+                       onClick={() => setDetectRegion('US')}
+                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'US' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🇺🇸 미국
+                     </button>
+                   </div>
+
+  const handleAnalyzeViral = async (result: AutoDetectResult) => {
+    if (isApiKeyMissing) return alert("유효한 YouTube API 키를 먼저 설정하세요.");
+    setAnalyzingVideoId(result.id);
+    setAnalysisResult(null);
+    
+    const videoData: VideoData = {
+      id: result.representativeVideo.id,
+      title: result.representativeVideo.title,
+      channelName: result.title,
+      thumbnailUrl: result.representativeVideo.thumbnail,
+      duration: "Shorts",
+      views: formatNumber(result.representativeVideo.views),
+      avgViews: "Unknown",
+      subscribers: formatNumber(result.stats.subscribers),
+      viralScore: result.viralScore.toFixed(1) + "x",
+      uploadTime: "Recent",
+      category: "Shorts",
+      reachPercentage: 0,
+      tags: []
+    };
+
+    try {
+      const analysis = await analyzeVideoVirality(videoData, ytKey);
+      setAnalysisResult(analysis);
+    } catch (e) {
+      alert("분석 중 오류가 발생했습니다.");
+    } finally {
+      setAnalyzingVideoId(null);
+    }
+  };
+
+  const handleAddDetectedChannel = async (result: import('./services/youtubeService').AutoDetectResult) => {
+    const newChannel: SavedChannel = {
+      id: result.id,
+      title: result.title,
+      thumbnail: result.thumbnail,
+      groupId: activeGroupId === 'all' ? 'unassigned' : activeGroupId
+    };
+    
+    // Add to state
+    setSavedChannels(prev => [...prev, newChannel]);
+    setHasPendingSync(true);
+    setIsSyncNoticeDismissed(false);
+
+    // Add to DB
+    if (user) {
+      await saveChannelToDb(user.uid, newChannel);
+    }
+  };
+
 
   const handleSaveNewGroup = () => {
     if (newGroupName.trim()) {
@@ -1252,7 +1526,8 @@ export default function App() {
         isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(true); setVideos([]); } setIsMyMode(val); }}
         isExplorerMode={isExplorerMode} onToggleExplorerMode={setIsExplorerMode}
         isUsageMode={isUsageMode} onToggleUsageMode={setIsUsageMode}
-        isPackageMode={isPackageMode} onTogglePackageMode={setIsPackageMode}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); } setIsShortsDetectorMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -1275,22 +1550,158 @@ export default function App() {
           onLogout={logout}
           onOpenAdmin={() => setIsAdminOpen(true)}
           notifications={notifications}
-          onMarkRead={async (id) => {
-             await markNotificationAsRead(user.uid, id);
-             setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+           onMarkRead={async (id) => {
+             if (user) {
+               await markNotificationAsRead(user.uid, id);
+               setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
+             }
           }}
           onDeleteNotif={async (id) => {
-             if(!window.confirm('삭제하시겠습니까?')) return;
+             if (!user) return;
              await deleteNotification(user.uid, id);
              setNotifications(prev => prev.filter(n => n.id !== id));
           }}
         />
         
         {isAdminOpen && role === 'admin' && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
+        {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
         
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar scroll-smooth">
           
-          {isUsageMode ? (
+          {isShortsDetectorMode ? (
+             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+               <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
+                 <div className="space-y-2">
+                   <h2 className="text-2xl font-black italic tracking-tighter text-rose-500 uppercase flex items-center gap-3">
+                     <span className="material-symbols-outlined text-3xl">bolt</span>
+                     오늘 뜨는 쇼츠 채널 찾기
+                   </h2>
+                    <p className="text-slate-500 text-[11px] font-medium leading-relaxed">
+                      키워드나 조건 없이, <span className="text-emerald-500 font-bold">최근 7일간 YouTube가 추천하는 다양한 쇼츠</span>를 탐색합니다.<br />
+                      마치 쇼츠 피드를 넘기듯 <span className="text-rose-500 font-bold">이번 주 트렌드</span>를 무작위로 발견해보세요.
+                    </p>
+                 </div>
+
+                 <div className="flex items-center gap-4">
+                   {/* Region Toggle Buttons (GLOBAL / KR / US) */}
+                   <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
+                     <button 
+                       onClick={() => setDetectRegion('GLOBAL')}
+                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'GLOBAL' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🌏 전세계
+                     </button>
+                     <button 
+                       onClick={() => setDetectRegion('KR')}
+                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'KR' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🇰🇷 한국
+                     </button>
+                     <button 
+                       onClick={() => setDetectRegion('US')}
+                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'US' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🇺🇸 미국
+                     </button>
+                   </div>
+
+                   <button 
+                     onClick={handleAutoDetectShorts} 
+                     disabled={isDetectingShorts}
+                     className="bg-rose-500 text-white px-8 py-4 rounded-2xl text-sm font-black uppercase shadow-lg shadow-rose-500/30 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:grayscale flex items-center gap-2"
+                   >
+                     {isDetectingShorts ? (
+                       <>
+                         <span className="material-symbols-outlined animate-spin">sync</span> {detectorStatus || '탐색 중...'}
+                       </>
+                     ) : (
+                       <>
+                         <span className="material-symbols-outlined">youtube_searched_for</span> 탐색 시작 (1 Credit)
+                       </>
+                     )}
+                   </button>
+                   {shortsDetectorResults.length > 0 && !isDetectingShorts && (
+                      <div className="text-xs font-bold text-slate-500">
+                         {shortsDetectorResults.length}개의 유망 채널 발견됨
+                      </div>
+                   )}
+                 </div>
+               </div>
+
+               {shortsDetectorResults.length > 0 && (
+                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
+                   {shortsDetectorResults.map((result, idx) => {
+                      const isAdded = savedChannels.some(sc => sc.id === result.id);
+                      return (
+                        <div key={`${result.id}-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group relative">
+                           {/* Rank Badge (Optional) */}
+                           <div className="absolute top-1.5 left-1.5 z-10 bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-md border border-white/10">
+                             #{idx + 1}
+                           </div>
+
+                           <a href={`https://www.youtube.com/shorts/${result.representativeVideo.id}`} target="_blank" rel="noopener noreferrer" className="relative aspect-[9/16] bg-slate-100 dark:bg-slate-800 block cursor-pointer overflow-hidden">
+                             <img src={result.representativeVideo.thumbnail} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" loading="lazy" />
+                             {/* Overlay: Always visible with stronger gradient */}
+                             <div className="absolute inset-x-0 bottom-0 p-3 pt-8 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-20">
+                                <div className="text-[10px] font-bold text-white line-clamp-2 leading-tight mb-1 drop-shadow-md group-hover:underline decoration-white/50">{result.representativeVideo.title}</div>
+                                <div className="text-[9px] font-bold text-emerald-400 drop-shadow-md flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[10px]">visibility</span>
+                                  {formatNumber(result.representativeVideo.views)}
+                                </div>
+                             </div>
+                           </a>
+                           
+                           <div className="p-2 space-y-2">
+                             <a href={`https://www.youtube.com/channel/${result.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 group/channel hover:bg-slate-50 dark:hover:bg-slate-800/50 p-1 -ml-1 rounded transition-colors">
+                               <img src={result.thumbnail} className="size-5 rounded-full border border-slate-100 dark:border-slate-700" />
+                               <div className="flex-1 min-w-0">
+                                 <h3 className="font-bold text-[11px] text-slate-900 dark:text-white truncate group-hover/channel:text-primary transition-colors">{result.title}</h3>
+                                 <div className="flex items-center gap-1 text-[9px] text-slate-400">
+                                   <span>구독 {formatNumber(result.stats.subscribers)}</span>
+                                 </div>
+                               </div>
+                             </a>
+                             
+                             <div className="flex justify-between items-center px-1">
+                                <span className="text-[9px] text-slate-500 font-medium">조회수 {formatNumber(result.representativeVideo.views)}</span>
+                                <span className="text-[9px] text-slate-400">{getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt)}</span>
+                             </div>
+
+                             <button 
+                               onClick={() => handleAddDetectedChannel(result)}
+                               disabled={isAdded}
+                               className={`w-full py-2 rounded-lg text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
+                                 isAdded 
+                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                                 : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 dark:hover:text-white'
+                               }`}
+                             >
+                               {isAdded ? (
+                                 <><span className="material-symbols-outlined text-[10px]">check</span> 추가됨</>
+                               ) : (
+                                 <>내 리스트에 채널 추가</>
+                               )}
+                             </button>
+                           </div>
+                        </div>
+                      );
+                   })}
+                 </div>
+               )}
+             </div>
+          ) : isUsageMode ? (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
               <div className="bg-white dark:bg-slate-card/60 border border-slate-200 dark:border-slate-800 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
@@ -1789,8 +2200,11 @@ export default function App() {
                         공유 제안
                       </button>
 
-                      <button onClick={() => {
+                      <button onClick={async () => {
                         if(window.confirm(`${selectedChannelIds.length}개 채널을 삭제하시겠습니까?`)) {
+                          if (user) {
+                            await Promise.all(selectedChannelIds.map(id => removeChannelFromDb(user.uid, id)));
+                          }
                           setSavedChannels(prev => prev.filter(c => !selectedChannelIds.includes(c.id)));
                           setSelectedChannelIds([]);
                         }
@@ -1851,7 +2265,11 @@ export default function App() {
                           )}
                         </div>
                         <button 
-                          onClick={(e) => { e.stopPropagation(); setSavedChannels(prev => prev.filter(c => c.id !== ch.id)); }}
+                          onClick={async (e) => { 
+                            e.stopPropagation(); 
+                            if(user) await removeChannelFromDb(user.uid, ch.id);
+                            setSavedChannels(prev => prev.filter(c => c.id !== ch.id)); 
+                          }}
                           className="text-slate-400 hover:text-rose-500"
                         >
                           <span className="material-symbols-outlined text-[18px]">close</span>
@@ -1864,7 +2282,7 @@ export default function App() {
             </div>
           )}
 
-          {!isExplorerMode && !isUsageMode && !isPackageMode && (
+          {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && (
             <>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">

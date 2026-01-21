@@ -239,3 +239,162 @@ function getTimeAgo(date: string) {
   if (interval > 1) return Math.floor(interval) + "시간 전";
   return "방금 전";
 }
+
+// --- Shorts Auto Detector ---
+
+export interface AutoDetectResult extends SavedChannel {
+  viralScore: number;
+  stats: {
+    viewCount: number;
+    subscribers: number;
+    videoCount: number;
+    publishedAt: string;
+  };
+  representativeVideo: {
+    id: string;
+    title: string;
+    views: number;
+    thumbnail: string;
+    publishedAt?: string;
+  };
+}
+
+export const autoDetectShortsChannels = async (apiKey: string, regionCode: string = "KR"): Promise<AutoDetectResult[]> => {
+  try {
+    // 1. "Random Shorts Surfing" Mode
+    // Mimic the Shorts Feed but restrict to last 7 days to avoid ancient videos.
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7); // Last 7 days (Weekly Trends)
+    const publishedAfter = oneWeekAgo.toISOString();
+    
+    // Strategy: Broad query + Relevance sort + Date window
+    // 1. Base URL
+    let searchUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&videoDuration=short&maxResults=50&publishedAfter=${publishedAfter}&q=%23shorts&key=${apiKey}`;
+    
+    // 2. Region & Language Logic
+    // IF regionCode is provided (KR, US), apply strict targeting.
+    // IF regionCode is 'GLOBAL' or empty, we force 'US' as base to avoid IP-based local bias (Korea),
+    // but we DO NOT restrict language, allowing global viral content.
+    
+    if (regionCode && regionCode !== 'GLOBAL') {
+      searchUrl += `&regionCode=${regionCode}`;
+      
+      // Strict Language Filtering
+      if (regionCode === 'KR') {
+        searchUrl += `&relevanceLanguage=ko`;
+      } else if (regionCode === 'US') {
+        searchUrl += `&relevanceLanguage=en`;
+      }
+    } 
+    // GLOBAL (else): Do NOT add regionCode or relevanceLanguage. 
+    // Let YouTube decide based on query and general popularity.
+    
+    const searchRes = await fetch(searchUrl);
+    trackUsage('search', 1); 
+    const searchData = await searchRes.json();
+    
+    if (searchData.error) {
+      if (searchData.error.code === 403 && searchData.error.errors?.[0]?.reason === 'quotaExceeded') {
+        throw new Error("QUOTA_EXCEEDED");
+      }
+      throw new Error(searchData.error.message);
+    }
+
+    if (!searchData.items || searchData.items.length === 0) return [];
+
+    // 2. Extract Channel IDs & Video IDs
+    const videoItems = searchData.items;
+    const channelIds = Array.from(new Set(videoItems.map((item: any) => item.snippet.channelId))) as string[];
+    
+    // 3. Fetch Channel Details (Batch)
+    const channelsUrl = `${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${channelIds.join(',')}&key=${apiKey}`;
+    const channelsRes = await fetch(channelsUrl);
+    trackUsage('list', 1);
+    const channelsData = await channelsRes.json();
+
+    if (!channelsData.items) return [];
+
+    const candidates: AutoDetectResult[] = [];
+
+    // Filter out noisy countries (India, Brazil, Russia, Vietnam, etc.)
+    const BLACKLIST_COUNTRIES = ['IN', 'BR', 'RU', 'VN', 'ID', 'TH', 'PH', 'PK'];
+
+    channelsData.items.forEach((ch: any) => {
+      // 1. Country Filter
+      const country = ch.snippet.country;
+      if (country && BLACKLIST_COUNTRIES.includes(country)) {
+          return; // Skip this channel
+      }
+      const videoCount = parseInt(ch.statistics.videoCount || "0");
+      const subscriberCount = parseInt(ch.statistics.subscriberCount || "0");
+      const publishedAt = ch.snippet.publishedAt;
+      
+      // No Filtering: Accept ALL channels found in the search
+      const bestVideo = videoItems.find((v: any) => v.snippet.channelId === ch.id);
+      
+      if (bestVideo) {
+         candidates.push({
+           id: ch.id,
+           title: ch.snippet.title,
+           thumbnail: ch.snippet.thumbnails.default.url,
+           groupId: 'unassigned', // placeholder
+           viralScore: 0, // calc later
+           stats: {
+             viewCount: 0, // fill later
+             subscribers: subscriberCount,
+             videoCount: videoCount,
+             publishedAt: publishedAt
+           },
+           representativeVideo: {
+             id: bestVideo.id.videoId,
+             title: bestVideo.snippet.title,
+             views: 0, // fill later
+             thumbnail: bestVideo.snippet.thumbnails.maxres?.url || 
+                          bestVideo.snippet.thumbnails.standard?.url || 
+                          bestVideo.snippet.thumbnails.high?.url || 
+                          bestVideo.snippet.thumbnails.medium?.url || 
+                          bestVideo.snippet.thumbnails.default?.url,
+             publishedAt: bestVideo.snippet.publishedAt
+           }
+         });
+      }
+    });
+
+    // 4. Fetch Exact View Counts (Fixing 0 views issue)
+    // We strictly need this to show accurate views.
+    if (candidates.length > 0) {
+      const candidateVideoIds = candidates.map(c => c.representativeVideo.id);
+      // Batch request for video stats
+      const vStatsUrl = `${YOUTUBE_BASE_URL}/videos?part=statistics&id=${candidateVideoIds.join(',')}&key=${apiKey}`;
+      const vStatsRes = await fetch(vStatsUrl);
+      trackUsage('list', 1); 
+      const vStatsData = await vStatsRes.json();
+      
+      if (vStatsData.items) {
+        vStatsData.items.forEach((v: any) => {
+          const cand = candidates.find(c => c.representativeVideo.id === v.id);
+          if (cand) {
+             const views = parseInt(v.statistics.viewCount || "0");
+             cand.representativeVideo.views = views;
+             cand.stats.viewCount = views;
+          }
+        });
+      }
+    }
+
+    if (candidates.length === 0) return [];
+    // Sort by "Newest First" to show fresh trends on top
+    // Since API returns mixed dates (relevance), we sort them manually here.
+    candidates.sort((a, b) => {
+       const dateA = new Date(a.representativeVideo.publishedAt || 0).getTime();
+       const dateB = new Date(b.representativeVideo.publishedAt || 0).getTime();
+       return dateB - dateA; // Descending (Newest first)
+    });
+
+    return candidates;
+
+  } catch (e: any) {
+    console.error("Auto Detect Failed", e);
+    throw e;
+  }
+};

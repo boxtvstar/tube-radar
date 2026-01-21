@@ -157,13 +157,22 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
   const [pkgChannelInput, setPkgChannelInput] = useState('');
   const [isResolvingChannel, setIsResolvingChannel] = useState(false);
   
-  // YouTube API Key for Admin (Optional: use user's key or env key. For now ask user or rely on localStorage if available)
-  // YouTube API Key for Admin (Optional: use user's key or env key. For now ask user or rely on localStorage if available)
-  const [adminYtKey, setAdminYtKey] = useState(localStorage.getItem('admin_yt_key') || ''); 
+  // YouTube API Key for Admin
+  const [adminYtKey, setAdminYtKey] = useState(''); 
+  const [isKeyLoaded, setIsKeyLoaded] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('admin_yt_key', adminYtKey);
-  }, [adminYtKey]); 
+    const saved = localStorage.getItem('admin_yt_key');
+    if (saved) setAdminYtKey(saved);
+    setIsKeyLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (isKeyLoaded) {
+      if (adminYtKey) localStorage.setItem('admin_yt_key', adminYtKey);
+      // Optional: else localStorage.removeItem('admin_yt_key'); // 사용자 요청에 따라 유지하는 게 나음 (실수로 지워지는 것 방지)
+    }
+  }, [adminYtKey, isKeyLoaded]); 
 
   const fetchPackages = async () => {
     try {
@@ -322,6 +331,12 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
       const userList: UserData[] = [];
       querySnapshot.forEach((doc) => {
         userList.push({ uid: doc.id, ...doc.data() } as UserData);
+      });
+      // Sort: Admin first, then by createdAt desc
+      userList.sort((a, b) => {
+        if (a.role === 'admin' && b.role !== 'admin') return -1;
+        if (a.role !== 'admin' && b.role === 'admin') return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
       setUsers(userList);
       
@@ -771,7 +786,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                         수정
                       </button>
                       
-                      {u.uid !== user?.uid && (
+                      {u.uid !== user?.uid ? (
                         <button 
                              onClick={() => handleDelete(u.uid)}
                              className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
@@ -779,6 +794,11 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                         >
                              <span className="material-symbols-outlined text-lg">delete</span>
                         </button>
+                      ) : (
+                        /* Invisible placeholder to maintain layout alignment */
+                        <div className="p-1.5 inline-block opacity-0 pointer-events-none" aria-hidden="true">
+                             <span className="material-symbols-outlined text-lg">delete</span>
+                        </div>
                       )}
                     </td>
                   </tr>
