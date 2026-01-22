@@ -9,6 +9,7 @@ import { Login } from './src/components/Login';
 import { PendingApproval } from './src/components/PendingApproval';
 import { AdminDashboard } from './src/components/AdminDashboard';
 import { UserRole } from './src/contexts/AuthContext';
+import { GuestNoticeModal } from './src/components/GuestNoticeModal';
 import { 
   getChannelInfo, 
   fetchRealVideos,
@@ -207,7 +208,8 @@ const Sidebar = ({
   hasPendingSync,
   isSyncNoticeDismissed,
   isApiKeyMissing,
-  usage
+  usage,
+  isReadOnly
 }: { 
   ytKey: string,
   onYtKeyChange: (val: string) => void,
@@ -231,7 +233,8 @@ const Sidebar = ({
   isShortsDetectorMode: boolean,
   onToggleShortsDetectorMode: (val: boolean) => void,
   isTopicMode: boolean,
-  onToggleTopicMode: (val: boolean) => void
+  onToggleTopicMode: (val: boolean) => void,
+  isReadOnly?: boolean;
 }) => {
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
@@ -440,11 +443,12 @@ const Sidebar = ({
               type="password"
               value={ytKey}
               onChange={(e) => onYtKeyChange(e.target.value)}
-              placeholder="YouTube API 키 입력"
+              disabled={isReadOnly}
+              placeholder={isReadOnly ? "멤버십 승인 후 입력 가능" : "YouTube API 키 입력"}
               className={`w-full bg-slate-100 dark:bg-slate-900/50 border rounded-lg px-3 py-2 text-[10px] text-slate-700 dark:text-slate-300 outline-none shadow-inner transition-all ${
                 ytApiStatus === 'valid' ? 'border-emerald-500/30 focus:border-emerald-500' : 
                 ytApiStatus === 'invalid' ? 'border-rose-500/30 focus:border-rose-500' : 'border-slate-200 dark:border-slate-800 focus:border-primary'
-              } ${isApiKeyMissing ? 'ring-2 ring-rose-500/50 border-rose-500 animate-pulse' : ''}`}
+              } ${isApiKeyMissing && !isReadOnly ? 'ring-2 ring-rose-500/50 border-rose-500 animate-pulse' : ''} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
             />
           </div>
         </div>
@@ -820,6 +824,7 @@ export default function App() {
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
+  const [showGuestNotice, setShowGuestNotice] = useState(false);
 
   const [usage, setUsage] = useState<ApiUsage>(getApiUsage());
   
@@ -1080,6 +1085,12 @@ export default function App() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (role === 'pending') {
+      setShowGuestNotice(true);
+    }
+  }, [role]);
+
   if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;
   if (!user) return <Login />;
 
@@ -1161,7 +1172,22 @@ export default function App() {
     e.target.value = '';
   };
 
+  const isReadOnly = role === 'pending';
+  
+  const handleActionRestricted = (callback: () => void) => {
+    if (isReadOnly) {
+       setAlertMessage({
+         title: "멤버십 승인이 필요합니다",
+         message: "현재는 둘러보기 모드입니다.\n이 기능을 사용하시려면 멤버십 승인이 필요합니다.",
+         type: 'info'
+       });
+       return;
+    }
+    callback();
+  };
+
   const handleAddChannelBatch = async () => {
+    if (isReadOnly) return handleActionRestricted(() => {});;
     if (isApiKeyMissing) return alert("유효한 YouTube API 키를 먼저 설정하세요.");
     if (!channelInput.trim()) return;
     
@@ -1231,6 +1257,7 @@ export default function App() {
   };
 
   const handleExplorerSearch = async () => {
+    if (isReadOnly) return handleActionRestricted(() => {});
     if (isApiKeyMissing) return alert("유효한 YouTube API 키를 먼저 설정하세요.");
     if (!explorerQuery.trim()) return;
     
@@ -1255,6 +1282,7 @@ export default function App() {
   };
 
   const commitStagingToSaved = () => {
+    if (isReadOnly) return handleActionRestricted(() => {});
     if (explorerStaging.length === 0) return;
     const existingIds = new Set(savedChannels.map(c => c.id));
     const targetGroupId = explorerTargetGroupId;
@@ -1283,6 +1311,7 @@ export default function App() {
 const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
   const handleAutoDetectShorts = async () => {
+    if (isReadOnly) return handleActionRestricted(() => {});
     if (!ytKey) return;
     setIsDetectingShorts(true);
     const regionLabel = detectRegion === 'GLOBAL' ? '전세계' : (detectRegion === 'KR' ? '한국' : '미국');
@@ -1518,10 +1547,15 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
     return <Login />;
   }
 
-  // [RBAC] 승인 대기 상태 체크
-  if (role === 'pending') {
-    return <PendingApproval />;
-  }
+  // [RBAC] 승인 대기 상태 체크 -> 둘러보기 모드로 전환 (차단 해제)
+  // if (role === 'pending') {
+  //   return <PendingApproval />;
+  // }
+
+  // [RBAC] 승인 대기 상태 체크 -> 둘러보기 모드로 전환 (차단 해제)
+  // if (role === 'pending') {
+  //   return <PendingApproval />;
+  // }
 
   // [Expiration] 만료 체크 (관리자는 제외)
   if (role !== 'admin' && expiresAt && new Date(expiresAt) < new Date()) {
@@ -1566,7 +1600,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
+
         usage={usage}
+        isReadOnly={role === 'pending'}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -1600,13 +1636,19 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         
         {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
+        {showGuestNotice && user && (
+          <GuestNoticeModal 
+            userName={user.displayName || 'Guest'} 
+            onClose={() => setShowGuestNotice(false)} 
+          />
+        )}
         
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar scroll-smooth">
           
           {isPackageMode ? (
             <RecommendedPackageList 
                packages={recommendedPackages}
-               onAdd={handleAddPackageToMyList}
+               onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
                isAdding={false} // Todo: loading state
                groups={groups}
                activeGroupId={activeGroupId}
@@ -1615,7 +1657,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
           ) : isTopicMode ? (
             <RecommendedPackageList 
                packages={recommendedTopics}
-               onAdd={handleAddPackageToMyList}
+               onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
                isAdding={false} 
                groups={groups}
                activeGroupId={activeGroupId}
