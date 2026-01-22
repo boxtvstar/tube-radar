@@ -3,8 +3,8 @@ import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc }
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel } from '../../types';
-import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, sendNotification, logAdminMessage } from '../../services/dbService';
-import { getChannelInfo } from '../../services/youtubeService';
+import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage } from '../../services/dbService';
+import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ko } from 'date-fns/locale/ko';
 
@@ -46,6 +46,24 @@ const calculateDDay = (expiresAt?: string) => {
   if (diffDays < 0) return '만료됨';
   if (diffDays === 0) return 'D-Day';
   return `D-${diffDays}`;
+};
+
+const getStatusColor = (status?: string) => {
+  switch (status) {
+    case 'approved': return 'bg-emerald-50 text-emerald-500 border-emerald-200';
+    case 'rejected': return 'bg-rose-50 text-rose-500 border-rose-200';
+    case 'pending': return 'bg-amber-50 text-amber-500 border-amber-200';
+    default: return 'bg-slate-50 text-slate-500 border-slate-200';
+  }
+};
+
+const getStatusLabel = (status?: string) => {
+  switch (status) {
+    case 'approved': return '승인됨';
+    case 'rejected': return '거부됨';
+    case 'pending': return '대기중';
+    default: return '대기중';
+  }
 };
 
 export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
@@ -141,9 +159,10 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
-  // --- Recommended Packages State ---
-  const [activeTab, setActiveTab] = useState<'users' | 'packages'>('users');
+  // --- Recommended Packages & Topics State ---
+  const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics'>('users');
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
+  const [topics, setTopics] = useState<RecommendedPackage[]>([]);
   const [packageFilter, setPackageFilter] = useState<'all' | 'approved' | 'pending'>('all');
   const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<RecommendedPackage | null>(null);
@@ -155,6 +174,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
   const [pkgTargetGroup, setPkgTargetGroup] = useState('');
   const [pkgChannels, setPkgChannels] = useState<SavedChannel[]>([]);
   const [pkgChannelInput, setPkgChannelInput] = useState('');
+  const [pkgScheduledAt, setPkgScheduledAt] = useState<Date | null>(null);
   const [isResolvingChannel, setIsResolvingChannel] = useState(false);
   
   // YouTube API Key for Admin
@@ -163,7 +183,10 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
 
   useEffect(() => {
     const saved = localStorage.getItem('admin_yt_key');
-    if (saved) setAdminYtKey(saved);
+    if (saved) {
+      setAdminYtKey(saved);
+      console.log("Admin Key Loaded from Storage");
+    }
     setIsKeyLoaded(true);
   }, []);
 
@@ -183,8 +206,20 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+
+
+  const fetchTopics = async () => {
+    try {
+      const data = await getTopicsFromDb();
+      setTopics(data);
+    } catch (e) {
+      console.error("Error fetching topics", e);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'packages') fetchPackages();
+    if (activeTab === 'topics') fetchTopics();
   }, [activeTab]);
 
   const handleAddChannelToPkg = async () => {
@@ -203,6 +238,15 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
         const info = await getChannelInfo(adminYtKey, input);
         if (info) {
           if (!pkgChannels.some(c => c.id === info.id) && !newChannelsList.some(c => c.id === info.id)) {
+            // [Admin UX] Fetch popular videos immediately for preview
+            try {
+               const videos = await fetchChannelPopularVideos(adminYtKey, info.id);
+               if (videos.length > 0) {
+                 info.topVideos = videos;
+               }
+            } catch (err) {
+               console.error("Failed to fetch preview videos", err);
+            }
             newChannelsList.push(info);
             addedCount++;
           }
@@ -221,71 +265,180 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     setIsResolvingChannel(false);
   };
 
-  const handleSavePackage = async () => {
+  const handleSavePackage = async (approve: boolean = false) => {
     if (!pkgTitle) return alert("제목은 필수입니다.");
+
+    // [New Feature] Snapshot Popular Videos
+    // Before saving, we fetch popular videos for channels that don't have them yet.
+    // This saves API costs by serving from DB later.
+    let updatedChannels = [...pkgChannels];
+    if (adminYtKey) {
+      setIsResolvingChannel(true); // Re-use spinner state
+      try {
+        updatedChannels = await Promise.all(pkgChannels.map(async (ch) => {
+           // If already has topVideos, skip (unless we want to force refresh, but for now let's persist existing)
+           // Actually user implies new snapshot. Let's fetch if empty.
+           if (!ch.topVideos || ch.topVideos.length === 0) {
+             try {
+                const videos = await fetchChannelPopularVideos(adminYtKey, ch.id);
+                if (videos.length > 0) {
+                  return { ...ch, topVideos: videos };
+                }
+             } catch (err) {
+               console.error(`Failed to snapshot videos for ${ch.title}`, err);
+             }
+           }
+           return ch;
+        }));
+      } catch (e) {
+        console.error("Snapshot process failed", e);
+      } finally {
+        setIsResolvingChannel(false);
+      }
+    }
     
     const newPkg: RecommendedPackage = {
       id: editingPackage ? editingPackage.id : Date.now().toString(),
       title: pkgTitle,
       description: pkgDesc,
-      category: pkgTargetGroup.trim() || 'General', // Auto-fill category with target group or default
+      category: activeTab === 'topics' ? 'Topic' : (pkgTargetGroup.trim() || 'General'),
       createdAt: editingPackage ? editingPackage.createdAt : Date.now(),
-      channels: pkgChannels,
-      channelCount: pkgChannels.length,
-      targetGroupName: pkgTargetGroup.trim() || undefined,
-      status: editingPackage ? (editingPackage.status || 'approved') : 'pending' // Default to pending for new packages
+      channels: updatedChannels,
+      channelCount: updatedChannels.length,
+      ...(pkgTargetGroup.trim() ? { targetGroupName: pkgTargetGroup.trim() } : {}),
+      ...(pkgScheduledAt ? { scheduledAt: pkgScheduledAt.toISOString() } : {}),
+      // Preserve Creator Info
+      ...(editingPackage?.creatorId ? { creatorId: editingPackage.creatorId } : {}),
+      ...(editingPackage?.creatorName ? { creatorName: editingPackage.creatorName } : {}),
+      status: approve 
+        ? 'approved' 
+        : (editingPackage 
+             ? (editingPackage.status || 'approved') 
+             : 'pending') // Admin created items are pending approval now
     };
 
     try {
-      await savePackageToDb(newPkg);
+      console.log("Saving item:", newPkg);
+      if (activeTab === 'topics') {
+        await saveTopicToDb(newPkg);
+        await fetchTopics();
+      } else {
+        await savePackageToDb(newPkg);
+        await fetchPackages();
+      }
+
+      // Handle Reward Flow if approved
+      if (approve) {
+        await processRewardFlow(newPkg);
+      }
+
       setIsPackageModalOpen(false);
       resetPkgForm();
-      fetchPackages();
-    } catch (e) {
-      alert("저장 실패");
+    } catch (e: any) {
+      console.error("Save failed:", e);
+      alert(`저장 실패: ${e.message || "알 수 없는 오류가 발생했습니다."}`);
     }
   };
 
   const handleDeletePackage = async (id: string) => {
     if (!window.confirm("삭제하시겠습니까? (복구 불가)")) return;
     try {
-      await deletePackageFromDb(id);
-      fetchPackages();
+      if (activeTab === 'topics') {
+        await deleteTopicFromDb(id);
+        fetchTopics();
+      } else {
+        await deletePackageFromDb(id);
+        fetchPackages();
+      }
     } catch (e) {
       alert("삭제 실패");
     }
   };
 
+  // Helper: Process Reward Flow
+  const processRewardFlow = async (pkg: RecommendedPackage) => {
+    if (!pkg.creatorId) return;
+
+    let rewardDays = 0;
+    const rewardInput = window.prompt("사용자에게 이용권 보상을 지급하시겠습니까? (일 단위 입력, 없으면 0 or 취소)", "3");
+    
+    if (rewardInput && !isNaN(parseInt(rewardInput))) {
+       rewardDays = parseInt(rewardInput);
+    }
+
+    let rewardMessage = "";
+    
+    if (rewardDays > 0) {
+       // Update User Expiry
+       try {
+         const userDocRef = doc(db, 'users', pkg.creatorId);
+         const userSnap = await getDoc(userDocRef);
+         
+         if (userSnap.exists()) {
+            const userData = userSnap.data() as UserData;
+            const currentExpiry = userData.expiresAt ? new Date(userData.expiresAt).getTime() : 0;
+            const now = Date.now();
+            const baseTime = currentExpiry > now ? currentExpiry : now;
+            const newExpiry = new Date(baseTime + (rewardDays * 24 * 60 * 60 * 1000)).toISOString();
+            
+            const updates: any = { expiresAt: newExpiry };
+            // FIX: Do not downgrade admin to approved
+            if (userData.role !== 'admin') {
+               updates.role = 'approved';
+            }
+
+            await updateDoc(userDocRef, updates);
+            rewardMessage = `\n🎁 보상으로 이용기간이 ${rewardDays}일 연장되었습니다!`;
+         }
+       } catch (err) {
+          console.error("Failed to give reward", err);
+          alert("보상 지급 중 오류가 발생했습니다 (승인은 완료됨).");
+       }
+    }
+
+    await sendNotification(pkg.creatorId, {
+       userId: pkg.creatorId,
+       title: activeTab === 'topics' ? '🎉 추천 소재 승인 완료' : '🎉 추천 패키지 승인 완료',
+       message: `'${pkg.title}' ${activeTab === 'topics' ? '소재' : '패키지'}가 승인되어 공개되었습니다.${rewardMessage}`,
+       type: 'success'
+    });
+    
+    if (rewardDays > 0) alert(`승인 및 ${rewardDays}일 보상 지급 완료`);
+  };
+
   const handleApprovePackage = async (pkg: RecommendedPackage) => {
-    if (!window.confirm(`'${pkg.title}' 패키지를 승인하여 공개하시겠습니까?`)) return;
+    // 1. Confirm Approval
+    if (!window.confirm(`'${pkg.title}' ${activeTab === 'topics' ? '소재' : '패키지'}를 승인하여 공개하시겠습니까?`)) return;
+
     try {
       const updatedPkg: RecommendedPackage = { ...pkg, status: 'approved' };
-      await savePackageToDb(updatedPkg);
       
-      // Send notification if creatorId exists
-      if (pkg.creatorId) {
-        await sendNotification(pkg.creatorId, {
-           userId: pkg.creatorId,
-           title: '추천 패키지 승인 완료',
-           message: `'${pkg.title}' 패키지가 승인되어 공개되었습니다.`,
-           type: 'success'
-        });
+      // 2. Save "Approved" status
+      if (activeTab === 'topics') {
+        await saveTopicToDb(updatedPkg);
+        await fetchTopics();
+      } else {
+        await savePackageToDb(updatedPkg);
+        await fetchPackages();
       }
+      
+      // 3. Handle User Reward
+      await processRewardFlow(updatedPkg);
 
-      fetchPackages();
     } catch (e) {
       alert("승인 처리 실패");
     }
   };
 
-  const filteredPackages = useMemo(() => {
-    return packages.filter(p => {
+  const filteredItems = useMemo(() => {
+    const targetList = activeTab === 'topics' ? topics : packages;
+    return targetList.filter(p => {
        if (packageFilter === 'all') return true;
        // If status is undefined, treat as approved (legacy)
        const status = p.status || 'approved'; 
        return status === packageFilter;
     });
-  }, [packages, packageFilter]);
+  }, [packages, topics, packageFilter, activeTab]);
 
   const openEditPackage = (pkg: RecommendedPackage) => {
     setEditingPackage(pkg);
@@ -314,6 +467,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     setPkgCategory('');
     setPkgTargetGroup('');
     setPkgChannels([]);
+    setPkgScheduledAt(null);
     setPkgChannelInput('');
   };
 
@@ -539,6 +693,15 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                    <div className="flex items-center gap-1">
                       <span>추천 팩 관리</span>
                       {activeTab !== 'packages' && <span className="bg-accent-hot size-2 rounded-full"></span>}
+                   </div>
+                 </button>
+                 <button 
+                   onClick={() => setActiveTab('topics')}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'topics' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                 >
+                   <div className="flex items-center gap-1">
+                      <span>추천 소재 관리</span>
+                      {activeTab !== 'topics' && <span className="bg-amber-500 size-2 rounded-full"></span>}
                    </div>
                  </button>
               </div>
@@ -830,72 +993,76 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                    ))}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {filteredPackages.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredItems.length === 0 ? (
                     <div className="col-span-full py-20 text-center text-slate-400 text-sm">
-                        해당하는 패키지가 없습니다.
+                        해당하는 {activeTab === 'topics' ? '소재' : '패키지'}가 없습니다.
                     </div>
                   ) : (
-                    filteredPackages.map(pkg => {
-                      const status = pkg.status || 'approved';
-                      return (
-                        <div key={pkg.id} className={`relative bg-white dark:bg-slate-900 border rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all space-y-4 ${status === 'pending' ? 'border-orange-200 dark:border-orange-500/30 ring-1 ring-orange-100 dark:ring-orange-900/20' : 'border-slate-200 dark:border-slate-800'}`}>
-                          {status === 'pending' && (
-                            <div className="absolute top-4 right-4 bg-orange-100 text-orange-600 px-2 py-0.5 rounded text-[10px] font-black uppercase">
-                              승인 대기중
-                            </div>
-                          )}
-                          
-                          <div className="flex items-start justify-between pr-8">
-                            <div>
-                              <span className="text-[10px] uppercase font-bold text-primary bg-primary/10 px-2 py-1 rounded">{pkg.category}</span>
-                              <h3 className="text-lg font-black mt-2 leading-tight">{pkg.title}</h3>
-                              {pkg.creatorName && (
-                                <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1">
-                                  <span className="material-symbols-outlined text-[12px]">person</span>
-                                  제안자: {pkg.creatorName}
-                                </p>
-                              )}
-                              <p className="text-xs text-slate-500 mt-2 line-clamp-2">{pkg.description}</p>
-                            </div>
-                          </div>
-                          
-                          <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl space-y-3">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase">포함된 채널 ({pkg.channelCount}개)</p>
-                            <div className="flex flex-wrap gap-2">
-                                {pkg.channels.slice(0, 5).map(ch => (
-                                  <img key={ch.id} src={ch.thumbnail} className="size-8 rounded-full border border-slate-200 dark:border-slate-700 bg-white" title={ch.title} />
-                                ))}
-                                {pkg.channels.length > 5 && (
-                                  <div className="size-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                      +{pkg.channels.length - 5}
-                                  </div>
-                                )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-                             <span className="text-[10px] text-slate-400">
-                               {new Date(pkg.createdAt).toLocaleDateString()}
+                    filteredItems.map(pkg => (
+                    <div key={pkg.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-all group">
+                       <div className="p-6 space-y-4">
+                         <div className="flex items-center justify-between">
+                           <span className={`text-[10px] font-black uppercase px-2 py-1 rounded ${activeTab === 'topics' ? 'text-amber-500 bg-amber-500/10' : 'text-indigo-500 bg-indigo-500/10'}`}>
+                              {activeTab === 'topics' ? '추천 소재' : pkg.category}
+                           </span>
+                           <span className={`${getStatusColor(pkg.status)} px-2 py-0.5 rounded text-[10px] uppercase font-bold`}>
+                            {getStatusLabel(pkg.status)}
+                          </span>
+                          {pkg.scheduledAt && new Date(pkg.scheduledAt).getTime() > Date.now() && (
+                             <span className="text-[10px] text-indigo-500 font-bold bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded flex items-center gap-1">
+                               <span className="material-symbols-outlined text-[10px]">event</span>
+                               {new Date(pkg.scheduledAt).toLocaleDateString()} {new Date(pkg.scheduledAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} 공개예정
                              </span>
-                             <div className="flex items-center gap-1">
-                                {status === 'pending' && (
-                                  <button onClick={() => handleApprovePackage(pkg)} className="flex items-center gap-1 bg-emerald-500/10 text-emerald-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-500 hover:text-white transition-colors mr-2">
-                                     <span className="material-symbols-outlined text-sm">check</span>
-                                     승인
-                                  </button>
-                                )}
-                                <button onClick={() => openDuplicatePackage(pkg)} className="text-slate-400 hover:text-indigo-500 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800" title="복제"><span className="material-symbols-outlined text-lg">content_copy</span></button>
-                                <button onClick={() => openEditPackage(pkg)} className="text-slate-400 hover:text-primary p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800" title="수정"><span className="material-symbols-outlined text-lg">edit</span></button>
-                                <button onClick={() => handleDeletePackage(pkg.id)} className="text-slate-400 hover:text-rose-500 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800" title={status === 'pending' ? '거절 (삭제)' : '삭제'}><span className="material-symbols-outlined text-lg">delete</span></button>
-                             </div>
-                          </div>
+                          )}
+                          {!pkg.scheduledAt && (
+                             <span className="text-[10px] text-slate-400 font-medium">
+                               {new Date(pkg.createdAt).toLocaleDateString()} 등록됨
+                             </span>
+                          )}
                         </div>
-                      );
-                    })
+
+                         {pkg.creatorName && (
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-lg w-fit">
+                               <span className="material-symbols-outlined text-sm text-indigo-500">face</span>
+                               <span className="font-bold text-slate-700 dark:text-slate-300">{pkg.creatorName}</span>
+                               <span>님이 제안함</span>
+                            </div>
+                         )}
+                         
+                         <div className="space-y-1">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white line-clamp-1">{pkg.title}</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 h-8">{pkg.description}</p>
+                         </div>
+
+                         <div className="flex items-center gap-2 py-3 border-y border-slate-100 dark:border-slate-800">
+                            <div className="flex -space-x-2">
+                               {pkg.channels.slice(0,3).map(c => (
+                                 <img key={c.id} src={c.thumbnail} className="size-6 rounded-full border border-white dark:border-slate-800" />
+                               ))}
+                               {pkg.channels.length > 3 && (
+                                 <div className="size-6 rounded-full bg-slate-100 dark:bg-slate-800 border border-white dark:border-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-500">+{pkg.channels.length - 3}</div>
+                               )}
+                            </div>
+                            <span className="text-xs text-slate-400">총 {pkg.channelCount}개 채널</span>
+                         </div>
+
+                         <div className="flex gap-2">
+                            <button onClick={() => openEditPackage(pkg)} className="flex-1 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 py-2 rounded-lg text-xs font-bold transition-colors">수정</button>
+                            <button onClick={() => openDuplicatePackage(pkg)} className="px-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 py-2 rounded-lg text-xs font-bold transition-colors" title="복제"><span className="material-symbols-outlined text-sm">content_copy</span></button>
+                            
+                            {(pkg.status === 'pending') && (
+                              <button onClick={() => handleApprovePackage(pkg)} className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold transition-colors">승인</button>
+                            )}
+                            
+                            <button onClick={() => handleDeletePackage(pkg.id)} className="px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 dark:hover:bg-rose-900/40 text-rose-500 py-2 rounded-lg transition-colors"><span className="material-symbols-outlined text-sm">delete</span></button>
+                         </div>
+                       </div>
+                    </div>
+                  ))
                   )}
                 </div>
-            </div>
+             </div>
           )}
         </div>
         
@@ -995,10 +1162,12 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
           <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 z-20 flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
              <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]"> 
                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
-                 <h3 className="text-xl font-black italic uppercase text-slate-900 dark:text-white flex items-center gap-2">
-                   <span className="material-symbols-outlined text-primary">inventory_2</span>
-                   {editingPackage ? '추천 팩 수정' : '새 추천 팩 만들기'}
-                 </h3>
+                  <h3 className="text-xl font-black italic uppercase text-slate-900 dark:text-white flex items-center gap-2">
+                    <span className={`material-symbols-outlined ${activeTab === 'topics' ? 'text-amber-500' : 'text-primary'}`}>{activeTab === 'topics' ? 'lightbulb' : 'inventory_2'}</span>
+                    {editingPackage 
+                      ? (activeTab === 'topics' ? '추천 소재 수정' : '추천 팩 수정') 
+                      : (activeTab === 'topics' ? '새 추천 소재 만들기' : '새 추천 팩 만들기')}
+                  </h3>
                  <button onClick={() => setIsPackageModalOpen(false)} className="text-slate-400 hover:text-rose-500"><span className="material-symbols-outlined">close</span></button>
                </div>
                
@@ -1006,33 +1175,54 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                  <div className="grid grid-cols-2 gap-6">
                    <div className="space-y-4">
                      <div>
-                       <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">패키지 제목</label>
+                       <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{activeTab === 'topics' ? '추천 소재 제목' : '패키지 제목'}</label>
                        <input 
                          value={pkgTitle} 
                          onChange={(e) => setPkgTitle(e.target.value)} 
-                         placeholder="예: 2024 상반기 떡상 가이드"
+                         placeholder={activeTab === 'topics' ? "예: 떡상하는 쇼츠 특징 분석" : "예: 2024 상반기 떡상 가이드"}
                          className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-primary/20"
                        />
                      </div>
-                     <div>
-                       <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">타겟 그룹 이름 (선택)</label>
-                       <input 
-                         value={pkgTargetGroup} 
-                         onChange={(e) => setPkgTargetGroup(e.target.value)} 
-                         placeholder="예: 주식 필수 채널 (다운로드 시 그룹 생성)"
-                         className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-primary/20"
-                       />
-                     </div>
+                     {activeTab !== 'topics' && (
+                       <div>
+                         <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">타겟 그룹 이름 (선택)</label>
+                         <input 
+                           value={pkgTargetGroup} 
+                           onChange={(e) => setPkgTargetGroup(e.target.value)} 
+                           placeholder="예: 주식 필수 채널 (다운로드 시 그룹 생성)"
+                           className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-primary/20"
+                         />
+                       </div>
+                     )}
                    </div>
                    <div>
-                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">설명</label>
+                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{activeTab === 'topics' ? '추천 이유' : '설명'}</label>
                      <textarea 
                        value={pkgDesc} 
                        onChange={(e) => setPkgDesc(e.target.value)} 
-                       placeholder="이 패키지에 대한 설명을 입력하세요..."
+                       placeholder={activeTab === 'topics' ? "이 소재를 추천하는 이유를 입력하세요..." : "이 패키지에 대한 설명을 입력하세요..."}
                        className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm h-[124px] resize-none focus:ring-2 focus:ring-primary/20"
                      />
                    </div>
+                 </div>
+
+
+
+                 <div className="flex gap-4 mb-4">
+                    <div className="flex-1">
+                       <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">공개 예정일 (선택)</label>
+                       <DatePicker
+                          selected={pkgScheduledAt}
+                          onChange={(date) => setPkgScheduledAt(date)}
+                          showTimeSelect
+                          timeFormat="HH:mm"
+                          timeIntervals={60}
+                          dateFormat="yyyy.MM.dd HH:mm"
+                          placeholderText="즉시 공개"
+                          className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                       />
+                       <p className="text-[10px] text-slate-400 mt-1">설정하지 않으면 즉시 공개됩니다.</p>
+                    </div>
                  </div>
 
                  <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
@@ -1066,30 +1256,40 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                       ) : (
                         <div className="grid grid-cols-1 gap-2">
                            {pkgChannels.map((ch, idx) => (
-                             <a 
-                               href={ch.customUrl ? (ch.customUrl.startsWith('http') ? ch.customUrl : `https://www.youtube.com/${ch.customUrl}`) : `https://www.youtube.com/channel/${ch.id}`}
-                               target="_blank"
-                               rel="noopener noreferrer"
-                               key={`${ch.id}-${idx}`} 
-                               className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800 group hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                             >
-                                <img src={ch.thumbnail} className="size-8 rounded-full bg-slate-200" />
-                                <div className="flex-1 min-w-0">
-                                   <div className="font-bold text-xs truncate dark:text-slate-200 group-hover:text-primary transition-colors">{ch.title}</div>
-                                   <div className="text-[10px] text-slate-400 truncate">{ch.id}</div>
-                                </div>
-                                <button 
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setPkgChannels(prev => prev.filter(c => c.id !== ch.id));
-                                  }}
-                                  className="text-slate-300 hover:text-rose-500 p-1 opacity-0 group-hover:opacity-100 transition-all z-10 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded"
-                                  title="목록에서 삭제"
-                                >
-                                   <span className="material-symbols-outlined text-lg">close</span>
-                                </button>
-                             </a>
+                             <div key={`${ch.id}-${idx}`} className="bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-3 mb-2">
+                               <div className="flex items-center gap-3">
+                                 <img src={ch.thumbnail} className="size-10 rounded-full bg-slate-200" />
+                                 <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-sm truncate dark:text-slate-200">{ch.title}</div>
+                                    <div className="text-[10px] text-slate-400 truncate">{ch.id}</div>
+                                 </div>
+                                 <button 
+                                   onClick={() => {
+                                     setPkgChannels(prev => prev.filter(c => c.id !== ch.id));
+                                   }}
+                                   className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
+                                 >
+                                    <span className="material-symbols-outlined text-sm">delete</span>
+                                 </button>
+                               </div>
+                               
+                               {/* Admin Preview of Popular Videos */}
+                               {ch.topVideos && ch.topVideos.length > 0 && (
+                                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                                   {ch.topVideos.map(vid => (
+                                     <a key={vid.id} href={`https://youtu.be/${vid.id}`} target="_blank" rel="noreferrer" className="group block relative aspect-video rounded-lg overflow-hidden bg-slate-100">
+                                        <img src={vid.thumbnail} className="w-full h-full object-cover" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                           <span className="material-symbols-outlined text-white text-lg">play_circle</span>
+                                        </div>
+                                        <div className="absolute bottom-0 inset-x-0 p-1 bg-gradient-to-t from-black/80 to-transparent text-[9px] text-white truncate px-1.5">
+                                           {parseInt(vid.views).toLocaleString()}회
+                                        </div>
+                                     </a>
+                                   ))}
+                                 </div>
+                               )}
+                             </div>
                            ))}
                         </div>
                       )}
@@ -1104,13 +1304,27 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                  >
                    취소
                  </button>
-                 <button 
-                   onClick={handleSavePackage}
-                   className="flex-[2] py-3 font-bold text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-colors shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
-                 >
-                   <span className="material-symbols-outlined text-lg">save</span>
-                   {editingPackage ? '수정 사항 저장' : '패키지 생성 완료'}
-                 </button>
+
+                  <div className="flex-[2] flex gap-2">
+                    {editingPackage && editingPackage.status !== 'approved' && (
+                       <button 
+                         onClick={() => handleSavePackage(true)}
+                         className="flex-1 py-3 font-bold text-white rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20"
+                       >
+                          <span className="material-symbols-outlined text-lg">verified</span>
+                          저장 및 승인
+                       </button>
+                    )}
+                    <button 
+                      onClick={() => handleSavePackage(false)}
+                      className={`flex-1 py-3 font-bold text-white rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2 ${activeTab === 'topics' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20'}`}
+                    >
+                      <span className="material-symbols-outlined text-lg">save</span>
+                      {editingPackage 
+                        ? '수정 사항 저장' 
+                        : (activeTab === 'topics' ? '소재 등록 완료' : '패키지 생성 완료')}
+                    </button>
+                  </div>
                </div>
              </div>
           </div>

@@ -63,9 +63,9 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     let url = "";
     if (channelIdToLookup || identifier.type === 'id') {
       const id = channelIdToLookup || identifier.value;
-      url = `${YOUTUBE_BASE_URL}/channels?part=snippet&id=${id}&key=${apiKey}`;
+      url = `${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${id}&key=${apiKey}`;
     } else if (identifier.type === 'handle') {
-      url = `${YOUTUBE_BASE_URL}/channels?part=snippet&forHandle=${encodeURIComponent(identifier.value)}&key=${apiKey}`;
+      url = `${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&forHandle=${encodeURIComponent(identifier.value)}&key=${apiKey}`;
     } else return null;
 
     const res = await fetch(url);
@@ -83,7 +83,9 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     return {
       id: channel.id,
       title: channel.snippet.title,
-      thumbnail: channel.snippet.thumbnails.default.url
+      thumbnail: channel.snippet.thumbnails.default.url,
+      subscriberCount: formatNumber(parseInt(channel.statistics.subscriberCount || "0")),
+      videoCount: formatNumber(parseInt(channel.statistics.videoCount || "0"))
     };
   } catch (e) {
     return null;
@@ -396,5 +398,47 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   } catch (e: any) {
     console.error("Auto Detect Failed", e);
     throw e;
+  }
+};
+
+export const fetchChannelPopularVideos = async (apiKey: string, channelId: string): Promise<any[]> => {
+  try {
+    // 1. Get Uploads Playlist ID (cheaper) - but user wants "Most Popular", so we must use 'search' with order=viewCount
+    // using search is expensive (100 units). 
+    // Alternative: List videos by channelId is NOT supported for sorting by viewCount directly in 'videos' endpoint (that's myVideos).
+    // Actually, 'search' endpoint is the way: type=video, channelId=..., order=viewCount.
+    
+    // However, to save quota we can fallback to 'date' if quota is tight, but 'viewCount' is critical request.
+    const res = await fetch(`${YOUTUBE_BASE_URL}/search?part=snippet&type=video&channelId=${channelId}&order=viewCount&maxResults=5&key=${apiKey}`);
+    trackUsage('search', 1);
+    const data = await res.json();
+    
+    if (data.error) return [];
+    if (!data.items) return [];
+
+    // Search results don't have stats (view count). We need another call if we want to show view counts.
+    // User requested "Show most viewed videos". 
+    // We can show titles and thumbnails first. If view count is strictly needed, we do a second call.
+    // Let's do the second call for quality.
+    
+    const videoIds = data.items.map((i: any) => i.id.videoId).join(',');
+    const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=statistics,contentDetails,snippet&id=${videoIds}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const vData = await vRes.json();
+    
+    if (!vData.items) return [];
+    
+    return vData.items.map((item: any) => ({
+      id: item.id,
+      title: item.snippet.title,
+      thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      views: formatNumber(parseInt(item.statistics.viewCount || "0")),
+      date: item.snippet.publishedAt,
+      duration: parseISO8601Duration(item.contentDetails.duration)
+    }));
+
+  } catch (e) {
+    console.error("Failed to fetch popular videos", e);
+    return [];
   }
 };

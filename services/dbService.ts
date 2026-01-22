@@ -63,7 +63,24 @@ export const deletePackageFromDb = async (pkgId: string) => {
 export const getPackagesFromDb = async (): Promise<RecommendedPackage[]> => {
   const q = query(collection(db, "recommended_packages"));
   const querySnapshot = await getDocs(q);
-  // Sort by createdAt desc in code or query? Query requires index. Code is safer for small sets.
+  return querySnapshot.docs
+    .map(doc => doc.data() as RecommendedPackage)
+    .sort((a, b) => b.createdAt - a.createdAt);
+};
+
+// --- Recommended Topics (New Feature) ---
+
+export const saveTopicToDb = async (pkg: RecommendedPackage) => {
+  await setDoc(doc(db, "recommended_topics", pkg.id), pkg);
+};
+
+export const deleteTopicFromDb = async (pkgId: string) => {
+  await deleteDoc(doc(db, "recommended_topics", pkgId));
+};
+
+export const getTopicsFromDb = async (): Promise<RecommendedPackage[]> => {
+  const q = query(collection(db, "recommended_topics"));
+  const querySnapshot = await getDocs(q);
   return querySnapshot.docs
     .map(doc => doc.data() as RecommendedPackage)
     .sort((a, b) => b.createdAt - a.createdAt);

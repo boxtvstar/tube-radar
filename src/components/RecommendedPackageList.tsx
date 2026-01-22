@@ -1,7 +1,10 @@
 import React from 'react';
 import { RecommendedPackage } from '../../types';
 
-import { ChannelGroup } from '../../types';
+import { useAuth } from '../contexts/AuthContext';
+import { ChannelGroup, SavedChannel } from '../../types';
+import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
+import { saveTopicToDb } from '../../services/dbService';
 
 interface RecommendedPackageListProps {
   packages: RecommendedPackage[];
@@ -9,13 +12,20 @@ interface RecommendedPackageListProps {
   isAdding?: boolean;
   groups: ChannelGroup[];
   activeGroupId: string;
+  mode?: 'package' | 'topic';
 }
 
-export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ packages, onAdd, isAdding, groups, activeGroupId }) => {
-  // Filter only approved packages for public view
+export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ packages, onAdd, isAdding, groups, activeGroupId, mode = 'package' }) => {
   const approvedPackages = React.useMemo(() => 
     packages.filter(p => !p.status || p.status === 'approved'), 
   [packages]);
+
+  // Live Timer for Countdown
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000); // Update every minute
+    return () => clearInterval(timer);
+  }, []);
 
   const [selectedPackage, setSelectedPackage] = React.useState<RecommendedPackage | null>(null);
   const [selectedChannelIds, setSelectedChannelIds] = React.useState<string[]>([]);
@@ -38,6 +48,21 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
     }
   }, [selectedPackage, activeGroupId, groups]);
 
+  const { user } = useAuth();
+
+  // [Cost Optimization] Use Snapshot Data from DB
+  const popularVideos = React.useMemo(() => {
+    if (selectedPackage && selectedPackage.channels.length > 0) {
+      const mainChannel = selectedPackage.channels[0];
+      if (mainChannel.topVideos && mainChannel.topVideos.length > 0) {
+        return mainChannel.topVideos;
+      }
+    }
+    return [];
+  }, [selectedPackage]);
+
+  const isLoadingVideos = false; // Snapshot is instant
+
   React.useEffect(() => {
     if (selectedPackage) {
       // Default: Select ALL channels when opening
@@ -53,75 +78,285 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
     );
   };
 
+  // --- Proposal Modal State ---
+  const [isSuggestModalOpen, setIsSuggestModalOpen] = React.useState(false);
+  const [suggestTitle, setSuggestTitle] = React.useState('');
+  const [suggestDesc, setSuggestDesc] = React.useState('');
+  
+  // Interactive Channel Management State
+  const [suggestChannelInput, setSuggestChannelInput] = React.useState('');
+  const [suggestChannels, setSuggestChannels] = React.useState<SavedChannel[]>([]);
+  const [isResolvingSuggest, setIsResolvingSuggest] = React.useState(false);
+  const [isSubmittingContext, setIsSubmittingContext] = React.useState(false);
+  const [isSuccessSuggest, setIsSuccessSuggest] = React.useState(false);
+
+  // Reset form when opening/closing
+  React.useEffect(() => {
+    if (!isSuggestModalOpen) {
+      setSuggestTitle('');
+      setSuggestDesc('');
+      setSuggestChannelInput('');
+      setSuggestChannels([]);
+      setIsSuccessSuggest(false);
+    }
+  }, [isSuggestModalOpen]);
+
+  // Helper to get API Key
+  const getUserApiKey = () => {
+    if (!user) return null;
+    return localStorage.getItem(`yt_api_key_${user.uid}`) || localStorage.getItem('yt_api_key_guest') || localStorage.getItem('admin_yt_key');
+  };
+
+  const handleAddChannelToSuggest = async () => {
+    if (!suggestChannelInput.trim()) return;
+    const apiKey = getUserApiKey();
+    if (!apiKey) return alert("API 키가 필요합니다.");
+
+    setIsResolvingSuggest(true);
+    try {
+      // Allow multiple inputs (comma/newline) but usually user types one
+      const inputs = suggestChannelInput.split(/[,\n\s]+/).filter(s => s.trim().length > 0);
+      let addedCount = 0;
+
+      for (const input of inputs) {
+        try {
+          // Check if already added
+          if (suggestChannels.some(c => c.id === input || c.customUrl === input)) continue;
+          
+          const info = await getChannelInfo(apiKey, input);
+          if (info) {
+             if (!suggestChannels.some(c => c.id === info.id)) {
+                // Fetch Popular Videos for this channel
+                try {
+                   const topVideos = await fetchChannelPopularVideos(apiKey, info.id);
+                   info.topVideos = topVideos;
+                } catch (err) {
+                   console.log("Failed to fetch videos for user suggestion", err);
+                }
+
+                setSuggestChannels(prev => [...prev, info]);
+                addedCount++;
+             }
+          }
+        } catch (e) {
+          console.error(`Failed to resolve ${input}`, e);
+        }
+      }
+
+      if (addedCount > 0) {
+        setSuggestChannelInput('');
+      } else {
+        alert("채널을 찾을 수 없거나 이미 추가되었습니다.");
+      }
+    } catch (e) {
+      alert("검색 중 오류가 발생했습니다.");
+    } finally {
+      setIsResolvingSuggest(false);
+    }
+  };
+
+  const handleSuggest = async () => {
+    if (!suggestTitle.trim()) return alert("제목을 입력해주세요.");
+    if (suggestChannels.length === 0) return alert("최소 1개 이상의 채널을 추가해주세요.");
+    if (!user) return alert("로그인이 필요합니다.");
+
+    setIsSubmittingContext(true);
+    try {
+      // Save as Pending Topic
+      await saveTopicToDb({
+        id: Date.now().toString(),
+        title: suggestTitle,
+        description: suggestDesc,
+        category: 'Topic', // User suggestion
+        createdAt: Date.now(),
+        channels: suggestChannels,
+        channelCount: suggestChannels.length,
+        status: 'pending',
+        creatorId: user.uid,
+        creatorName: user.displayName || 'Anonymous User'
+      });
+      
+      
+      setIsSuccessSuggest(true);
+    } catch (e) {
+      console.error(e);
+      alert("등록 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmittingContext(false);
+    }
+  };
+
   const isAllSelected = selectedPackage && selectedPackage.channels.length === selectedChannelIds.length;
 
   return (
     <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
        <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-xl dark:shadow-2xl relative overflow-hidden">
-         <div className="space-y-4 max-w-2xl relative z-10">
-            <h2 className="text-2xl font-black italic tracking-tighter text-indigo-500 uppercase flex items-center gap-3">
-              <span className="material-symbols-outlined text-3xl">inventory_2</span>
-              추천 채널 팩
-            </h2>
-            <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed">
-              전문가가 엄선한 유튜브 채널 모음을 확인하세요. <br />
-              원하는 팩을 선택하면 내 모니터링 리스트로 <b>일괄 추가</b>할 수 있습니다.
-            </p>
+         <div className="space-y-4 w-full relative z-10">
+            <div className="flex items-center justify-between">
+               <h2 className={`text-2xl font-black italic tracking-tighter uppercase flex items-center gap-3 ${mode === 'topic' ? 'text-amber-500' : 'text-indigo-500'}`}>
+                 <span className="material-symbols-outlined text-3xl">{mode === 'topic' ? 'lightbulb' : 'inventory_2'}</span>
+                 {mode === 'topic' ? '유튜브 추천 소재' : '추천 채널 팩'}
+               </h2>
+               {mode === 'topic' && (
+                  <button 
+                    onClick={(e) => {
+                       e.stopPropagation();
+                       console.log("Opening suggest modal");
+                       setIsSuggestModalOpen(true);
+                    }}
+                    className="bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors flex items-center gap-1 shadow-lg shadow-amber-500/20 z-50 cursor-pointer pointer-events-auto"
+                  >
+                    <span className="material-symbols-outlined text-sm">edit_square</span>
+                    <span className="hidden md:inline">소재 등록하기</span>
+                  </button>
+               )}
+               {mode !== 'topic' && (
+                  <button 
+                    onClick={(e) => {
+                       e.stopPropagation();
+                       setIsSuggestModalOpen(true);
+                    }}
+                    className="bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors flex items-center gap-1 shadow-lg shadow-indigo-500/20 z-50 cursor-pointer pointer-events-auto"
+                  >
+                    <span className="material-symbols-outlined text-sm">ios_share</span>
+                    <span className="hidden md:inline">추천 채널 공유하기</span>
+                  </button>
+               )}
+            </div>
+            {mode !== 'topic' ? (
+              <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed">
+                우리들끼리 공유하는 유튜브 채널 모음을 확인하세요. <br />
+                원하는 팩을 선택하면 내 모니터링 리스트로 <b>일괄 추가</b>할 수 있습니다.
+              </p>
+            ) : (
+               <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed">
+                 콘텐츠 제작을 위한 <span className="text-amber-500 font-bold">참신한 소재와 아이디어</span>를 발견하세요.<br />
+                 엄선된 주제별 채널들을 통해 새로운 영감을 얻을 수 있습니다.
+               </p>
+            )}
          </div>
          
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-12 relative z-10">
             {approvedPackages.length === 0 ? (
                <div className="col-span-full py-20 text-center text-slate-400 text-sm font-medium">
-                  등록된 추천 팩이 없습니다.
+                  {mode === 'topic' ? '등록된 추천 소재가 없습니다.' : '등록된 추천 팩이 없습니다.'}
                </div>
             ) : (
-               approvedPackages.slice(0, 8).map(pkg => (
+               approvedPackages.slice(0, 8).map((pkg) => {
+                const isScheduled = pkg.scheduledAt && new Date(pkg.scheduledAt).getTime() > now;
+                const scheduledDate = pkg.scheduledAt ? new Date(pkg.scheduledAt) : null;
+                
+                // Calculate simplistic countdown for display
+                let countdown = "";
+                if (isScheduled && scheduledDate) {
+                   const diff = scheduledDate.getTime() - now;
+                   const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                   const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                   const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                   if (d > 0) countdown = `D-${d} ${h}시간`;
+                   else if (h > 0) countdown = `${h}시간 ${m}분 후 공개`;
+                   else countdown = `${m}분 후 공개`;
+                }
+
+                return (
                   <div 
                     key={pkg.id} 
-                    onClick={() => setSelectedPackage(pkg)}
-                    className="bg-slate-50 dark:bg-black/20 rounded-3xl border border-slate-100 dark:border-white/5 overflow-hidden group hover:scale-[1.02] transition-all hover:shadow-xl hover:border-indigo-500/30 cursor-pointer flex flex-col h-full"
+                    onClick={() => !isScheduled && setSelectedPackage(pkg)}
+                    className={`group bg-white dark:bg-slate-900 rounded-[2rem] p-6 border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 transition-all duration-300 relative flex flex-col h-full ${
+                       isScheduled ? 'cursor-not-allowed select-none' : 'hover:shadow-2xl hover:shadow-indigo-500/10 cursor-pointer hover:-translate-y-1'
+                    }`}
                   >
-                     <div className="p-6 flex flex-col gap-4 h-full">
-                       <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-indigo-500 bg-indigo-500/10 px-2 py-1 rounded">{pkg.category}</span>
-                          <span className="text-[10px] text-slate-400">{new Date(pkg.createdAt).toLocaleDateString()}</span>
+                     {/* Locked Overlay for Scheduled Items */}
+                     {isScheduled && (
+                        <div className="absolute inset-0 z-20 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-[2rem] flex flex-col items-center justify-center text-center p-6 border border-white/20">
+                           <div className="size-16 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center mb-4 shadow-xl animate-pulse">
+                              <span className="material-symbols-outlined text-3xl">lock_clock</span>
+                           </div>
+                           <h3 className="font-black text-xl text-slate-900 dark:text-white mb-2">Coming Soon</h3>
+                           <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-500 font-mono mb-2">
+                              {countdown}
+                           </div>
+                           <p className="text-xs font-bold text-slate-400">
+                             {scheduledDate?.toLocaleDateString()} {scheduledDate?.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 공개
+                           </p>
+                        </div>
+                     )}
+
+                     <div className={`flex flex-col h-full ${isScheduled ? 'opacity-20 grayscale' : ''}`}>
+                       <div className="flex items-start justify-between mb-4">
+                          <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            {pkg.creatorName || (pkg.category === 'Community' ? '사용자 제안' : '관리자')}
+                          </span>
+                          {/* <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            {pkg.category}
+                          </span> */ }
+                          <span className="text-[10px] font-bold text-slate-300">
+                            {new Date(pkg.createdAt).toLocaleDateString()}
+                          </span>
                        </div>
-                       <h3 className="text-lg font-black leading-tight text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors line-clamp-2 h-[3.5rem]">
+                       
+                       <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2 leading-tight group-hover:text-indigo-500 transition-colors">
                           {pkg.title}
                        </h3>
-                       <p className="text-xs text-slate-500 line-clamp-2 h-8">
+                       
+                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6 line-clamp-2 min-h-[32px]">
                           {pkg.description}
                        </p>
                        
-                       <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl flex items-center justify-between border border-slate-100 dark:border-white/5 mt-auto">
-                          <div className="flex -space-x-2">
-                             {pkg.channels.slice(0, 4).map(ch => (
-                                <img key={ch.id} src={ch.thumbnail} className="size-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200" title={ch.title} />
-                             ))}
-                             {pkg.channels.length > 4 && (
-                                <div className="size-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-500">
-                                   +{pkg.channels.length - 4}
-                                </div>
-                             )}
+                       {pkg.channels.length === 1 ? (
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl flex items-center gap-4 border border-slate-100 dark:border-white/5 mt-auto group/channel">
+                             <img src={pkg.channels[0].thumbnail} className="size-14 rounded-full border-2 border-white dark:border-slate-800 shadow-md object-cover" />
+                             <div className="flex-1 min-w-0">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Featured Channel</span>
+                                <h4 className="font-black text-sm text-slate-900 dark:text-white truncate">{pkg.channels[0].title}</h4>
+                                {(pkg.channels[0].subscriberCount || pkg.channels[0].videoCount) && (
+                                   <div className="flex items-center gap-2 mt-1 text-[10px] font-medium text-slate-500">
+                                      {pkg.channels[0].subscriberCount && <span className="flex items-center gap-0.5"><span className="material-symbols-outlined text-[10px]">group</span> {pkg.channels[0].subscriberCount}</span>}
+                                      {pkg.channels[0].videoCount && <span className="flex items-center gap-0.5"><span className="material-symbols-outlined text-[10px]">movie</span> {pkg.channels[0].videoCount}</span>}
+                                   </div>
+                                )}
+                             </div>
                           </div>
-                          <span className="text-xs font-bold text-slate-500">{pkg.channelCount} 채널</span>
-                       </div>
+                       ) : (
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl flex items-center justify-between border border-slate-100 dark:border-white/5 mt-auto">
+                             <div className="flex -space-x-2">
+                                {pkg.channels.slice(0, 4).map(ch => (
+                                   <img key={ch.id} src={ch.thumbnail} className="size-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200" title={ch.title} />
+                                ))}
+                                {pkg.channels.length > 4 && (
+                                   <div className="size-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-500">
+                                      +{pkg.channels.length - 4}
+                                   </div>
+                                )}
+                             </div>
+                             <span className="text-xs font-bold text-slate-500">{pkg.channelCount} 채널</span>
+                          </div>
+                       )}
 
                        <button 
                          onClick={(e) => {
                            e.stopPropagation();
-                           setSelectedPackage(pkg);
+                           !isScheduled && setSelectedPackage(pkg);
                          }}
-                         disabled={isAdding}
-                         className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3 rounded-xl text-xs font-black uppercase hover:bg-indigo-600 dark:hover:bg-indigo-400 dark:hover:text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                         disabled={isAdding || isScheduled}
+                         className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3 rounded-xl text-xs font-black uppercase hover:bg-indigo-600 dark:hover:bg-indigo-400 dark:hover:text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50 mt-4"
                        >
-                          <span className="material-symbols-outlined text-sm">add_circle</span>
-                          {isAdding ? '추가 중...' : '내 리스트에 담기'}
+                          {isScheduled ? (
+                            <>
+                              <span className="material-symbols-outlined text-sm">lock</span>
+                              공개 예정
+                            </>
+                          ) : (
+                            <>
+                              <span className="material-symbols-outlined text-sm">add_circle</span>
+                              {isAdding ? '추가 중...' : '내 리스트에 담기'}
+                            </>
+                          )}
                        </button>
                      </div>
                   </div>
-               ))
-            )}
+                );
+             }))}
          </div>
        </div>
 
@@ -139,7 +374,9 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
              <div className="p-8 pb-4 flex justify-between items-start border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
                <div>
                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-xs font-black uppercase text-white bg-indigo-500 px-2.5 py-1 rounded-lg shadow-lg shadow-indigo-500/20">{selectedPackage.category}</span>
+                    <span className="text-xs font-black uppercase text-white bg-indigo-500 px-2.5 py-1 rounded-lg shadow-lg shadow-indigo-500/20">
+                      {selectedPackage.creatorName || (selectedPackage.category === 'Community' ? '사용자 제안' : '관리자')}
+                    </span>
                     <span className="text-xs font-bold text-slate-400">{new Date(selectedPackage.createdAt).toLocaleDateString()} 생성</span>
                  </div>
                  <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter mb-2">{selectedPackage.title}</h2>
@@ -197,7 +434,10 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                         <img src={ch.thumbnail} alt={ch.title} className={`size-12 rounded-full border-2 shadow-sm ${isSelected ? 'border-indigo-500' : 'border-white dark:border-slate-700'}`} />
                         <div className="flex-1 min-w-0">
                           <h4 className={`font-bold text-sm truncate transition-colors ${isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-900 dark:text-slate-200'}`}>{ch.title}</h4>
-                          <p className="text-xs text-slate-400 truncate">{ch.customUrl || ch.id}</p>
+                          <div className="text-[10px] text-slate-400 truncate flex items-center gap-2">
+                             <span>{ch.customUrl || ch.id}</span>
+                             {(ch.subscriberCount) && <span className="flex items-center gap-0.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1 rounded"><span className="material-symbols-outlined text-[10px]">group</span> {ch.subscriberCount}</span>}
+                          </div>
                         </div>
                         <a href={`https://youtube.com/${ch.customUrl || 'channel/' + ch.id}`} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-red-500 p-2 z-10" onClick={(e) => e.stopPropagation()}>
                           <span className="material-symbols-outlined text-lg">open_in_new</span>
@@ -206,6 +446,49 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                     );
                  })}
                </div>
+
+               {/* Popular Videos Section */}
+               {popularVideos.length > 0 && (
+                 <div className="mt-8 animate-in slide-in-from-bottom-4">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
+                      <span className="material-symbols-outlined text-rose-500">local_fire_department</span>
+                      최고 인기 동영상 <span className="text-xs text-slate-400 font-normal">(조회수 순)</span>
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {popularVideos.map(video => (
+                        <a 
+                          key={video.id}
+                          href={`https://www.youtube.com/watch?v=${video.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group block bg-slate-50 dark:bg-slate-800/50 rounded-xl overflow-hidden hover:ring-2 hover:ring-rose-500 transition-all"
+                        >
+                           <div className="aspect-video relative overflow-hidden">
+                              <img src={video.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                              <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 rounded font-bold">{video.duration}</div>
+                           </div>
+                           <div className="p-3">
+                              <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-2 leading-tight group-hover:text-rose-500 transition-colors">{video.title}</h4>
+                              <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500">
+                                 <span className="font-bold text-slate-700 dark:text-slate-300">조회수 {video.views}</span>
+                                 <span>•</span>
+                                 <span>{new Date(video.date).toLocaleDateString()}</span>
+                              </div>
+                           </div>
+                        </a>
+                      ))}
+                    </div>
+                 </div>
+               )}
+               {isLoadingVideos && (
+                 <div className="mt-8 flex justify-center py-10">
+                    <div className="flex flex-col items-center gap-2 text-slate-400">
+                       <span className="material-symbols-outlined animate-spin text-2xl">sync</span>
+                       <span className="text-xs font-bold">인기 영상 분석 중...</span>
+                    </div>
+                 </div>
+               )}
+
              </div>
 
              {/* Modal Footer with Group Selection */}
@@ -296,6 +579,171 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
              </div>
 
            </div>
+         </div>
+       )}
+       {/* Suggestion Modal with Interactive Channel List */}
+       {/* Suggestion Modal with Interactive Channel List */}
+       {isSuggestModalOpen && (
+         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsSuggestModalOpen(false)}>
+            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[90vh] flex flex-col rounded-[2rem] shadow-2xl border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+               {isSuccessSuggest ? (
+                  <div className="p-10 flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+                     <div className="size-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                        <span className="material-symbols-outlined text-4xl text-emerald-500 animate-bounce">check_circle</span>
+                     </div>
+                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3">소재 등록 완료!</h3>
+                     <p className="text-slate-500 dark:text-slate-400 font-medium leading-relaxed mb-4">
+                        성공적으로 등록되었습니다. <br/>
+                        <b>관리자 승인 후</b> 공개됩니다.
+                     </p>
+                     <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20 mb-8 max-w-sm">
+                        <p className="text-indigo-600 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2">
+                           <span className="material-symbols-outlined text-lg">redeem</span>
+                           승인이 되면 관리자가 이용일자 보상을 지급합니다.
+                        </p>
+                     </div>
+                     <button 
+                       onClick={() => setIsSuggestModalOpen(false)}
+                       className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-10 py-3 rounded-xl font-bold hover:scale-105 transition-transform shadow-lg"
+                     >
+                       확인
+                     </button>
+                  </div>
+               ) : (
+                  <>
+                     <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-800">
+                        <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                          <span className="material-symbols-outlined text-amber-500">lightbulb</span>
+                          추천 소재 등록
+                        </h3>
+                        <button onClick={() => setIsSuggestModalOpen(false)} className="text-slate-400 hover:text-rose-500"><span className="material-symbols-outlined">close</span></button>
+                     </div>
+                     
+                     <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                       <div>
+                         <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">제목</label>
+                         <input 
+                           className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-amber-500/20 outline-none"
+                           placeholder="예: 동물 다큐멘터리"
+                           value={suggestTitle}
+                           onChange={e => setSuggestTitle(e.target.value)}
+                         />
+                       </div>
+                       
+                       <div>
+                         <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">추천 이유 (선택)</label>
+                         <textarea 
+                           className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm resize-none h-24 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                           placeholder="이 소재를 추천하는 이유를 적어주세요."
+                           value={suggestDesc}
+                           onChange={e => setSuggestDesc(e.target.value)}
+                         />
+                       </div>
+
+                       <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
+                          <label className="block text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
+                             <span>채널 구성 ({suggestChannels.length}개)</span>
+                             <span className="text-[10px] font-normal text-slate-400">핸들(@name), ID, 또는 URL 입력</span>
+                          </label>
+                          
+                          <div className="flex gap-2 mb-4">
+                             <input 
+                               value={suggestChannelInput}
+                               onChange={(e) => setSuggestChannelInput(e.target.value)}
+                               onKeyDown={(e) => e.key === 'Enter' && handleAddChannelToSuggest()}
+                               placeholder="채널을 검색하여 추가하세요..."
+                               className="flex-1 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-amber-500/20 outline-none"
+                             />
+                             <button 
+                               onClick={handleAddChannelToSuggest}
+                               disabled={isResolvingSuggest}
+                               className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 rounded-xl font-bold text-sm hover:bg-amber-500 dark:hover:bg-amber-500 hover:text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+                             >
+                               {isResolvingSuggest ? (
+                                   <>
+                                     <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                                     검색 중
+                                   </>
+                               ) : '추가'}
+                             </button>
+                          </div>
+
+                          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-2 min-h-[150px] max-h-[300px] overflow-y-auto border border-slate-200 dark:border-slate-700 custom-scrollbar">
+                             {suggestChannels.length === 0 ? (
+                               <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 py-10">
+                                  <span className="material-symbols-outlined text-3xl opacity-20">playlist_add</span>
+                                  <span className="text-xs">채널을 추가해주세요</span>
+                               </div>
+                             ) : (
+                               <div className="grid grid-cols-1 gap-2">
+                                  {suggestChannels.map((ch, idx) => (
+                                    <div key={`${ch.id}-${idx}`} className="bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-3 animate-in slide-in-from-right-2">
+                                        <div className="flex items-center gap-3">
+                                            <img src={ch.thumbnail} className="size-10 rounded-full bg-slate-200 object-cover" />
+                                            <div className="flex-1 min-w-0">
+                                               <div className="font-bold text-sm truncate dark:text-white">{ch.title}</div>
+                                               <div className="text-[10px] text-slate-400 truncate">{ch.id}</div>
+                                            </div>
+                                            <button 
+                                              onClick={() => setSuggestChannels(prev => prev.filter(c => c.id !== ch.id))}
+                                              className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
+                                            >
+                                               <span className="material-symbols-outlined text-sm">delete</span>
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Preview Videos */}
+                                        {ch.topVideos && ch.topVideos.length > 0 && (
+                                           <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                                              {ch.topVideos.map(vid => (
+                                                <a key={vid.id} href={`https://youtu.be/${vid.id}`} target="_blank" rel="noreferrer" className="group block relative aspect-video rounded-lg overflow-hidden bg-slate-100">
+                                                   <img src={vid.thumbnail} className="w-full h-full object-cover" />
+                                                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                      <span className="material-symbols-outlined text-white text-lg">play_circle</span>
+                                                   </div>
+                                                   <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] px-1 rounded-tl font-bold">
+                                                      {vid.views}
+                                                   </div>
+                                                </a>
+                                              ))}
+                                           </div>
+                                        )}
+                                    </div>
+                                  ))}
+                               </div>
+                             )}
+                          </div>
+                       </div>
+                     </div>
+
+                     <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/20 rounded-b-[2rem]">
+                       <button 
+                          onClick={() => setIsSuggestModalOpen(false)}
+                          className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                       >
+                          취소
+                       </button>
+                       <button 
+                         onClick={handleSuggest}
+                         disabled={isSubmittingContext || suggestChannels.length === 0}
+                         className="bg-amber-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-amber-600 transition-colors disabled:opacity-50 shadow-lg shadow-amber-500/20 flex items-center gap-2"
+                       >
+                         {isSubmittingContext ? (
+                            <>
+                              <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                              등록 중...
+                            </>
+                         ) : (
+                            <>
+                              <span className="material-symbols-outlined text-sm">check_circle</span>
+                              등록 신청하기
+                            </>
+                         )}
+                       </button>
+                     </div>
+                  </>
+               )}
+            </div>
          </div>
        )}
     </div>

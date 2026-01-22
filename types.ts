@@ -26,12 +26,24 @@ export interface ChannelGroup {
   name: string;
 }
 
+export interface VideoSnippet {
+  id: string;
+  title: string;
+  thumbnail: string;
+  views: string;
+  date: string;
+  duration: string;
+}
+
 export interface SavedChannel {
   id: string;
   title: string;
   thumbnail: string;
   customUrl?: string;
   groupId?: string; // 소속 그룹 ID (optional until saved)
+  subscriberCount?: string;
+  videoCount?: string;
+  topVideos?: VideoSnippet[];
 }
 
 export interface ViralStat {
@@ -73,6 +85,7 @@ export interface RecommendedPackage {
   creatorName?: string;
   creatorId?: string;
   targetGroupName?: string;
+  scheduledAt?: string; // 공개 예정일 (ISO String)
 }
 
 export interface Notification {

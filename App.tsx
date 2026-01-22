@@ -18,17 +18,19 @@ import {
 import { analyzeVideoVirality } from './services/geminiService';
 import { RecommendedPackageList } from './src/components/RecommendedPackageList';
 import { 
-  saveChannelToDb, 
-  removeChannelFromDb, 
-  getChannelsFromDb, 
-  saveGroupToDb, 
-  deleteGroupFromDb, 
+  saveChannelToDb,
+  removeChannelFromDb,
+  getChannelsFromDb,
+  saveGroupToDb,
+  deleteGroupFromDb,
   getGroupsFromDb,
   batchSaveChannels,
   getPackagesFromDb,
   savePackageToDb,
+  getTopicsFromDb,
   getNotifications,
   markNotificationAsRead,
+  sendNotification,
   deleteNotification
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
@@ -200,6 +202,8 @@ const Sidebar = ({
   onTogglePackageMode,
   isShortsDetectorMode,
   onToggleShortsDetectorMode,
+  isTopicMode,
+  onToggleTopicMode,
   hasPendingSync,
   isSyncNoticeDismissed,
   isApiKeyMissing,
@@ -225,7 +229,9 @@ const Sidebar = ({
   isApiKeyMissing: boolean,
   usage: ApiUsage,
   isShortsDetectorMode: boolean,
-  onToggleShortsDetectorMode: (val: boolean) => void
+  onToggleShortsDetectorMode: (val: boolean) => void,
+  isTopicMode: boolean,
+  onToggleTopicMode: (val: boolean) => void
 }) => {
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
@@ -245,38 +251,32 @@ const Sidebar = ({
       </div>
       
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">워크스페이스</div>
+        {/* 1. 채널 관리 */}
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">채널 관리</div>
         <div className="px-2 space-y-1">
           <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); }}
+            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); onToggleTopicMode(false); }}
             className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode
-                ? 'bg-accent-hot/10 text-accent-hot shadow-sm border border-accent-hot/20' 
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode
+                ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             }`}
           >
-            <span className="material-symbols-outlined text-[18px]">sensors</span>
+            <span className="material-symbols-outlined text-[18px]">list_alt</span>
             내 모니터링 리스트
             {hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-2 bg-accent-hot rounded-full animate-pulse shadow-[0_0_8px_#ff0055]"></span>}
           </button>
         </div>
 
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">Discovery</div>
+        <div className="px-7 pt-4 pb-2">
+          <div className="h-px bg-slate-100 dark:bg-white/5"></div>
+        </div>
+
+        {/* 2. 채널 탐색 */}
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">채널 탐색</div>
         <div className="px-2 space-y-1">
           <SidebarItem 
-            icon="inventory_2" 
-            label="추천 채널 팩" 
-            active={isPackageMode} 
-            onClick={() => {
-              onTogglePackageMode(true);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onToggleShortsDetectorMode(false);
-            }}
-          />
-          <SidebarItem 
-            icon="search_insights" 
+            icon="search" 
             label="키워드 채널 찾기" 
             active={isExplorerMode} 
             onClick={() => {
@@ -285,7 +285,9 @@ const Sidebar = ({
               onToggleMyMode(false);
               onTogglePackageMode(false);
               onToggleShortsDetectorMode(false);
-            }} 
+              onToggleTopicMode(false);
+            }}
+            className={`${isExplorerMode ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-rose-500'}`}
           />
           <SidebarItem 
             icon="bolt" 
@@ -297,12 +299,55 @@ const Sidebar = ({
               onToggleUsageMode(false);
               onToggleMyMode(false);
               onTogglePackageMode(false);
+              onToggleTopicMode(false);
             }} 
-            className={`${isShortsDetectorMode ? '!bg-rose-100 dark:!bg-rose-900/30 !text-rose-700 dark:!text-rose-300 shadow-sm border border-rose-200 dark:border-rose-800' : 'text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 hover:text-rose-600'}`}
+            className={`${isShortsDetectorMode ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-rose-500'}`}
           />
         </div>
 
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">국가별 트렌드</div>
+        <div className="px-7 pt-4 pb-2">
+          <div className="h-px bg-slate-100 dark:bg-white/5"></div>
+        </div>
+
+        {/* 3. 아이디어·추천 */}
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">아이디어·추천</div>
+        <div className="px-2 space-y-1">
+          <SidebarItem 
+            icon="lightbulb" 
+            label="유튜브 추천 소재" 
+            active={isTopicMode} 
+            onClick={() => {
+              onToggleTopicMode(true);
+              onToggleShortsDetectorMode(false);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+            }} 
+            className={`${isTopicMode ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-amber-500'}`}
+          />
+          <SidebarItem 
+            icon="inventory_2" 
+            label="추천 채널 팩" 
+            active={isPackageMode} 
+            onClick={() => {
+              onTogglePackageMode(true);
+              onToggleUsageMode(false);
+              onToggleExplorerMode(false);
+              onToggleMyMode(false);
+              onToggleShortsDetectorMode(false);
+              onToggleTopicMode(false);
+            }} 
+            className={`${isPackageMode ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-amber-500'}`}
+          />
+        </div>
+
+        <div className="px-7 pt-4 pb-2">
+          <div className="h-px bg-slate-100 dark:bg-white/5"></div>
+        </div>
+
+        {/* 4. 국가별 트렌드 (유지) */}
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">국가별 트렌드</div>
         <div className="px-2 space-y-1">
           {[
             { id: 'KR', name: '대한민국 트렌드', icon: 'location_on' },
@@ -317,11 +362,12 @@ const Sidebar = ({
                 onToggleMyMode(false);
                 onTogglePackageMode(false);
                 onToggleShortsDetectorMode(false);
+                onToggleTopicMode(false);
                 onCategoryChange('');
                 onRegionChange(item.id);
               }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode
+                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode
                   ? 'bg-primary/10 text-primary shadow-sm border border-primary/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
               }`}
@@ -332,30 +378,7 @@ const Sidebar = ({
           ))}
         </div>
 
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-4">AI 추천 카테고리</div>
-        <div className="px-2 space-y-1">
-          {CATEGORIES.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                onToggleUsageMode(false);
-                onToggleExplorerMode(false);
-                onToggleMyMode(false);
-                onTogglePackageMode(false);
-                onToggleShortsDetectorMode(false);
-                onCategoryChange(item.id);
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                selectedCategory === item.id && !isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode
-                  ? 'bg-accent-neon/10 text-accent-neon border border-accent-neon/20' 
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              {item.name}
-            </button>
-          ))}
-        </div>
+
 
         <div className="mt-auto p-4 space-y-3 pb-8">
           <button 
@@ -377,7 +400,7 @@ const Sidebar = ({
                 {percent.toFixed(0)}%
               </span>
             </div>
-            <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div 
                 className={`h-full transition-all duration-1000 ease-out rounded-full ${isCritical ? 'bg-accent-hot' : isWarning ? 'bg-orange-500' : 'bg-primary'}`}
                 style={{ width: `${percent}%` }}
@@ -664,17 +687,6 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
              )}
            </div>
 
-            {role === 'admin' && (
-              <button 
-                onClick={onOpenAdmin}
-                className="text-white bg-primary hover:bg-primary-dark transition-colors px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md shadow-primary/20"
-                title="관리자 페이지"
-              >
-                <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
-                Admin
-              </button>
-            )}
-            
             {/* Expiration Display */}
             {dDay && role !== 'admin' && (
               <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 ${
@@ -685,6 +697,17 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
                 <span className="material-symbols-outlined text-[12px]">calendar_clock</span>
                 {dDay}
               </div>
+            )}
+
+            {(role === 'admin' || role === 'approved') && (
+              <button 
+                onClick={onOpenAdmin}
+                className="text-white bg-primary hover:bg-primary-dark transition-colors px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md shadow-primary/20"
+                title="관리자 페이지"
+              >
+                <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                Admin
+              </button>
             )}
 
             <button 
@@ -771,6 +794,11 @@ export default function App() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
 
   const [recommendedPackages, setRecommendedPackages] = useState<RecommendedPackage[]>([]);
+  
+  // Topic Mode State
+  const [isTopicMode, setIsTopicMode] = useState(false);
+  const [recommendedTopics, setRecommendedTopics] = useState<RecommendedPackage[]>([]);
+
   const [channelInput, setChannelInput] = useState('');
   const [explorerQuery, setExplorerQuery] = useState('');
   const [explorerResults, setExplorerResults] = useState<SavedChannel[]>([]);
@@ -902,6 +930,12 @@ export default function App() {
       getPackagesFromDb().then(setRecommendedPackages);
     }
   }, [isPackageMode, showOnboarding, user]);
+
+  useEffect(() => {
+    if (isTopicMode && user) {
+      getTopicsFromDb().then(setRecommendedTopics);
+    }
+  }, [isTopicMode, user]);
 
   const handleAddPackageToMyList = async (pkg: RecommendedPackage, targetGroupId: string, newGroupName?: string) => {
     if (!user) {
@@ -1050,14 +1084,14 @@ export default function App() {
   if (!user) return <Login />;
 
   useEffect(() => {
-    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode && !isShortsDetectorMode && !isPackageMode) {
+    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode) {
       if (!isMyMode || !hasPendingSync) {
         loadVideos();
       } else {
         setLoading(false);
       }
     }
-  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isUsageMode, hasPendingSync]);
+  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isUsageMode, hasPendingSync, isTopicMode]);
 
   const loadVideos = async (force: boolean = false) => {
     if (!ytKey || ytApiStatus !== 'valid') {
@@ -1526,8 +1560,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(true); setVideos([]); } setIsMyMode(val); }}
         isExplorerMode={isExplorerMode} onToggleExplorerMode={setIsExplorerMode}
         isUsageMode={isUsageMode} onToggleUsageMode={setIsUsageMode}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); } setIsShortsDetectorMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); } setIsTopicMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -1563,12 +1598,30 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
           }}
         />
         
-        {isAdminOpen && role === 'admin' && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
+        {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
         
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar scroll-smooth">
           
-          {isShortsDetectorMode ? (
+          {isPackageMode ? (
+            <RecommendedPackageList 
+               packages={recommendedPackages}
+               onAdd={handleAddPackageToMyList}
+               isAdding={false} // Todo: loading state
+               groups={groups}
+               activeGroupId={activeGroupId}
+               mode="package"
+            />
+          ) : isTopicMode ? (
+            <RecommendedPackageList 
+               packages={recommendedTopics}
+               onAdd={handleAddPackageToMyList}
+               isAdding={false} 
+               groups={groups}
+               activeGroupId={activeGroupId}
+               mode="topic"
+            />
+          ) : isShortsDetectorMode ? (
              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
                  <div className="space-y-2">
@@ -1821,13 +1874,6 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
               </div>
             </div>
 
-          ) : isPackageMode ? (
-            <RecommendedPackageList 
-              packages={recommendedPackages} 
-              onAdd={handleAddPackageToMyList} 
-              groups={groups}
-              activeGroupId={activeGroupId}
-            />
           ) : isExplorerMode ? (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
               <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
