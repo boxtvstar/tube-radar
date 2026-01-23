@@ -44,6 +44,7 @@ export interface SavedChannel {
   subscriberCount?: string;
   videoCount?: string;
   topVideos?: VideoSnippet[];
+  addedAt?: number;
 }
 
 export interface ViralStat {
@@ -81,7 +82,7 @@ export interface RecommendedPackage {
   createdAt: number;
   channels: SavedChannel[];
   channelCount: number;
-  status?: 'approved' | 'pending';
+  status?: 'approved' | 'pending' | 'rejected';
   creatorName?: string;
   creatorId?: string;
   targetGroupName?: string;

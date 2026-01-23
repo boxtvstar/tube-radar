@@ -10,6 +10,7 @@ import { PendingApproval } from './src/components/PendingApproval';
 import { AdminDashboard } from './src/components/AdminDashboard';
 import { UserRole } from './src/contexts/AuthContext';
 import { GuestNoticeModal } from './src/components/GuestNoticeModal';
+import { MyPageModal } from './src/components/MyPageModal';
 import { 
   getChannelInfo, 
   fetchRealVideos,
@@ -36,6 +37,8 @@ import {
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 import type { AutoDetectResult } from './services/youtubeService';
+
+const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
 
 const formatNumber = (num: number) => {
   if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
@@ -243,15 +246,25 @@ const Sidebar = ({
 
   return (
     <aside className="w-72 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen shrink-0 bg-white dark:bg-background-dark hidden lg:flex">
-      <div className="p-6 flex items-center gap-3">
-        <div className="size-10 bg-primary rounded-lg flex items-center justify-center text-white neon-glow">
+      <button 
+        onClick={() => {
+          onToggleUsageMode(false); 
+          onToggleExplorerMode(false); 
+          onTogglePackageMode(false); 
+          onToggleMyMode(true); 
+          onToggleShortsDetectorMode(false); 
+          onToggleTopicMode(false);
+        }}
+        className="p-6 flex items-center gap-3 text-left w-full hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group"
+      >
+        <div className="size-10 bg-primary rounded-lg flex items-center justify-center text-white neon-glow group-hover:scale-110 transition-transform duration-300">
           <span className="material-symbols-outlined">analytics</span>
         </div>
         <div>
-          <h1 className="text-sm font-bold leading-tight tracking-tighter uppercase dark:text-white text-slate-900">Tube Radar 2.0</h1>
+          <h1 className="text-sm font-bold leading-tight tracking-tighter uppercase dark:text-white text-slate-900 group-hover:text-primary transition-colors">Tube Radar 2.0</h1>
           <p className="text-slate-400 dark:text-slate-500 text-[9px] font-bold uppercase tracking-widest">By 디스이즈머니</p>
         </div>
-      </div>
+      </button>
       
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
         {/* 1. 채널 관리 */}
@@ -539,7 +552,8 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onOpenAdmin,
   notifications,
   onMarkRead,
-  onDeleteNotif
+  onDeleteNotif,
+  onOpenMyPage
 }: { 
   region: string, 
   count: number, 
@@ -556,7 +570,8 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onOpenAdmin?: () => void,
   notifications: AppNotification[],
   onMarkRead: (id: string) => void,
-  onDeleteNotif: (id: string) => void
+  onDeleteNotif: (id: string) => void,
+  onOpenMyPage: () => void
 }) => {
   // D-Day calculation
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
@@ -638,14 +653,16 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
     <div className="flex items-center gap-4">
       {user && (
         <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10">
-           <img 
-             src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} 
-             alt="User" 
-             className="size-8 rounded-full border border-slate-200 dark:border-white/10"
-           />
-           <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 hidden md:block">
-             {user.displayName}
-           </span>
+           <button onClick={onOpenMyPage} className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left">
+             <img 
+               src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} 
+               alt="User" 
+               className="size-8 rounded-full border border-slate-200 dark:border-white/10"
+             />
+             <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 hidden md:block">
+               {user.displayName}
+             </span>
+           </button>
            
            <div className="relative" ref={notifRef}>
              <button 
@@ -714,6 +731,13 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
               </button>
             )}
 
+            <button 
+              onClick={onOpenMyPage}
+              className="text-slate-500 hover:text-indigo-500 transition-colors flex items-center justify-center p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+              title="마이 페이지"
+            >
+              <span className="material-symbols-outlined text-[20px]">account_circle</span>
+            </button>
             <button 
               onClick={onLogout}
              className="text-slate-400 hover:text-rose-500 transition-colors flex items-center justify-center p-1.5 rounded-lg hover:bg-rose-500/10"
@@ -823,6 +847,7 @@ export default function App() {
   const [channelSortMode, setChannelSortMode] = useState<'latest' | 'name'>('latest');
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
   const [showGuestNotice, setShowGuestNotice] = useState(false);
 
@@ -976,7 +1001,7 @@ export default function App() {
     }
 
     // Add to state and DB with the selected targetGroupId
-    const finalChannels = toAdd.map(c => ({...c, groupId: targetGroupId}));
+    const finalChannels = toAdd.map(c => ({...c, groupId: targetGroupId, addedAt: Date.now()}));
     setSavedChannels(prev => [...finalChannels, ...prev]); 
     await batchSaveChannels(user.uid, finalChannels);
     
@@ -1207,7 +1232,7 @@ export default function App() {
           if (existingIds.has(infoFinal.id)) {
             duplicates.push(infoFinal.title);
           } else {
-            const newChannel = { ...infoFinal, groupId: targetGroupId };
+            const newChannel: SavedChannel = { ...infoFinal, groupId: targetGroupId, addedAt: Date.now() };
             newChannels.push(newChannel);
             existingIds.add(infoFinal.id);
             if (user) await saveChannelToDb(user.uid, newChannel);
@@ -1288,7 +1313,7 @@ export default function App() {
     const targetGroupId = explorerTargetGroupId;
     const newChannels = explorerStaging
       .filter(ch => !existingIds.has(ch.id))
-      .map(ch => ({ ...ch, groupId: targetGroupId }));
+      .map(ch => ({ ...ch, groupId: targetGroupId, addedAt: Date.now() }));
       
     if (newChannels.length > 0) {
       setSavedChannels(prev => [...newChannels, ...prev]);
@@ -1420,7 +1445,8 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
       id: result.id,
       title: result.title,
       thumbnail: result.thumbnail,
-      groupId: activeGroupId === 'all' ? 'unassigned' : activeGroupId
+      groupId: activeGroupId === 'all' ? 'unassigned' : activeGroupId,
+      addedAt: Date.now()
     };
     
     // Add to state
@@ -1632,7 +1658,26 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
              await deleteNotification(user.uid, id);
              setNotifications(prev => prev.filter(n => n.id !== id));
           }}
+          onOpenMyPage={() => setIsMyPageOpen(true)}
         />
+        
+        {isMyPageOpen && user && (
+          <MyPageModal 
+            onClose={() => setIsMyPageOpen(false)}
+            user={user}
+            usage={usage}
+            notifications={notifications}
+            role={role}
+            expiresAt={expiresAt}
+            onLogout={logout}
+            onMarkRead={async (id) => {
+               if (user) {
+                 await markNotificationAsRead(user.uid, id);
+                 setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
+               }
+            }}
+          />
+        )}
         
         {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
@@ -1653,6 +1698,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                groups={groups}
                activeGroupId={activeGroupId}
                mode="package"
+               savedChannels={savedChannels}
             />
           ) : isTopicMode ? (
             <RecommendedPackageList 
@@ -1662,6 +1708,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                groups={groups}
                activeGroupId={activeGroupId}
                mode="topic"
+               savedChannels={savedChannels}
             />
           ) : isShortsDetectorMode ? (
              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
@@ -2324,7 +2371,12 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
                       <img src={ch.thumbnail} className="size-8 rounded-full border border-black/5 dark:border-white/10 object-cover" alt="" />
                       <div className="flex flex-col flex-1 min-w-0 pr-6">
-                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight tracking-tight w-full" title={ch.title}>{ch.title}</span>
+                        <div className="flex items-center gap-1.5 w-full">
+                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate" title={ch.title}>{ch.title}</span>
+                          {ch.addedAt && (Date.now() - ch.addedAt < NEW_CHANNEL_THRESHOLD) && (
+                            <span className="shrink-0 bg-rose-500 text-white text-[8px] font-black px-1 py-0.5 rounded leading-none animate-pulse">NEW</span>
+                          )}
+                        </div>
                         <span className="text-[9px] font-black text-slate-400 dark:text-slate-600 uppercase -mt-0.5">{groups.find(g => g.id === (ch.groupId || 'unassigned'))?.name}</span>
                       </div>
 
@@ -2370,7 +2422,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
             </div>
           )}
 
-          {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && (
+          {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && (
             <>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -2448,71 +2500,101 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
       {isSuggestModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
            <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
-              <div className="p-8 pb-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-start">
-                 <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                      <span className="material-symbols-outlined text-indigo-500">ios_share</span>
-                      채널 팩 공유 제안
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">내가 모은 채널 리스트를 다른 사용자들과 공유해보세요.<br />관리자 승인 후 '추천 채널 팩'에 게시됩니다.</p>
-                 </div>
-                 <button onClick={() => setIsSuggestModalOpen(false)} className="text-slate-400 hover:text-rose-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
-              </div>
-              
-              <div className="p-8 space-y-6">
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">패키지 제목 <span className="text-rose-500">*</span></label>
-                    <input 
-                      value={suggestTitle}
-                      onChange={(e) => setSuggestTitle(e.target.value)}
-                      placeholder="예: 요즘 뜨는 요리 채널 모음"
-                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                    />
-                 </div>
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">설명</label>
-                    <textarea 
-                      value={suggestDesc}
-                      onChange={(e) => setSuggestDesc(e.target.value)}
-                      placeholder="이 채널 구성에 대한 설명을 입력해주세요..."
-                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm h-24 resize-none focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                    />
-                 </div>
-                 
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">타겟 그룹 이름 (선택)</label>
-                    <input 
-                      value={suggestTargetGroup}
-                      onChange={(e) => setSuggestTargetGroup(e.target.value)}
-                      placeholder="예: 주식 필수 채널 (다운로드 시 자동 생성될 그룹명)"
-                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-2 ml-1 leading-relaxed">
-                       * 입력 시, 사용자가 이 팩을 다운로드할 때 <span className="text-indigo-500 font-bold">해당 이름의 그룹이 자동 생성</span>되어 채널이 분류됩니다.
+              {hasSuggestionSuccess ? (
+                 <div className="p-10 flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+                    <div className="size-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                       <span className="material-symbols-outlined text-4xl text-emerald-500 animate-bounce">check_circle</span>
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3">소재 등록 완료!</h3>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium leading-relaxed mb-4">
+                       성공적으로 등록되었습니다. <br/>
+                       <b>관리자 승인 후</b> 공개됩니다.
                     </p>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20 mb-8 max-w-sm">
+                       <p className="text-indigo-600 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2">
+                          <span className="material-symbols-outlined text-lg">redeem</span>
+                          승인이 되면 관리자가 이용일자 보상을 지급합니다.
+                       </p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setIsSuggestModalOpen(false);
+                        setHasSuggestionSuccess(false);
+                      }}
+                      className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-10 py-3 rounded-xl font-bold hover:scale-105 transition-transform shadow-lg"
+                    >
+                      확인
+                    </button>
                  </div>
-                 
-                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-500">포함될 채널</span>
-                    <span className="text-sm font-black text-indigo-500">{selectedChannelIds.length}개</span>
-                 </div>
-              </div>
+              ) : (
+                 <>
+               <div className="p-8 pb-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-start">
+                  <div>
+                     <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                       <span className="material-symbols-outlined text-indigo-500">ios_share</span>
+                        채널 팩 공유 제안
+                     </h3>
+                     <p className="text-xs text-slate-500 mt-1 font-medium">내가 모은 채널 리스트를 다른 사용자들과 공유해보세요.<br />관리자 승인 후 '추천 채널 팩'에 게시됩니다.</p>
+                  </div>
+                  <button onClick={() => setIsSuggestModalOpen(false)} className="text-slate-400 hover:text-rose-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
+               </div>
+               
+               <div className="p-8 space-y-6">
+                  <div>
+                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">패키지 제목 <span className="text-rose-500">*</span></label>
+                     <input 
+                       value={suggestTitle}
+                       onChange={(e) => setSuggestTitle(e.target.value)}
+                       placeholder="예: 요즘 뜨는 요리 채널 모음"
+                       className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                     />
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">설명</label>
+                     <textarea 
+                       value={suggestDesc}
+                       onChange={(e) => setSuggestDesc(e.target.value)}
+                       placeholder="이 채널 구성에 대한 설명을 입력해주세요..."
+                       className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm h-24 resize-none focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                     />
+                  </div>
+                  
+                  <div>
+                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">타겟 그룹 이름 (선택)</label>
+                     <input 
+                       value={suggestTargetGroup}
+                       onChange={(e) => setSuggestTargetGroup(e.target.value)}
+                       placeholder="예: 주식 필수 채널 (다운로드 시 자동 생성될 그룹명)"
+                       className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                     />
+                     <p className="text-[10px] text-slate-400 mt-2 ml-1 leading-relaxed">
+                        * 입력 시, 사용자가 이 팩을 다운로드할 때 <span className="text-indigo-500 font-bold">해당 이름의 그룹이 자동 생성</span>되어 채널이 분류됩니다.
+                     </p>
+                  </div>
+                  
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                     <span className="text-xs font-bold text-slate-500">포함될 채널</span>
+                     <span className="text-sm font-black text-indigo-500">{selectedChannelIds.length}개</span>
+                  </div>
+               </div>
 
-              <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-end gap-3">
-                 <button 
-                   onClick={() => setIsSuggestModalOpen(false)}
-                   className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs"
-                 >
-                   취소
-                 </button>
-                 <button 
-                   onClick={submitPackageProposal}
-                   disabled={isSubmittingSuggestion || !suggestTitle.trim()}
-                   className="px-8 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-xs shadow-lg shadow-indigo-600/20 flex items-center gap-2 disabled:opacity-50 disabled:shadow-none transition-all hover:scale-105"
-                 >
-                   {isSubmittingSuggestion ? '제출 중...' : '제안 제출하기'}
-                 </button>
-              </div>
+               <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-end gap-3">
+                  <button 
+                    onClick={() => setIsSuggestModalOpen(false)}
+                    className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs"
+                  >
+                    취소
+                  </button>
+                  <button 
+                    onClick={submitPackageProposal}
+                    disabled={isSubmittingSuggestion || !suggestTitle.trim()}
+                    className="px-8 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-xs shadow-lg shadow-indigo-600/20 flex items-center gap-2 disabled:opacity-50 disabled:shadow-none transition-all hover:scale-105"
+                  >
+                    {isSubmittingSuggestion ? '제출 중...' : '제안 제출하기'}
+                  </button>
+               </div>
+               </>
+              )}
            </div>
         </div>
       )}
@@ -2609,7 +2691,8 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   } catch (e) {
                     console.error(e);
                   }
-                }} 
+                }}
+                savedChannels={savedChannels} 
               />
             </div>
           </div>

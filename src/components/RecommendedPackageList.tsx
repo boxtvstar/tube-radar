@@ -4,7 +4,7 @@ import { RecommendedPackage } from '../../types';
 import { useAuth } from '../contexts/AuthContext';
 import { ChannelGroup, SavedChannel } from '../../types';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
-import { saveTopicToDb } from '../../services/dbService';
+import { saveTopicToDb, savePackageToDb } from '../../services/dbService';
 
 interface RecommendedPackageListProps {
   packages: RecommendedPackage[];
@@ -13,9 +13,10 @@ interface RecommendedPackageListProps {
   groups: ChannelGroup[];
   activeGroupId: string;
   mode?: 'package' | 'topic';
+  savedChannels?: SavedChannel[];
 }
 
-export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ packages, onAdd, isAdding, groups, activeGroupId, mode = 'package' }) => {
+export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ packages, onAdd, isAdding, groups, activeGroupId, mode = 'package', savedChannels = [] }) => {
   const approvedPackages = React.useMemo(() => 
     packages.filter(p => !p.status || p.status === 'approved'), 
   [packages]);
@@ -50,27 +51,18 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
 
   const { user } = useAuth();
 
-  // [Cost Optimization] Use Snapshot Data from DB
+
+
+  // [Restored] Popular Video Preview Logic (Only for Topics)
   const popularVideos = React.useMemo(() => {
-    if (selectedPackage && selectedPackage.channels.length > 0) {
-      const mainChannel = selectedPackage.channels[0];
-      if (mainChannel.topVideos && mainChannel.topVideos.length > 0) {
-        return mainChannel.topVideos;
-      }
+    if (selectedPackage && (selectedPackage.category === 'Topic' || mode === 'topic')) {
+       // Flatten all top videos from all channels
+       const allVideos = selectedPackage.channels.flatMap(ch => ch.topVideos || []);
+       // Sort by views
+       return allVideos.sort((a,b) => parseInt(b.views.replace(/,/g,'')) - parseInt(a.views.replace(/,/g,''))).slice(0, 6);
     }
     return [];
-  }, [selectedPackage]);
-
-  const isLoadingVideos = false; // Snapshot is instant
-
-  React.useEffect(() => {
-    if (selectedPackage) {
-      // Default: Select ALL channels when opening
-      setSelectedChannelIds(selectedPackage.channels.map(c => c.id));
-    } else {
-      setSelectedChannelIds([]);
-    }
-  }, [selectedPackage]);
+  }, [selectedPackage, mode]);
 
   const toggleChannelCallback = (id: string) => {
     setSelectedChannelIds(prev => 
@@ -89,6 +81,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
   const [isResolvingSuggest, setIsResolvingSuggest] = React.useState(false);
   const [isSubmittingContext, setIsSubmittingContext] = React.useState(false);
   const [isSuccessSuggest, setIsSuccessSuggest] = React.useState(false);
+  const [isMyListOpen, setIsMyListOpen] = React.useState(false);
 
   // Reset form when opening/closing
   React.useEffect(() => {
@@ -126,12 +119,16 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
           const info = await getChannelInfo(apiKey, input);
           if (info) {
              if (!suggestChannels.some(c => c.id === info.id)) {
-                // Fetch Popular Videos for this channel
-                try {
-                   const topVideos = await fetchChannelPopularVideos(apiKey, info.id);
-                   info.topVideos = topVideos;
-                } catch (err) {
-                   console.log("Failed to fetch videos for user suggestion", err);
+                // Fetch Popular Videos only if mode is 'topic'
+                if (mode === 'topic') {
+                   try {
+                      const topVideos = await fetchChannelPopularVideos(apiKey, info.id);
+                      info.topVideos = topVideos;
+                   } catch (err) {
+                      console.log("Failed to fetch videos for topic suggestion", err);
+                   }
+                } else {
+                   info.topVideos = [];
                 }
 
                 setSuggestChannels(prev => [...prev, info]);
@@ -162,20 +159,24 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
 
     setIsSubmittingContext(true);
     try {
-      // Save as Pending Topic
-      await saveTopicToDb({
+      const proposalData: RecommendedPackage = {
         id: Date.now().toString(),
         title: suggestTitle,
         description: suggestDesc,
-        category: 'Topic', // User suggestion
+        category: mode === 'topic' ? 'Topic' : 'Community', // 'Topic' for topics, 'Community' for packages
         createdAt: Date.now(),
         channels: suggestChannels,
         channelCount: suggestChannels.length,
         status: 'pending',
         creatorId: user.uid,
         creatorName: user.displayName || 'Anonymous User'
-      });
-      
+      };
+
+      if (mode === 'topic') {
+        await saveTopicToDb(proposalData);
+      } else {
+        await savePackageToDb(proposalData);
+      }
       
       setIsSuccessSuggest(true);
     } catch (e) {
@@ -207,7 +208,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                     className="bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors flex items-center gap-1 shadow-lg shadow-amber-500/20 z-50 cursor-pointer pointer-events-auto"
                   >
                     <span className="material-symbols-outlined text-sm">edit_square</span>
-                    <span className="hidden md:inline">소재 등록하기</span>
+                    <span className="hidden md:inline">추천 소재 공유하기</span>
                   </button>
                )}
                {mode !== 'topic' && (
@@ -397,20 +398,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                    <span className="material-symbols-outlined text-indigo-500">subscriptions</span>
                    포함된 채널 <span className="text-indigo-500">({selectedPackage.channels.length})</span>
                  </h3>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setSelectedChannelIds(selectedPackage.channels.map(c => c.id))}
-                      className="text-xs font-bold text-slate-500 hover:text-indigo-500 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg"
-                    >
-                      전체 선택
-                    </button>
-                    <button 
-                      onClick={() => setSelectedChannelIds([])}
-                      className="text-xs font-bold text-slate-500 hover:text-rose-500 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg"
-                    >
-                      선택 해제
-                    </button>
-                  </div>
+
                </div>
                
                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -447,29 +435,32 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                  })}
                </div>
 
-               {/* Popular Videos Section */}
+
+
+
+               {/* [Restored & Moved] Popular Videos Section (Only for Topics) */}
                {popularVideos.length > 0 && (
-                 <div className="mt-8 animate-in slide-in-from-bottom-4">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
-                      <span className="material-symbols-outlined text-rose-500">local_fire_department</span>
-                      최고 인기 동영상 <span className="text-xs text-slate-400 font-normal">(조회수 순)</span>
+                 <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
+                      <span className="material-symbols-outlined text-rose-500 text-lg">local_fire_department</span>
+                      최고 인기 동영상 <span className="text-xs text-slate-400 font-normal">(소재 참고용)</span>
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                       {popularVideos.map(video => (
                         <a 
                           key={video.id}
                           href={`https://www.youtube.com/watch?v=${video.id}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="group block bg-slate-50 dark:bg-slate-800/50 rounded-xl overflow-hidden hover:ring-2 hover:ring-rose-500 transition-all"
+                          className="group block bg-slate-50 dark:bg-slate-800/50 rounded-lg overflow-hidden hover:ring-2 hover:ring-rose-500 transition-all"
                         >
                            <div className="aspect-video relative overflow-hidden">
                               <img src={video.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                              <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 rounded font-bold">{video.duration}</div>
+                              <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[9px] px-1 rounded font-bold">{video.duration}</div>
                            </div>
-                           <div className="p-3">
-                              <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-2 leading-tight group-hover:text-rose-500 transition-colors">{video.title}</h4>
-                              <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500">
+                           <div className="p-2">
+                              <h4 className="font-bold text-[11px] text-slate-900 dark:text-white line-clamp-2 leading-tight group-hover:text-rose-500 transition-colors">{video.title}</h4>
+                              <div className="flex items-center gap-1 mt-1.5 text-[9px] text-slate-500">
                                  <span className="font-bold text-slate-700 dark:text-slate-300">조회수 {video.views}</span>
                                  <span>•</span>
                                  <span>{new Date(video.date).toLocaleDateString()}</span>
@@ -480,16 +471,8 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                     </div>
                  </div>
                )}
-               {isLoadingVideos && (
-                 <div className="mt-8 flex justify-center py-10">
-                    <div className="flex flex-col items-center gap-2 text-slate-400">
-                       <span className="material-symbols-outlined animate-spin text-2xl">sync</span>
-                       <span className="text-xs font-bold">인기 영상 분석 중...</span>
-                    </div>
-                 </div>
-               )}
 
-             </div>
+              </div>
 
              {/* Modal Footer with Group Selection */}
              <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 backdrop-blur-sm space-y-4">
@@ -613,8 +596,10 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                   <>
                      <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-800">
                         <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                          <span className="material-symbols-outlined text-amber-500">lightbulb</span>
-                          추천 소재 등록
+                          <span className={`material-symbols-outlined ${mode === 'topic' ? 'text-amber-500' : 'text-indigo-500'}`}>
+                            {mode === 'topic' ? 'lightbulb' : 'ios_share'}
+                          </span>
+                          {mode === 'topic' ? '추천 소재 등록' : '추천 채널 팩 공유'}
                         </h3>
                         <button onClick={() => setIsSuggestModalOpen(false)} className="text-slate-400 hover:text-rose-500"><span className="material-symbols-outlined">close</span></button>
                      </div>
@@ -623,8 +608,8 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                        <div>
                          <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">제목</label>
                          <input 
-                           className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-amber-500/20 outline-none"
-                           placeholder="예: 동물 다큐멘터리"
+                           className={`w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold outline-none focus:ring-2 ${mode === 'topic' ? 'focus:ring-amber-500/20' : 'focus:ring-indigo-500/20'}`}
+                           placeholder={mode === 'topic' ? "예: 동물 다큐멘터리" : "예: 000 모음집"}
                            value={suggestTitle}
                            onChange={e => setSuggestTitle(e.target.value)}
                          />
@@ -633,8 +618,8 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                        <div>
                          <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">추천 이유 (선택)</label>
                          <textarea 
-                           className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm resize-none h-24 focus:ring-2 focus:ring-amber-500/20 outline-none"
-                           placeholder="이 소재를 추천하는 이유를 적어주세요."
+                           className={`w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm resize-none h-24 outline-none focus:ring-2 ${mode === 'topic' ? 'focus:ring-amber-500/20' : 'focus:ring-indigo-500/20'}`}
+                           placeholder="이 내용을 공유하는 이유를 적어주세요."
                            value={suggestDesc}
                            onChange={e => setSuggestDesc(e.target.value)}
                          />
@@ -643,8 +628,89 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                        <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
                           <label className="block text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
                              <span>채널 구성 ({suggestChannels.length}개)</span>
-                             <span className="text-[10px] font-normal text-slate-400">핸들(@name), ID, 또는 URL 입력</span>
+                             <div className="flex items-center gap-2">
+                                {mode !== 'topic' && (
+                                   <button 
+                                     onClick={() => setIsMyListOpen(!isMyListOpen)}
+                                     className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg transition-colors border border-indigo-100 dark:border-indigo-800"
+                                   >
+                                     <span className="material-symbols-outlined text-[14px]">{isMyListOpen ? 'expand_less' : 'playlist_add'}</span>
+                                     내 리스트에서 불러오기
+                                   </button>
+                                )}
+                                <span className="text-[10px] font-normal text-slate-400">핸들(@name), ID, 또는 URL 입력</span>
+                             </div>
                           </label>
+                          
+                          {/* My List Selector */}
+                          {isMyListOpen && (
+                            <div className="mb-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-2">
+                               <div className="flex justify-between items-center mb-2 px-1">
+                                  <span className="text-[10px] font-bold text-slate-500">내 채널 목록 ({savedChannels.length})</span>
+                                  <button onClick={() => setIsMyListOpen(false)} className="text-slate-400 hover:text-rose-500"><span className="material-symbols-outlined text-sm">close</span></button>
+                               </div>
+                               <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-4">
+                                  {savedChannels.length === 0 ? (
+                                     <div className="py-6 text-center text-slate-400 text-xs font-medium bg-white dark:bg-slate-900 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+                                        내 리스트에 저장된 채널이 없습니다.
+                                     </div>
+                                  ) : (
+                                    // Group channels by groupId
+                                    groups.map(group => {
+                                      const groupChannels = savedChannels.filter(c => (c.groupId || 'unassigned') === group.id);
+                                      if (groupChannels.length === 0) return null;
+
+                                      return (
+                                        <div key={group.id} className="space-y-2">
+                                          <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <span className="material-symbols-outlined text-[12px]">folder</span>
+                                              {group.name}
+                                            </div>
+                                            <button 
+                                              onClick={() => {
+                                                const newChannels = groupChannels.filter(gc => !suggestChannels.some(sc => sc.id === gc.id));
+                                                if (newChannels.length > 0) {
+                                                  setSuggestChannels(prev => [...prev, ...newChannels]);
+                                                }
+                                              }}
+                                              disabled={groupChannels.every(gc => suggestChannels.some(sc => sc.id === gc.id))}
+                                              className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-700 px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                              {groupChannels.every(gc => suggestChannels.some(sc => sc.id === gc.id)) ? '완료' : '전체 추가'}
+                                            </button>
+                                          </div>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {groupChannels.map(ch => {
+                                              const isAdded = suggestChannels.some(sc => sc.id === ch.id);
+                                              return (
+                                                <button 
+                                                  key={ch.id}
+                                                  onClick={() => {
+                                                      if (isAdded) return;
+                                                      setSuggestChannels(prev => [...prev, ch]);
+                                                  }}
+                                                  disabled={isAdded}
+                                                  className={`flex items-center gap-2 p-2 rounded-lg text-left transition-all ${
+                                                    isAdded 
+                                                    ? 'bg-slate-200 dark:bg-slate-700 opacity-50 cursor-not-allowed' 
+                                                    : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-slate-100 dark:border-slate-700'
+                                                  }`}
+                                                >
+                                                    <img src={ch.thumbnail} className="size-6 rounded-full bg-slate-100" />
+                                                    <span className="text-xs font-bold truncate flex-1 dark:text-white">{ch.title}</span>
+                                                    {isAdded && <span className="material-symbols-outlined text-xs text-indigo-500">check</span>}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                               </div>
+                            </div>
+                          )}
                           
                           <div className="flex gap-2 mb-4">
                              <input 
@@ -652,12 +718,12 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                                onChange={(e) => setSuggestChannelInput(e.target.value)}
                                onKeyDown={(e) => e.key === 'Enter' && handleAddChannelToSuggest()}
                                placeholder="채널을 검색하여 추가하세요..."
-                               className="flex-1 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-amber-500/20 outline-none"
+                               className={`flex-1 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold outline-none focus:ring-2 ${mode === 'topic' ? 'focus:ring-amber-500/20' : 'focus:ring-indigo-500/20'}`}
                              />
                              <button 
                                onClick={handleAddChannelToSuggest}
                                disabled={isResolvingSuggest}
-                               className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 rounded-xl font-bold text-sm hover:bg-amber-500 dark:hover:bg-amber-500 hover:text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+                               className={`bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 rounded-xl font-bold text-sm hover:text-white transition-colors disabled:opacity-50 flex items-center gap-2 ${mode === 'topic' ? 'hover:bg-amber-500 dark:hover:bg-amber-500' : 'hover:bg-indigo-500 dark:hover:bg-indigo-500'}`}
                              >
                                {isResolvingSuggest ? (
                                    <>
@@ -691,23 +757,6 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                                                <span className="material-symbols-outlined text-sm">delete</span>
                                             </button>
                                         </div>
-                                        
-                                        {/* Preview Videos */}
-                                        {ch.topVideos && ch.topVideos.length > 0 && (
-                                           <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                                              {ch.topVideos.map(vid => (
-                                                <a key={vid.id} href={`https://youtu.be/${vid.id}`} target="_blank" rel="noreferrer" className="group block relative aspect-video rounded-lg overflow-hidden bg-slate-100">
-                                                   <img src={vid.thumbnail} className="w-full h-full object-cover" />
-                                                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                      <span className="material-symbols-outlined text-white text-lg">play_circle</span>
-                                                   </div>
-                                                   <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] px-1 rounded-tl font-bold">
-                                                      {vid.views}
-                                                   </div>
-                                                </a>
-                                              ))}
-                                           </div>
-                                        )}
                                     </div>
                                   ))}
                                </div>
@@ -726,7 +775,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                        <button 
                          onClick={handleSuggest}
                          disabled={isSubmittingContext || suggestChannels.length === 0}
-                         className="bg-amber-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-amber-600 transition-colors disabled:opacity-50 shadow-lg shadow-amber-500/20 flex items-center gap-2"
+                         className={`text-white px-8 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 shadow-lg flex items-center gap-2 ${mode === 'topic' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20'}`}
                        >
                          {isSubmittingContext ? (
                             <>
@@ -735,8 +784,8 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                             </>
                          ) : (
                             <>
-                              <span className="material-symbols-outlined text-sm">check_circle</span>
-                              등록 신청하기
+                              <span className="material-symbols-outlined text-sm">{mode === 'topic' ? 'check_circle' : 'ios_share'}</span>
+                              {mode === 'topic' ? '등록 신청하기' : '공유하기'}
                             </>
                          )}
                        </button>

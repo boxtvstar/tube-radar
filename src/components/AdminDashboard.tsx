@@ -3,7 +3,7 @@ import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc }
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel } from '../../types';
-import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage } from '../../services/dbService';
+import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ko } from 'date-fns/locale/ko';
@@ -91,13 +91,51 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
   const [notifModalOpen, setNotifModalOpen] = useState(false);
   const [notifTargetUser, setNotifTargetUser] = useState<UserData | null>(null);
   const [notifTargetMode, setNotifTargetMode] = useState<'individual' | 'all'>('individual');
+  const [notifTargetInquiryId, setNotifTargetInquiryId] = useState<string | null>(null);
   const [notifMessage, setNotifMessage] = useState('');
+
+  const [expandedInquiryId, setExpandedInquiryId] = useState<string | null>(null);
+  const toggleInquiryExpansion = (id: string) => {
+    setExpandedInquiryId(prev => prev === id ? null : id);
+  };
+
+
+  const [replyingInquiryId, setReplyingInquiryId] = useState<string | null>(null);
+  const [replyMessage, setReplyMessage] = useState('');
 
   const openNotifModal = (u: UserData | null, mode: 'individual' | 'all') => {
     setNotifTargetUser(u);
     setNotifTargetMode(mode);
+    setNotifTargetInquiryId(null); // Clear inquiry ID as this is now general notif
     setNotifMessage('');
     setNotifModalOpen(true);
+  };
+
+  const handleSendInlineReply = async (inquiryId: string, userId: string, userName: string) => {
+    if (!replyMessage.trim()) return;
+    
+    try {
+        await replyToInquiry(inquiryId, userId, replyMessage);
+        
+        if (user) {
+            await logAdminMessage({
+                recipientId: userId,
+                recipientName: userName,
+                message: `[Inquiry Reply] ${replyMessage}`,
+                adminId: user.uid,
+                type: 'individual'
+            });
+        }
+        
+        // Update local state
+        setInquiries(prev => prev.map(inq => inq.id === inquiryId ? {...inq, isAnswered: true, answer: replyMessage, answeredAt: Date.now()} : inq));
+        setReplyingInquiryId(null);
+        setReplyMessage('');
+        alert("답장이 전송되었습니다.");
+    } catch (e) {
+        console.error(e);
+        alert("전송 실패");
+    }
   };
 
   const handleSendManualNotification = async () => {
@@ -133,36 +171,54 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
 
          alert(`총 ${users.length}명에게 전송 완료`);
       } else if (notifTargetUser) {
-        await sendNotification(notifTargetUser.uid, {
-          userId: notifTargetUser.uid,
-          title: '관리자 메시지',
-          message: notifMessage,
-          type: 'info'
-        });
-
-        // Log
-        if (user) {
-            await logAdminMessage({
+        if (notifTargetInquiryId && user) {
+           // Reply Logic
+           await replyToInquiry(notifTargetInquiryId, notifTargetUser.uid, notifMessage);
+           
+           await logAdminMessage({
               recipientId: notifTargetUser.uid,
               recipientName: notifTargetUser.displayName,
-              message: notifMessage,
+              message: `[Inquiry Reply] ${notifMessage}`,
               adminId: user.uid,
               type: 'individual'
-            });
+           });
+
+           // Update local state
+           setInquiries(prev => prev.map(inq => inq.id === notifTargetInquiryId ? {...inq, isAnswered: true, answer: notifMessage, answeredAt: Date.now()} : inq));
+        } else {
+           // Normal Notification Logic
+           await sendNotification(notifTargetUser.uid, {
+             userId: notifTargetUser.uid,
+             title: '관리자 메시지',
+             message: notifMessage,
+             type: 'info'
+           });
+
+           if (user) {
+              await logAdminMessage({
+                recipientId: notifTargetUser.uid,
+                recipientName: notifTargetUser.displayName,
+                message: notifMessage,
+                adminId: user.uid,
+                type: 'individual'
+              });
+           }
         }
-        alert("알림을 보냈습니다.");
+        alert("전송되었습니다.");
       }
       setNotifModalOpen(false);
     } catch (e) {
       console.error(e);
-      alert("알림 전송 실패");
+      alert("전송 실패");
     }
   };
 
   // --- Recommended Packages & Topics State ---
-  const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries'>('users');
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
   const [topics, setTopics] = useState<RecommendedPackage[]>([]);
+  const [inquiries, setInquiries] = useState<any[]>([]);
+  const [inquiryFilter, setInquiryFilter] = useState<'all' | 'pending' | 'answered'>('all');
   const [packageFilter, setPackageFilter] = useState<'all' | 'approved' | 'pending'>('all');
   const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<RecommendedPackage | null>(null);
@@ -206,8 +262,6 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
-
-
   const fetchTopics = async () => {
     try {
       const data = await getTopicsFromDb();
@@ -217,9 +271,23 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+  const fetchInquiriesData = async () => {
+    try {
+      const data = await getInquiries();
+      setInquiries(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
-    if (activeTab === 'packages') fetchPackages();
-    if (activeTab === 'topics') fetchTopics();
+    if (activeTab === 'packages') {
+      fetchPackages();
+    } else if (activeTab === 'topics') {
+      fetchTopics();
+    } else if (activeTab === 'inquiries') {
+      fetchInquiriesData();
+    }
   }, [activeTab]);
 
   const handleAddChannelToPkg = async () => {
@@ -238,15 +306,18 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
         const info = await getChannelInfo(adminYtKey, input);
         if (info) {
           if (!pkgChannels.some(c => c.id === info.id) && !newChannelsList.some(c => c.id === info.id)) {
-            // [Admin UX] Fetch popular videos immediately for preview
-            try {
-               const videos = await fetchChannelPopularVideos(adminYtKey, info.id);
-               if (videos.length > 0) {
-                 info.topVideos = videos;
+            // [Admin UX] Preview videos if activeTab is 'topics'
+            if (activeTab === 'topics') {
+               try {
+                  const videos = await fetchChannelPopularVideos(adminYtKey, info.id);
+                  if (videos.length > 0) {
+                    info.topVideos = videos;
+                  }
+               } catch (err) {
+                  console.error("Failed to fetch preview videos", err);
                }
-            } catch (err) {
-               console.error("Failed to fetch preview videos", err);
             }
+
             newChannelsList.push(info);
             addedCount++;
           }
@@ -268,34 +339,33 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
   const handleSavePackage = async (approve: boolean = false) => {
     if (!pkgTitle) return alert("제목은 필수입니다.");
 
-    // [New Feature] Snapshot Popular Videos
-    // Before saving, we fetch popular videos for channels that don't have them yet.
-    // This saves API costs by serving from DB later.
+    // [Video Snapshot Logic]
+    // Only fetch videos if saving a TOPIC. Packages do not need video lists.
     let updatedChannels = [...pkgChannels];
-    if (adminYtKey) {
-      setIsResolvingChannel(true); // Re-use spinner state
-      try {
-        updatedChannels = await Promise.all(pkgChannels.map(async (ch) => {
-           // If already has topVideos, skip (unless we want to force refresh, but for now let's persist existing)
-           // Actually user implies new snapshot. Let's fetch if empty.
-           if (!ch.topVideos || ch.topVideos.length === 0) {
-             try {
-                const videos = await fetchChannelPopularVideos(adminYtKey, ch.id);
-                if (videos.length > 0) {
-                  return { ...ch, topVideos: videos };
-                }
-             } catch (err) {
-               console.error(`Failed to snapshot videos for ${ch.title}`, err);
+    
+    if (activeTab === 'topics' && adminYtKey) {
+        setIsResolvingChannel(true);
+        try {
+          updatedChannels = await Promise.all(pkgChannels.map(async (ch) => {
+             if (!ch.topVideos || ch.topVideos.length === 0) {
+               try {
+                  const videos = await fetchChannelPopularVideos(adminYtKey, ch.id);
+                  if (videos.length > 0) {
+                    return { ...ch, topVideos: videos };
+                  }
+               } catch (err) {
+                 console.error(`Failed to snapshot videos for ${ch.title}`, err);
+               }
              }
-           }
-           return ch;
-        }));
-      } catch (e) {
-        console.error("Snapshot process failed", e);
-      } finally {
-        setIsResolvingChannel(false);
-      }
+             return ch;
+          }));
+        } catch (e) {
+          console.error("Snapshot process failed", e);
+        } finally {
+          setIsResolvingChannel(false);
+        }
     }
+
     
     const newPkg: RecommendedPackage = {
       id: editingPackage ? editingPackage.id : Date.now().toString(),
@@ -704,6 +774,16 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                       {activeTab !== 'topics' && <span className="bg-amber-500 size-2 rounded-full"></span>}
                    </div>
                  </button>
+
+                 <button 
+                   onClick={() => setActiveTab('inquiries')}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'inquiries' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                 >
+                   <div className="flex items-center gap-1">
+                      <span>문의 수신함</span>
+                      {activeTab !== 'inquiries' && <span className="bg-indigo-500 size-2 rounded-full"></span>}
+                   </div>
+                 </button>
               </div>
             </div>
             
@@ -873,10 +953,10 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                     <td className="px-6 py-4 pl-6">
                       <input type="checkbox" checked={selectedIds.has(u.uid)} onChange={() => toggleSelectUser(u.uid)} className="rounded text-primary focus:ring-primary" />
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
                          <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="size-10 rounded-full bg-slate-200 ring-2 ring-white dark:ring-slate-800" alt="" />
-                         <span className="font-bold text-sm dark:text-slate-200">{u.displayName}</span>
+                         <span className="font-bold text-sm dark:text-slate-200 whitespace-nowrap">{u.displayName}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -906,16 +986,21 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                             )}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{u.email}</td>
-                    <td className="px-6 py-4 text-xs font-mono text-slate-500">
-                      {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '-'}
+                    <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap">
+                      {u.lastLoginAt ? (
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-700 dark:text-slate-300">{new Date(u.lastLoginAt).toLocaleDateString()}</span>
+                          <span className="text-[10px] text-slate-400">{new Date(u.lastLoginAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                      ) : '-'}
                     </td>
-                    <td className="px-6 py-4 text-xs font-mono">
+                    <td className="px-6 py-4 text-xs font-mono whitespace-nowrap">
                       {u.expiresAt ? (
                         <div className="flex flex-col">
-                          <span className="text-slate-600 dark:text-slate-400">{new Date(u.expiresAt).toLocaleDateString()}</span>
-                          <span className={`font-bold ${
+                          <span className="text-slate-600 dark:text-slate-400 font-bold">{new Date(u.expiresAt).toLocaleDateString()}</span>
+                          <span className={`text-[10px] font-bold mt-0.5 ${
                             calculateDDay(u.expiresAt) === '만료됨' ? 'text-rose-500' :
-                            calculateDDay(u.expiresAt)?.startsWith('D-') ? 'text-primary' : 'text-slate-400'
+                            calculateDDay(u.expiresAt)?.startsWith('D-') ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded w-fit' : 'text-slate-400'
                           }`}>
                             {calculateDDay(u.expiresAt)}
                           </span>
@@ -969,6 +1054,166 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
               </tbody>
             </table>
             </div>
+
+          ) : activeTab === 'inquiries' ? (
+             <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold">1:1 문의 내역</h3>
+                    <div className="flex items-center gap-2">
+                       {['all', 'pending', 'answered'].map(f => (
+                         <button 
+                           key={f}
+                           onClick={() => setInquiryFilter(f as any)}
+                           className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                             inquiryFilter === f 
+                             ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' 
+                             : 'bg-white dark:bg-slate-800 text-slate-500 hover:text-indigo-500'
+                           }`}
+                         >
+                           {f === 'all' ? '전체' : f === 'pending' ? '대기중' : '답변완료'}
+                           <span className="ml-2 text-xs opacity-60 bg-black/10 px-1.5 rounded-full">
+                             {f === 'all' 
+                               ? inquiries.length 
+                               : inquiries.filter((i: any) => f === 'pending' ? !i.isAnswered : i.isAnswered).length}
+                           </span>
+                         </button>
+                       ))}
+                    </div>
+                </div>
+
+                {inquiries.filter((inq: any) => {
+                    if (inquiryFilter === 'pending') return !inq.isAnswered;
+                    if (inquiryFilter === 'answered') return inq.isAnswered;
+                    return true;
+                }).length === 0 ? (
+                  <div className="p-10 text-center text-slate-400 border border-dashed rounded-2xl">
+                    {inquiryFilter === 'all' ? '문의 내역이 없습니다.' : inquiryFilter === 'pending' ? '대기 중인 문의가 없습니다.' : '답변 완료된 문의가 없습니다.'}
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                     {inquiries.filter((inq: any) => {
+                         if (inquiryFilter === 'pending') return !inq.isAnswered;
+                         if (inquiryFilter === 'answered') return inq.isAnswered;
+                         return true;
+                     }).map((inq: any) => {
+                       const isExpanded = expandedInquiryId === inq.id;
+                       return (
+                        <div key={inq.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:border-indigo-500 transition-all">
+                           {/* Accordion Header - Clickable */}
+                           <div 
+                             onClick={() => toggleInquiryExpansion(inq.id)}
+                             className={`p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isExpanded ? 'bg-slate-50 dark:bg-slate-800/50 border-b border-indigo-100 dark:border-slate-700' : ''}`}
+                           >
+                              <div className="flex items-center gap-4 flex-1 overflow-hidden">
+                                 {/* Status Badge */}
+                                 {inq.isAnswered ? (
+                                    <div className="size-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                                       <span className="material-symbols-outlined text-sm font-bold">check</span>
+                                    </div>
+                                 ) : (
+                                    <div className="size-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 animate-pulse">
+                                       <span className="material-symbols-outlined text-sm font-bold">priority_high</span>
+                                    </div>
+                                 )}
+
+                                 <div className="flex flex-col min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                       <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                                          {isExpanded ? '문의 내용 상세' : (inq.message?.length > 40 ? inq.message.substring(0, 40) + '...' : inq.message)}
+                                       </span>
+                                       {!isExpanded && (
+                                         <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                                           {new Date(inq.createdAt).toLocaleDateString()}
+                                         </span>
+                                       )}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                       <span className="font-bold">{inq.userName}</span>
+                                       <span className="opacity-50">|</span>
+                                       <span className="font-mono">{inq.userId}</span>
+                                    </div>
+                                 </div>
+                              </div>
+                              <span className={`material-symbols-outlined text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-indigo-500' : ''}`}>
+                                 expand_more
+                              </span>
+                           </div>
+                           
+                           {/* Expanded Content */}
+                           {isExpanded && (
+                             <div className="p-6 bg-white dark:bg-slate-900 animate-in slide-in-from-top-2">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap border border-slate-100 dark:border-slate-700">
+                                  {inq.message}
+                                </div>
+                                
+                                <div className="mt-2 text-right">
+                                  <span className="text-[10px] text-slate-400">
+                                    문의 일시: {new Date(inq.createdAt).toLocaleString()}
+                                  </span>
+                                </div>
+
+                                {inq.isAnswered ? (
+                                   <div className="mt-6 pl-4 border-l-2 border-emerald-500/30">
+                                      <div className="text-[11px] font-bold text-emerald-600 mb-2 flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-base">reply</span>
+                                        관리자 답변 완료 <span className="text-slate-400 font-normal">({new Date(inq.answeredAt).toLocaleString()})</span>
+                                      </div>
+                                      <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-500/10">
+                                        {inq.answer}
+                                      </div>
+                                   </div>
+                                 ) : replyingInquiryId === inq.id ? (
+                                   <div className="mt-6 bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20 animate-in fade-in">
+                                      <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2 flex items-center gap-1">
+                                         <span className="material-symbols-outlined text-sm">edit</span>
+                                         답변 작성 중...
+                                      </div>
+                                      <textarea 
+                                        value={replyMessage}
+                                        onChange={(e) => setReplyMessage(e.target.value)}
+                                        placeholder="답변 내용을 입력하세요..."
+                                        className="w-full h-32 p-4 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-white dark:bg-slate-800 text-sm resize-none focus:ring-2 focus:ring-indigo-500 mb-3 shadow-inner"
+                                        autoFocus
+                                      />
+                                      <div className="flex justify-end gap-2">
+                                        <button 
+                                          onClick={() => { setReplyingInquiryId(null); setReplyMessage(''); }}
+                                          className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                        >
+                                          취소
+                                        </button>
+                                        <button 
+                                          onClick={() => handleSendInlineReply(inq.id, inq.userId, inq.userName)}
+                                          className="px-6 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/30 flex items-center gap-2"
+                                        >
+                                          <span className="material-symbols-outlined text-sm">send</span>
+                                          답장 전송
+                                        </button>
+                                      </div>
+                                   </div>
+                                 ) : (
+                                   <div className="mt-6 flex justify-end">
+                                     <button 
+                                       onClick={(e) => { 
+                                         e.stopPropagation(); // Prevent accordion toggle
+                                         setReplyingInquiryId(inq.id); 
+                                         setReplyMessage(''); 
+                                       }}
+                                       className="px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 group"
+                                     >
+                                       <span className="material-symbols-outlined text-lg group-hover:-rotate-12 transition-transform">reply</span>
+                                       이 문의에 답장하기
+                                     </button>
+                                   </div>
+                                 )}
+                            </div>
+                           )}
+                        </div>
+                       );
+                     })}
+                  </div>
+                )}
+             </div>
           ) : (
             <div className="flex flex-col gap-6">
                 {/* Package Filters */}
@@ -1273,8 +1518,8 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                                  </button>
                                </div>
                                
-                               {/* Admin Preview of Popular Videos */}
-                               {ch.topVideos && ch.topVideos.length > 0 && (
+                               {/* Admin Preview of Popular Videos (Only for Topics) */}
+                               {activeTab === 'topics' && ch.topVideos && ch.topVideos.length > 0 && (
                                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                                    {ch.topVideos.map(vid => (
                                      <a key={vid.id} href={`https://youtu.be/${vid.id}`} target="_blank" rel="noreferrer" className="group block relative aspect-video rounded-lg overflow-hidden bg-slate-100">
@@ -1289,6 +1534,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                                    ))}
                                  </div>
                                )}
+
                              </div>
                            ))}
                         </div>
