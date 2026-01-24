@@ -1774,9 +1774,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
       <Sidebar 
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
-        region={region} onRegionChange={(val) => { setLoading(true); setVideos([]); setRegion(val); }}
-        selectedCategory={selectedCategory} onCategoryChange={(val) => { setLoading(true); setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(true); setVideos([]); } setIsMyMode(val); }}
+        region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
+        selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setVideos([]); } setIsMyMode(val); }}
         isExplorerMode={isExplorerMode} onToggleExplorerMode={setIsExplorerMode}
         isUsageMode={isUsageMode} onToggleUsageMode={setIsUsageMode}
         isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsPackageMode(val); }}
@@ -2039,15 +2039,15 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                )}
              </div>
           ) : isUsageMode ? (
-            <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-              <div className="bg-white dark:bg-slate-card/60 border border-slate-200 dark:border-slate-800 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
-                  <span className="material-symbols-outlined text-[150px] text-primary">analytics</span>
+            <div className="space-y-6 md:space-y-8 animate-in slide-in-from-right-4 duration-500">
+              <div className="bg-white dark:bg-slate-card/60 border border-slate-200 dark:border-slate-800 p-6 md:p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-6 md:p-10 opacity-5 pointer-events-none">
+                  <span className="material-symbols-outlined text-[80px] md:text-[150px] text-primary">analytics</span>
                 </div>
 
-                <div className="space-y-4 max-w-2xl">
-                  <h2 className="text-3xl font-black italic tracking-tighter text-primary uppercase flex items-center gap-4">
-                    <span className="material-symbols-outlined text-4xl">dashboard_customize</span>
+                <div className="space-y-4 max-w-2xl relative z-10">
+                  <h2 className="text-2xl md:text-3xl font-black italic tracking-tighter text-primary uppercase flex items-center gap-3 md:gap-4">
+                    <span className="material-symbols-outlined text-3xl md:text-4xl">dashboard_customize</span>
                     API 사용량 대시보드
                   </h2>
                   <p className="text-slate-500 dark:text-slate-400 text-sm font-medium leading-relaxed">
@@ -2056,40 +2056,40 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-                  <div className="bg-slate-50 dark:bg-black/20 p-8 rounded-3xl border border-slate-100 dark:border-white/5 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mt-8 md:mt-12 relative z-10">
+                  <div className="bg-slate-50 dark:bg-black/20 p-6 md:p-8 rounded-3xl border border-slate-100 dark:border-white/5 space-y-4 md:space-y-6">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">오늘의 잔량</span>
+                      <span className="text-[10px] md:text-[11px] font-black text-slate-400 uppercase tracking-widest">오늘의 잔량</span>
                       <span className="material-symbols-outlined text-emerald-500">check_circle</span>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">
+                      <p className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">
                         {isApiKeyMissing ? '0' : (usage.total - usage.used).toLocaleString()}
                       </p>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">잔여 LP / 10,000</p>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 dark:bg-black/20 p-8 rounded-3xl border border-slate-100 dark:border-white/5 space-y-6">
+                  <div className="bg-slate-50 dark:bg-black/20 p-6 md:p-8 rounded-3xl border border-slate-100 dark:border-white/5 space-y-4 md:space-y-6">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">소모된 할당량</span>
+                      <span className="text-[10px] md:text-[11px] font-black text-slate-400 uppercase tracking-widest">소모된 할당량</span>
                       <span className="material-symbols-outlined text-primary">data_usage</span>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">
+                      <p className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">
                         {isApiKeyMissing ? '0' : usage.used.toLocaleString()}
                       </p>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">오늘 소모된 유닛</p>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 dark:bg-black/20 p-8 rounded-3xl border border-slate-100 dark:border-white/5 space-y-6">
+                  <div className="bg-slate-50 dark:bg-black/20 p-6 md:p-8 rounded-3xl border border-slate-100 dark:border-white/5 space-y-4 md:space-y-6">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">다음 초기화</span>
+                      <span className="text-[10px] md:text-[11px] font-black text-slate-400 uppercase tracking-widest">다음 초기화</span>
                       <span className="material-symbols-outlined text-accent-hot">schedule</span>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">
+                      <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">
                         오늘 자정 (KST)
                       </p>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">자동 리셋 주기</p>
@@ -2184,7 +2184,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       className="w-full bg-transparent border-none py-3 text-xs text-slate-900 dark:text-white focus:ring-0 outline-none placeholder:truncate"
                     />
                   </div>
-                  <button onClick={handleExplorerSearch} disabled={isExplorerSearching} className="w-auto bg-emerald-500 text-white px-4 md:px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50">
+                  <button onClick={handleExplorerSearch} disabled={isExplorerSearching} className={`w-auto text-white px-4 md:px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 flex items-center justify-center ${
+                    isExplorerSearching ? 'bg-emerald-500 opacity-60 cursor-wait' : 'bg-emerald-500'
+                  }`}>
                     <span className="hidden md:inline">{isExplorerSearching ? '탐색 중...' : '채널 검색'}</span>
                     <span className="md:hidden"><span className="material-symbols-outlined text-lg leading-none">search</span></span>
                   </button>
