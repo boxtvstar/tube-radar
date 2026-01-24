@@ -14,9 +14,27 @@ interface MyPageModalProps {
   expiresAt: string | null;
   onLogout: () => void;
   onMarkRead: (id: string) => void;
+  initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support';
+  ytKey: string;
+  onYtKeyChange: (val: string) => void;
+  ytApiStatus: 'idle' | 'valid' | 'invalid' | 'loading';
+  isApiKeyMissing: boolean;
+  onOpenUsage: () => void;
 }
 
-export const MyPageModal: React.FC<MyPageModalProps> = ({ 
+const calculateDDay = (expiresAt: string | null) => {
+  if (!expiresAt) return '무제한';
+  const now = new Date();
+  const expiry = new Date(expiresAt);
+  const diffTime = expiry.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return '만료됨';
+  if (diffDays === 0) return 'D-Day';
+  return `D-${diffDays}`;
+};
+
+export const MyPageModal: React.FC<MyPageModalProps> = ({  
   onClose, 
   user, 
   usage, 
@@ -24,9 +42,15 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   role, 
   expiresAt,
   onLogout,
-  onMarkRead
+  onMarkRead,
+  initialTab = 'dashboard',
+  ytKey,
+  onYtKeyChange,
+  ytApiStatus,
+  isApiKeyMissing,
+  onOpenUsage
 }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support'>(initialTab);
   const [proposals, setProposals] = useState<(RecommendedPackage & { itemType: 'package' | 'topic' })[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
   const [isLoadingProposals, setIsLoadingProposals] = useState(false);
@@ -212,12 +236,58 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             <span className="material-symbols-outlined text-indigo-500 font-normal">account_circle</span>
             마이 페이지
           </h2>
-          <button 
-            onClick={onClose}
-            className="size-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-colors"
-          >
-            <span className="material-symbols-outlined">close</span>
-          </button>
+          
+          <div className="flex items-center gap-4">
+             {/* User Info & D-Day */}
+             <div className="hidden md:flex items-center gap-5 mr-1 bg-slate-50 dark:bg-slate-800/50 px-5 py-2 rounded-2xl border border-slate-100 dark:border-slate-800">
+                {/* Profile Section */}
+                <div className="flex items-center gap-3">
+                   <div className="size-9 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white dark:border-slate-700 shadow-sm overflow-hidden shrink-0">
+                      {user.photoURL ? (
+                         <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                         <div className="w-full h-full flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase">
+                            {user.displayName ? user.displayName[0] : (user.email ? user.email[0] : 'U')}
+                         </div>
+                      )}
+                   </div>
+                   
+                   <div className="flex flex-col items-start">
+                      <div className="flex items-center gap-1.5">
+                         <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                            {user.displayName || user.email?.split('@')[0]}
+                         </span>
+                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wide ${role === 'admin' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300'}`}>
+                            {role === 'admin' ? 'ADMIN' : 'PRO'}
+                         </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium tracking-tight">{user.email}</span>
+                   </div>
+                </div>
+
+                {/* Vertical Divider */}
+                <div className="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
+
+                {/* D-Day Section */}
+                {role !== 'pending' && expiresAt && (
+                    <div className="flex flex-col items-end justify-center min-w-[4.5rem]">
+                       <span className={`text-xl font-black leading-none mb-0.5 ${String(calculateDDay(expiresAt)).includes('만료') ? 'text-rose-500' : 'text-emerald-500'}`}>
+                          {String(calculateDDay(expiresAt))}
+                       </span>
+                       <span className="text-[10px] font-bold text-slate-400 tracking-tight font-mono">
+                            {new Date(expiresAt).toLocaleDateString()}
+                       </span>
+                    </div>
+                )}
+             </div>
+
+             <button 
+               onClick={onClose}
+               className="size-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-colors"
+             >
+               <span className="material-symbols-outlined">close</span>
+             </button>
+          </div>
         </div>
 
         {/* Layout */}
@@ -269,44 +339,75 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             
             {/* 1. Dashboard Tab */}
             {activeTab === 'dashboard' && (
-              <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-                {/* Profile Card */}
-                <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-3xl flex items-center gap-6 border border-slate-100 dark:border-slate-700">
-                  <div className="size-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-indigo-500/30 shrink-0 overflow-hidden">
-                    {user.photoURL ? (
-                      <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
-                    ) : (
-                      user.displayName?.[0] || 'U'
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-1">{user.displayName || 'Unknown User'}</h3>
-                    <p className="text-sm text-slate-500 font-medium mb-3">{user.email}</p>
-                    <div className="flex gap-2">
-                       <span className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${role === 'admin' ? 'bg-indigo-100 text-indigo-600 border-indigo-200' : (role === 'approved' ? 'bg-emerald-100 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200')}`}>
-                         {role === 'admin' ? 'ADMINISTRATOR' : (role === 'approved' ? 'MEMBERSHIP USER' : 'GUEST / PENDING')}
-                       </span>
+              <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                {/* API Settings Section */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm relative overflow-hidden">
+                   {/* Background decoration */}
+                   <div className="absolute top-0 right-0 p-8 opacity-5 dark:opacity-0 pointer-events-none">
+                     <span className="material-symbols-outlined text-9xl">vpn_key</span>
+                   </div>
+
+                   <div className="flex items-center justify-between mb-6 relative z-10">
+                    <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <span className="material-symbols-outlined text-lg hidden md:block">vpn_key</span>
+                      YouTube API 설정
+                    </h4>
+                    {/* Status Badge */}
+                    <div className="flex items-center gap-2">
+                      {ytApiStatus === 'valid' && <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>Connected</span>}
+                      {ytApiStatus === 'invalid' && <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-500"></span>Error</span>}
+                      {ytApiStatus === 'loading' && <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500 animate-spin"></span>Checking...</span>}
+                      {ytApiStatus === 'idle' && !ytKey && <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-black uppercase tracking-wide">Not Set</span>}
                     </div>
                   </div>
-                  <div className="ml-auto text-right">
-                     {expiresAt ? (
-                       <div className="flex flex-col items-end">
-                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Membership Ends</span>
-                         <span className={`text-3xl font-black ${dDay && dDay <= 7 ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
-                           D-{dDay}
-                         </span>
-                         <span className="text-xs text-slate-500 font-mono mt-1">{new Date(expiresAt).toLocaleDateString()}</span>
-                       </div>
-                     ) : (
-                       <div className="text-slate-400 text-sm font-medium">유효기간 정보 없음 (무제한 또는 승인대기)</div>
-                     )}
+                  
+                  <div className="relative z-10">
+                    <div className="relative group">
+                      <input 
+                        type="password" 
+                        value={ytKey} 
+                        onChange={(e) => onYtKeyChange(e.target.value)}
+                        disabled={role === 'pending' || role === 'guest'}
+                        placeholder={role === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "YouTube Data API v3 키를 입력하세요"}
+                        className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
+                          role === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
+                          ytApiStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
+                          ytApiStatus === 'invalid' ? 'border-rose-200 focus:border-rose-500 text-rose-700 dark:text-rose-400' :
+                          'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
+                        }`}
+                      />
+                      <span className={`absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined transition-colors ${
+                        ytApiStatus === 'valid' ? 'text-emerald-500' : 'text-slate-400 group-focus-within:text-indigo-500'
+                      }`}>key</span>
+                      
+                      {ytApiStatus === 'valid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
+                    </div>
+                    {role === 'pending' || role === 'guest' ? (
+                        <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
+                          <span className="material-symbols-outlined text-[14px] mt-0.5">lock</span>
+                          <span>API 키 입력은 관리자 승인 후 가능합니다.</span>
+                        </p>
+                    ) : (
+                        <p className="text-[11px] text-slate-400 mt-3 ml-1 flex items-start gap-1.5">
+                          <span className="material-symbols-outlined text-[14px] mt-0.5">info</span>
+                          <span>개인 API 키를 사용하면 공용 할당량 제한 없이 더 안정적인 분석이 가능합니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
+                        </p>
+                    )}
                   </div>
                 </div>
 
-                {/* API Usage & Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-                      <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-6">API Quota Usage</h4>
+                   <button 
+                     onClick={onOpenUsage}
+                     className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm hover:border-indigo-400 hover:shadow-md transition-all group relative block text-left w-full"
+                   >
+                      <div className="absolute top-5 right-5 text-slate-300 group-hover:text-indigo-500 transition-colors">
+                        <span className="material-symbols-outlined text-xl">analytics</span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4 group-hover:text-indigo-500 transition-colors flex flex-col gap-1 items-start">
+                        <span>오늘 포인트 사용량</span>
+                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity font-normal">클릭하여 상세분석</span>
+                      </h4>
                       <div className="relative pt-4 pb-8 flex justify-center">
                          {/* Circle Graph */}
                          <div className="relative size-40">
@@ -322,16 +423,16 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                               />
                             </svg>
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                              <span className="text-3xl font-black text-slate-900 dark:text-white">{usagePercent.toFixed(0)}%</span>
-                              <span className="text-[10px] font-bold text-slate-400 uppercase">Remaining</span>
+                              <span className="text-3xl font-black text-slate-900 dark:text-white group-hover:scale-110 transition-transform">{usagePercent.toFixed(0)}%</span>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">포인트 잔여</span>
                             </div>
                          </div>
                       </div>
-                      <div className="flex justify-between items-center text-xs font-medium text-slate-500 border-t border-slate-100 dark:border-slate-800 pt-4">
-                         <span>Used: <b className="text-slate-900 dark:text-white">{usage.used.toLocaleString()}</b></span>
-                         <span>Total: <b className="text-slate-900 dark:text-white">{usage.total.toLocaleString()}</b></span>
+                      <div className="flex justify-between items-center text-xs font-medium text-slate-500 border-t border-slate-100 dark:border-slate-800 pt-4 group-hover:border-indigo-100 dark:group-hover:border-indigo-900/30 transition-colors">
+                         <span>사용: <b className="text-slate-900 dark:text-white">{usage.used.toLocaleString()}</b></span>
+                         <span>전체: <b className="text-slate-900 dark:text-white">{usage.total.toLocaleString()}</b></span>
                       </div>
-                   </div>
+                   </button>
 
                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm flex flex-col justify-center items-center text-center">
                       <div className="size-16 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 rounded-2xl flex items-center justify-center mb-4">

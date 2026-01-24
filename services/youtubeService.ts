@@ -367,7 +367,7 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
     if (candidates.length > 0) {
       const candidateVideoIds = candidates.map(c => c.representativeVideo.id);
       // Batch request for video stats
-      const vStatsUrl = `${YOUTUBE_BASE_URL}/videos?part=statistics&id=${candidateVideoIds.join(',')}&key=${apiKey}`;
+      const vStatsUrl = `${YOUTUBE_BASE_URL}/videos?part=statistics,snippet&id=${candidateVideoIds.join(',')}&key=${apiKey}`;
       const vStatsRes = await fetch(vStatsUrl);
       trackUsage('list', 1); 
       const vStatsData = await vStatsRes.json();
@@ -379,6 +379,10 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
              const views = parseInt(v.statistics.viewCount || "0");
              cand.representativeVideo.views = views;
              cand.stats.viewCount = views;
+             cand.representativeVideo.thumbnail = v.snippet.thumbnails.maxres?.url || 
+                                                  v.snippet.thumbnails.standard?.url || 
+                                                  v.snippet.thumbnails.high?.url || 
+                                                  cand.representativeVideo.thumbnail;
           }
         });
       }
@@ -440,5 +444,59 @@ export const fetchChannelPopularVideos = async (apiKey: string, channelId: strin
   } catch (e) {
     console.error("Failed to fetch popular videos", e);
     return [];
+  }
+};
+
+export const fetchMyChannelId = async (accessToken: string): Promise<string | null> => {
+  try {
+    const res = await fetch(`${YOUTUBE_BASE_URL}/channels?part=id&mine=true`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json'
+      }
+    });
+    const data = await res.json();
+    if (data.items && data.items.length > 0) {
+      return data.items[0].id;
+    }
+    return null;
+  } catch (e) {
+    console.error("Failed to fetch my channel ID", e);
+    return null;
+  }
+};
+
+export const fetchMemberIds = async (accessToken: string): Promise<string[]> => {
+  try {
+    let memberIds: string[] = [];
+    let nextPageToken = '';
+    
+    do {
+      const url = `${YOUTUBE_BASE_URL}/members?part=snippet&mode=all_current&maxResults=1000${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json'
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+      
+      if (data.items) {
+        const ids = data.items.map((item: any) => item.snippet.memberDetails.channelId);
+        memberIds = [...memberIds, ...ids];
+      }
+      
+      nextPageToken = data.nextPageToken;
+    } while (nextPageToken);
+    
+    return memberIds;
+  } catch (e) {
+    console.error("Failed to fetch member IDs", e);
+    throw e;
   }
 };

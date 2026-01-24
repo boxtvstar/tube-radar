@@ -4,9 +4,10 @@ import React from 'react';
 interface GuestNoticeModalProps {
   onClose: () => void;
   userName: string;
+  onSubscribe?: () => void;
 }
 
-export const GuestNoticeModal: React.FC<GuestNoticeModalProps> = ({ onClose, userName }) => {
+export const GuestNoticeModal: React.FC<GuestNoticeModalProps> = ({ onClose, userName, onSubscribe }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-200 dark:border-slate-800 relative">
@@ -36,12 +37,21 @@ export const GuestNoticeModal: React.FC<GuestNoticeModalProps> = ({ onClose, use
               </p>
            </div>
            
-           <div className="flex gap-3">
+           <div className="flex flex-col gap-3">
+              {onSubscribe && (
+                <button 
+                  onClick={onSubscribe}
+                  className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-indigo-500/30 active:scale-[0.98] flex items-center justify-center gap-2 group"
+                >
+                  <span className="material-symbols-outlined text-lg group-hover:animate-bounce">diamond</span>
+                  멤버십 구독하러 가기
+                </button>
+              )}
               <button 
                 onClick={onClose}
-                className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-indigo-500/30 active:scale-[0.98]"
+                className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold transition-all active:scale-[0.98]"
               >
-                둘러보기
+                무료로 먼저 둘러보기
               </button>
            </div>
            

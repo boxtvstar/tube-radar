@@ -35,6 +35,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
           if (userSnap.exists()) {
             const data = userSnap.data();
+            
+            // Just check generic role/expiry, no channel ID logic needed anymore
             setRole(data.role as UserRole);
             setExpiresAt(data.expiresAt || null);
             
@@ -51,35 +53,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               role: 'pending',
               createdAt: new Date().toISOString(),
               lastLoginAt: new Date().toISOString(),
-              expiresAt: null
-            });
+              expiresAt: null,
+              plan: 'free' // Default to free plan
+            }, { merge: true });
+            
             setRole('pending');
             setExpiresAt(null);
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
-          // 에러 발생 시 안전하게 기본값 설정 (로그인은 되었으므로)
-          setRole('pending'); // 기본값으로 대기 상태 부여
+          setRole('pending');
           setExpiresAt(null);
         }
       } else {
         setRole(null);
         setExpiresAt(null);
       }
-      setLoading(false); // 무조건 로딩 종료
+      setLoading(false);
     });
     return unsubscribe;
   }, []);
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    setLoading(true); // Start loading
+    setLoading(true);
     try {
-      await signInWithPopup(auth, provider);
+      // Standard Generic Login (No Scopes)
+      const result = await signInWithPopup(auth, provider);
       // setUser handled by onAuthStateChanged
     } catch (error) {
       console.error("Login failed:", error);
-      setLoading(false); // Stop loading on error
+      setLoading(false);
     }
   };
 

@@ -8,7 +8,14 @@ import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtub
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ko } from 'date-fns/locale/ko';
 
+
 registerLocale('ko', ko);
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 interface UserData {
   uid: string;
@@ -18,6 +25,7 @@ interface UserData {
   role: 'admin' | 'approved' | 'pending';
   createdAt: string;
   expiresAt?: string; // Optional: Expiration date
+  plan?: string; // Subscription Plan
   lastLoginAt?: string;
   adminMemo?: string;
 }
@@ -138,6 +146,380 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+  // YouTube Membership Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('');
+
+
+  // Whitelist Viewer State
+  const [showWhitelistModal, setShowWhitelistModal] = useState(false);
+  const [whitelistData, setWhitelistData] = useState<{count: number, updatedAt: string, ids: string[], memberDetails: any[]} | null>(null);
+
+  const loadWhitelist = async () => {
+    try {
+      const docRef = doc(db, "system_data", "membership_whitelist");
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        setWhitelistData({
+          count: data.validChannelIds?.length || 0,
+          updatedAt: data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '기록 없음',
+          ids: data.validChannelIds || [],
+          memberDetails: data.memberDetails || [] // Load details!
+        });
+      } else {
+        setWhitelistData({ count: 0, updatedAt: '데이터 없음', ids: [], memberDetails: [] });
+      }
+      // setShowWhitelistModal(true); // No popup on load
+    } catch (e) {
+      console.error("Failed to load whitelist", e);
+    }
+  };
+
+  // Auto-load on mount
+  useEffect(() => {
+    loadWhitelist();
+  }, []);
+
+  // --- Membership Search & Sort State ---
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberSortConfig, setMemberSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+
+  // Filter & Sort Logic
+  const processedMembers = useMemo(() => {
+     if (!whitelistData) return [];
+     
+     // 1. Prepare Base List
+     let data = (whitelistData as any).memberDetails && (whitelistData as any).memberDetails.length > 0 
+        ? [...(whitelistData as any).memberDetails] 
+        : (whitelistData.ids || []).map((id: string) => ({ id, name: '-', tier: '-', tierDuration: '-', totalDuration: '-', lastUpdate: '-' }));
+
+     // 2. Filter
+     if (memberSearchTerm) {
+        const lower = memberSearchTerm.toLowerCase();
+        data = data.filter((m: any) => 
+           (m.name && m.name.toLowerCase().includes(lower)) || 
+           (m.id && m.id.toLowerCase().includes(lower))
+        );
+     }
+
+     // 3. Sort
+     if (memberSortConfig.key) {
+        data.sort((a: any, b: any) => {
+           let aVal = a[memberSortConfig.key!];
+           let bVal = b[memberSortConfig.key!];
+
+           // Numeric
+           if (['tierDuration', 'totalDuration'].includes(memberSortConfig.key!)) {
+              aVal = parseFloat(aVal) || 0;
+              bVal = parseFloat(bVal) || 0;
+           }
+
+           if (aVal < bVal) return memberSortConfig.direction === 'asc' ? -1 : 1;
+           if (aVal > bVal) return memberSortConfig.direction === 'asc' ? 1 : -1;
+           return 0;
+        });
+     }
+
+     return data;
+  }, [whitelistData, memberSearchTerm, memberSortConfig]);
+
+  const handleMemberSort = (key: string) => {
+     setMemberSortConfig(prev => ({
+        key,
+        direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+     }));
+  };
+
+
+
+   // --- CSV Upload Logic (Smart Encoding/Separator Detection) ---
+   // --- CSV Upload Logic (Strict Format Match) ---
+   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+         const buffer = event.target?.result as ArrayBuffer;
+         if (!buffer) return;
+
+         // 1. Decode (UTF-8 preferred, fallback to EUC-KR)
+         let text = new TextDecoder('utf-8').decode(buffer);
+         
+         // Check for replacement character  (indication of wrong encoding)
+         if (text.includes('\uFFFD')) { 
+             console.warn("UTF-8 decoding showed replacement characters. Trying EUC-KR.");
+             try { 
+                text = new TextDecoder('euc-kr').decode(buffer); 
+             } catch(e) {
+                console.error("EUC-KR decoding failed", e);
+             }
+         }
+
+         const lines = text.split(/[\r\n]+/);
+         
+         // 2. Find Header Row
+         // Look for the specific headers shown in the user's screenshot
+         let headerIdx = -1;
+         for (let i = 0; i < Math.min(lines.length, 20); i++) {
+             // loosen the check slightly to handle potential variations or "Member" vs "회원"
+             if (lines[i].includes('회원') || lines[i].includes('Member') || lines[i].includes('프로필')) {
+                 // Check for at least two keywords to be safe
+                 if (lines[i].includes('연결') || lines[i].includes('Link') || lines[i].includes('등급') || lines[i].includes('Tier')) {
+                    headerIdx = i;
+                    break;
+                 }
+             }
+         }
+
+         if (headerIdx === -1) {
+             const preview = lines.slice(0, 5).join('\n');
+             alert(`[오류] 헤더를 찾을 수 없습니다.\n\n파일 형식이 올바르지 않거나 인코딩 문제일 수 있습니다.\n\n--- 파일 내용 미리보기 ---\n${preview}`);
+             return;
+         }
+
+         // 3. Detect Separator from Header Row
+         const headerLine = lines[headerIdx];
+         let separator = ',';
+         if ((headerLine.match(/\t/g) || []).length > (headerLine.match(/,/g) || []).length) separator = '\t';
+
+         // Helper: Split Row
+         const splitRow = (str: string) => {
+             if (separator === '\t') return str.split('\t').map(s => s.trim().replace(/^"|"$/g, ''));
+             // Comma split
+             const res: string[] = [];
+             let cur = '', inQ = false;
+             for(const char of str) {
+                 if(char === '"') inQ = !inQ;
+                 else if(char === ',' && !inQ) { res.push(cur.trim().replace(/^"|"$/g, '')); cur = ''; }
+                 else cur += char;
+             }
+             res.push(cur.trim().replace(/^"|"$/g, ''));
+             return res;
+         };
+
+         // 4. Map Columns (Dynamic but expects specific set)
+         const headers = splitRow(headerLine);
+         const getIdx = (key: string) => headers.findIndex(h => h.includes(key));
+         
+         const idxName = getIdx('회원');
+         const idxLink = getIdx('프로필에');
+         const idxTier = getIdx('현재 등급');
+         const idxTierTime = getIdx('등급을 유지한');
+         const idxTotalTime = getIdx('활동한 총 기간');
+         const idxStatus = getIdx('최종 업데이트');     // Col 5
+         const idxTimestamp = getIdx('타임스탬프');     // Col 6
+
+         const memberDetails: any[] = [];
+         const uniqueIds = new Set<string>();
+
+         // 5. Parse Data Rows
+         for (let i = headerIdx + 1; i < lines.length; i++) {
+             const row = lines[i];
+             if (!row.trim()) continue;
+
+             const cols = splitRow(row);
+             
+             // Extract ID from Link (Col 1)
+             // Link format: https://www.youtube.com/channel/UC...
+             const link = cols[idxLink];
+             if (!link) continue;
+
+             const idMatch = link.match(/channel\/(UC[a-zA-Z0-9_-]{22})/);
+             const id = idMatch ? idMatch[1] : null;
+
+             if (id && !uniqueIds.has(id)) {
+                 uniqueIds.add(id);
+                 
+                 // Extract Fields As-Is (No formatting)
+                 memberDetails.push({
+                     id,
+                     name: cols[idxName] || '',
+                     tier: cols[idxTier] || '',
+                     tierDuration: cols[idxTierTime] || '',    // e.g. "7.09677"
+                     totalDuration: cols[idxTotalTime] || '',  // e.g. "7.09677"
+                     status: cols[idxStatus] || '',            // e.g. "재가입", "가입함"
+                     lastUpdate: cols[idxTimestamp] || ''      // e.g. "2026-01-20T..."
+                 });
+             }
+         }
+
+         if (memberDetails.length === 0) {
+            alert('[오류] 회원 정보를 읽을 수 없습니다.');
+            return;
+         }
+
+         // Immediate Update
+         await updateWhitelistInDb(Array.from(uniqueIds), memberDetails);
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = '';
+   };
+
+   // Reusable function to save to DB (Reference Only)
+   const updateWhitelistInDb = async (ids: string[], details: any[] = []) => {
+      setIsSyncing(true);
+      setSyncStatus(`명단 저장 중...`);
+      try {
+         // Save ONLY to system_data whitelist (Reference Data)
+         const docRef = doc(db, "system_data", "membership_whitelist");
+         await setDoc(docRef, {
+            validChannelIds: ids,
+            memberDetails: details,
+            updatedAt: new Date().toISOString(),
+            count: ids.length,
+            updatedBy: user?.email
+         });
+         
+         await loadWhitelist(); 
+         setSyncStatus('저장 완료!');
+         alert("✅ 멤버십 명단이 [참고용 데이터]로 저장되었습니다.\n(실제 유저 권한에는 영향을 주지 않습니다.)");
+         setTimeout(() => setIsSyncing(false), 1000);
+      } catch (e: any) {
+         console.error("Save Error", e);
+         setSyncStatus('저장 실패');
+         setTimeout(() => setIsSyncing(false), 2000);
+      }
+   };
+
+   // Clear Whitelist Data
+   const resetWhitelist = async () => {
+      if (!window.confirm("정말 모든 멤버십 데이터를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
+      
+      try {
+         const docRef = doc(db, "system_data", "membership_whitelist");
+         await deleteDoc(docRef);
+         setWhitelistData({ count: 0, updatedAt: '데이터 없음', ids: [], memberDetails: [] } as any);
+         alert("✅ 멤버십 데이터가 초기화되었습니다.");
+         await loadWhitelist();
+      } catch(e: any) {
+        console.error("Reset Error", e);
+        alert("초기화 실패");
+      }
+   };
+
+  const executeSync = async (token: string) => {
+    setIsSyncing(true);
+    setSyncStatus('API 접속 중...');
+    
+    try {
+      const { fetchMemberIds, fetchMyChannelId } = await import('../../services/youtubeService');
+      
+      // 🔍 DEBUG: Verify Identity First
+      setSyncStatus('로그인된 채널 확인 중...');
+      const connectedChannelId = await fetchMyChannelId(token);
+      
+      if (!connectedChannelId) {
+         throw new Error("채널 ID를 확인할 수 없습니다. 유튜브 채널이 생성되지 않은 계정입니다.");
+      }
+
+      // 🕵️‍♂️ SCOPE INSPECTOR 🕵️‍♂️
+      // Verify what scopes are ACTUALLY inside this token
+      try {
+        const infoRes = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${token}`);
+        const infoData = await infoRes.json();
+        
+        console.log("Token Scopes:", infoData.scope);
+        
+        if (!infoData.scope.includes('channel-memberships')) {
+           alert(`[중요] 권한 누락 발견!\n\n현재 토큰에 '멤버십 권한'이 없습니다.\n\n보유 권한:\n${infoData.scope}\n\n다시 로그인하여 체크박스를 꼭! 체크해주세요.`);
+           setIsSyncing(false);
+           setSyncStatus('');
+           return;
+        }
+      } catch (err) {
+        console.warn("Token inspection failed", err);
+      }
+
+      // Explicitly ask user to confirm (Debugging Step)
+      const proceed = window.confirm(`현재 로그인된 채널 ID: ${connectedChannelId}\n\n이 채널의 멤버십 데이터를 가져오시겠습니까?`);
+      if (!proceed) {
+         setIsSyncing(false);
+         setSyncStatus('');
+         return;
+      }
+
+      // 2. Fetch All Member IDs
+      setSyncStatus(`채널(${connectedChannelId}) 멤버십 명단 가져오는 중...`);
+      const memberIds = await fetchMemberIds(token);
+      
+      if (memberIds.length === 0) {
+        alert("멤버십 가입자가 없거나 명단을 가져오지 못했습니다.");
+        setIsSyncing(false);
+        setSyncStatus('');
+        return;
+      }
+
+      setSyncStatus(`멤버십 회원 ${memberIds.length}명 확인. DB 매칭 및 Whitelist 저장 중...`);
+      
+      // 2-1. Save Whitelist for Future Auto-Approvals
+      const { saveWhitelist } = await import('../../services/dbService');
+      await saveWhitelist(memberIds);
+      
+      // 3. Match with Pending Users
+      // Need users with 'channelId' stored.
+      let matchCount = 0;
+      
+      // Iterate all pending users and checking if their channelId is in the member list
+      // Since `users` state doesn't have `channelId` (it wasn't in UserData interface yet),
+      // we need to strictly fetch or update UserData interface.
+      
+      const q = query(collection(db, 'users'));
+      const snapshot = await getDocs(q);
+      const allDocs = snapshot.docs.map(d => ({...d.data(), uid: d.id}));
+
+      for (const u of allDocs as any[]) {
+        if (memberIds.includes(u.channelId)) {
+             // MATCH FOUND (Regardless of current role, update expiry)
+             const userRef = doc(db, 'users', u.uid);
+             // Approve + Set Expiry to 35 days (buffer for monthly renewal)
+             await updateDoc(userRef, {
+               role: 'approved',
+               plan: 'membership',
+               expiresAt: calculateExpiry(35),
+               syncedAt: new Date().toISOString()
+             });
+             matchCount++;
+        }
+      }
+      
+      alert(`동기화 완료!\n총 ${memberIds.length}명의 멤버십 명단을 Whitelist에 저장했습니다.\n[${matchCount}명]의 계정 기간을 연장(또는 승인) 처리했습니다.`);
+      
+      // Refresh list
+      window.location.reload(); 
+      
+    } catch (e: any) {
+      console.warn("Sync API Warning", e);
+      
+      // Fallback: If API acts up (e.g. no membership enabled yet),
+      // allow auto-approval for the specific admin test account if it exists in pending.
+      // This is a "Safe Failover" for testing.
+      if (e.message.includes('403') || e.message.includes('forbidden') || e.message.includes('authorized')) {
+         const testTargetEmail = 'boxtvstar@gmail.com';
+         const pendingAdminUser = users.find(u => u.email === testTargetEmail && u.role !== 'approved');
+         
+         if (pendingAdminUser) {
+             setSyncStatus('테스트 계정(관리자) 강제 승인 중...');
+             await updateDoc(doc(db, 'users', pendingAdminUser.uid), {
+               role: 'approved',
+               plan: 'membership_test',
+               expiresAt: calculateExpiry(35),
+               syncedAt: new Date().toISOString()
+             });
+             alert(`[테스트 모드]\n멤버십 API 접근 권한이 없으나,\n테스트 계정(${testTargetEmail})을 발견하여 강제 승인했습니다.`);
+             window.location.reload();
+             return;
+         }
+      }
+
+      alert(`동기화 중 오류 발생: ${e.message}\n(멤버십 기능이 활성화된 채널인지 확인해주세요)`);
+    } finally {
+      setIsSyncing(false);
+      setSyncStatus('');
+    }
+  };
+
   const handleSendManualNotification = async () => {
     if (!notifMessage.trim()) return;
     if (notifTargetMode === 'individual' && !notifTargetUser) return;
@@ -214,7 +596,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
   };
 
   // --- Recommended Packages & Topics State ---
-  const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries'>('users');
+const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership'>('users');
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
   const [topics, setTopics] = useState<RecommendedPackage[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
@@ -676,12 +1058,14 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
 
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [editRole, setEditRole] = useState<'admin' | 'approved' | 'pending'>('pending');
+  const [editPlan, setEditPlan] = useState<string>('free'); // New Plan State
   const [expiryDays, setExpiryDays] = useState<string>(''); // '' means no change or custom
   const [customExpiry, setCustomExpiry] = useState('');
 
   const handleEditClick = (u: UserData) => {
     setSelectedUser(u);
     setEditRole(u.role);
+    setEditPlan(u.plan || 'free'); // Init plan
     setExpiryDays('');
     setCustomExpiry(u.expiresAt ? new Date(u.expiresAt).toISOString().split('T')[0] : '');
   };
@@ -700,6 +1084,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     try {
       await updateDoc(doc(db, 'users', selectedUser.uid), { 
         role: editRole,
+        plan: editPlan,
         expiresAt: newExpiresAt || null
       });
       fetchUsers();
@@ -749,16 +1134,16 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
               </h2>
 
               {/* Main Tabs */}
-              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto no-scrollbar">
                  <button 
                    onClick={() => setActiveTab('users')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'users' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    사용자 관리
                  </button>
                  <button 
                    onClick={() => setActiveTab('packages')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'packages' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'packages' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
                       <span>추천 팩 관리</span>
@@ -767,7 +1152,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                  </button>
                  <button 
                    onClick={() => setActiveTab('topics')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'topics' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'topics' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
                       <span>추천 소재 관리</span>
@@ -777,11 +1162,21 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
 
                  <button 
                    onClick={() => setActiveTab('inquiries')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'inquiries' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'inquiries' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
                       <span>문의 수신함</span>
                       {activeTab !== 'inquiries' && <span className="bg-indigo-500 size-2 rounded-full"></span>}
+                   </div>
+                 </button>
+                 
+                 <button 
+                   onClick={() => setActiveTab('membership')}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'membership' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                 >
+                   <div className="flex items-center gap-1">
+                      <span>멤버십 관리</span>
+                      {activeTab !== 'membership' && <span className="bg-rose-500 size-2 rounded-full"></span>}
                    </div>
                  </button>
               </div>
@@ -914,6 +1309,7 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                     <th className="px-6 py-4">사용자</th>
                     <th className="px-6 py-4">관리자 메모</th>
                     <th className="px-6 py-4">이메일</th>
+                    <th className="px-6 py-4">플랜</th>
                     <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors" onClick={() => handleSort('lastLoginAt')}>
                       <div className="flex items-center gap-1">
                         최근 접속
@@ -986,6 +1382,15 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                             )}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{u.email}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
+                        u.plan === 'yearly' ? 'bg-purple-100 text-purple-600 border-purple-200' :
+                        u.plan === 'monthly' ? 'bg-indigo-100 text-indigo-600 border-indigo-200' :
+                        'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}>
+                        {u.plan === 'yearly' ? 'Yearly' : u.plan === 'monthly' ? 'Monthly' : 'Free'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap">
                       {u.lastLoginAt ? (
                         <div className="flex flex-col">
@@ -1214,6 +1619,202 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                   </div>
                 )}
              </div>
+          ) : activeTab === 'membership' ? (
+            <div className="space-y-6 animate-in fade-in max-w-6xl mx-auto w-full">
+               {/* Stats & Actions Card */}
+               <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                     <span className="material-symbols-outlined text-rose-500 text-3xl">card_membership</span>
+                     멤버십 데이터 관리
+                  </h3>
+                  <div className="flex flex-col gap-6">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                           <div className="text-xs text-slate-500 font-bold uppercase mb-1">총 등록 회원</div>
+                           <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400">
+                              {(whitelistData?.count || 0).toLocaleString()}
+                              <span className="text-lg text-slate-400 font-medium ml-1">명</span>
+                           </div>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                           <div className="text-xs text-slate-500 font-bold uppercase mb-1">마지막 업데이트</div>
+                           <div className="text-sm font-bold text-slate-700 dark:text-slate-300 mt-2">
+                              {whitelistData?.updatedAt || '-'}
+                           </div>
+                        </div>
+                     </div>
+                     
+                     <div className="flex flex-col sm:flex-row gap-3">
+
+                        
+                        <label className="flex-1 py-4 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2 cursor-pointer shadow-sm">
+                           <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} disabled={isSyncing} />
+                           <span className="material-symbols-outlined text-green-500">upload_file</span>
+                           CSV 업로드
+                        </label>
+
+                        <button 
+                           onClick={resetWhitelist}
+                           className="px-6 py-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 font-bold rounded-xl hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-2"
+                           >
+                           <span className="material-symbols-outlined">delete_forever</span>
+                           명단 초기화
+                        </button>
+                     </div>
+                  </div>
+               </div>
+               
+               {/* Table Area */}
+               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                     <h4 className="font-bold flex items-center gap-2">
+                        <span className="material-symbols-outlined text-slate-400">list</span>
+                        회원 명단
+                     </h4>
+                     <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                        <input 
+                           type="text" 
+                           placeholder="이름 또는 ID 검색..." 
+                           value={memberSearchTerm}
+                           onChange={(e) => setMemberSearchTerm(e.target.value)}
+                           className="pl-9 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 w-[240px]"
+                        />
+                     </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                     <table className="w-full text-left border-collapse min-w-[900px]">
+                        <thead>
+                           <tr className="border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase bg-slate-50/50 dark:bg-slate-800/50">
+                              <th onClick={() => handleMemberSort('name')} className="px-4 py-3 font-bold w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center gap-1">회원 {memberSortConfig.key === 'name' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              </th>
+                              <th onClick={() => handleMemberSort('tier')} className="px-4 py-3 font-bold w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center gap-1">현재 등급 {memberSortConfig.key === 'tier' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              </th>
+                              <th onClick={() => handleMemberSort('tierDuration')} className="px-4 py-3 font-bold text-center w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center justify-center gap-1">등급 유지 기간 {memberSortConfig.key === 'tierDuration' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              </th>
+                              <th onClick={() => handleMemberSort('totalDuration')} className="px-4 py-3 font-bold text-center w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center justify-center gap-1">총 활동 기간 {memberSortConfig.key === 'totalDuration' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              </th>
+                              <th onClick={() => handleMemberSort('lastUpdate')} className="px-4 py-3 font-bold w-[20%] text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center justify-end gap-1">멤버십 상태 {memberSortConfig.key === 'lastUpdate' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              </th>
+                              <th onClick={() => handleMemberSort('id')} className="px-4 py-3 font-bold w-[20%] text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center justify-end gap-1">Channel ID {memberSortConfig.key === 'id' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              </th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                           {processedMembers.map((m: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                                 <td className="px-4 py-3">
+                                   <div className="flex items-center gap-2">
+                                     <div className="size-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 shrink-0">
+                                       <span className="material-symbols-outlined text-sm">person</span>
+                                     </div>
+                                     <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title={m.name}>
+                                       {m.name || '알 수 없음'}
+                                     </span>
+                                   </div>
+                                 </td>
+                                 <td className="px-4 py-3">
+                                    <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold border ${m.tier?.includes('VIP') ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}>
+                                       {m.tier || '-'}
+                                    </span>
+                                 </td>
+                                 <td className="px-4 py-3 text-xs text-slate-500 text-center font-medium">
+                                    {(() => {
+                                       const val = m.tierDuration;
+                                       if (!val || val === '-') return '-';
+                                       const num = parseFloat(val);
+                                       return isNaN(num) ? val : `${num.toFixed(1)}개월`;
+                                    })()}
+                                 </td>
+                                 <td className="px-4 py-3 text-center">
+                                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/10 px-2 py-1 rounded-lg">
+                                       {(() => {
+                                          const val = m.totalDuration;
+                                          if (!val || val === '-') return '-';
+                                          const num = parseFloat(val);
+                                          return isNaN(num) ? val : `${num.toFixed(1)}개월`;
+                                       })()}
+                                    </span>
+                                 </td>
+                                 <td className="px-4 py-3 text-right">
+                                    {(() => {
+                                        const dateStr = m.lastUpdate || m.joinDate;
+                                        if (!dateStr || dateStr === '-') return <span className="text-slate-400">-</span>;
+                                        
+                                        try {
+                                           const anchorDate = new Date(dateStr); // 가입일 or 재가입일
+                                           if (isNaN(anchorDate.getTime())) return <span className="text-slate-400">{dateStr}</span>;
+
+                                           const status = m.status || '가입함';
+                                           const anchorDay = anchorDate.getDate(); // 매월 갱신일 (예: 20일)
+
+                                           // 1. 다음 갱신일(Next Renewal) 찾기
+                                           // 기본: 이번 달의 anchorDay
+                                           const now = new Date();
+                                           let nextRenewal = new Date(now.getFullYear(), now.getMonth(), anchorDay);
+                                           
+                                           // 만약 이번 달 갱신일이 이미 지났다면 -> 다음 달로 설정
+                                           if (now.getDate() > anchorDay) {
+                                               nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+                                           }
+
+                                           // 2. 남은 일수 계산
+                                           const diffMs = nextRenewal.getTime() - now.getTime();
+                                           const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                                           
+                                           // 3. 상태 표시 (적극적 방어 로직: 리스트에 있으면 무조건 Active)
+                                           // daysLeft가 음수가 나올 수 없음 (로직상 항상 미래). 0이면 오늘.
+                                           const isDDay = daysLeft === 0;
+                                           const isUrgent = daysLeft <= 3;
+
+                                           return (
+                                              <div className="flex flex-col items-end gap-0.5">
+                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                                    isUrgent 
+                                                    ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' 
+                                                    : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20'
+                                                 }`}>
+                                                    {isDDay ? 'D-Day (오늘 갱신)' : `D-${daysLeft} (${daysLeft}일 남음)`}
+                                                 </span>
+                                                 <span className="text-[10px] text-slate-400">
+                                                    {status === '재가입' ? '재가입일 ' : '가입일 '}
+                                                    {anchorDate.toLocaleDateString('ko-KR', {month:'2-digit', day:'2-digit'})}
+                                                    {' · 매월 '}{anchorDay}일 갱신
+                                                 </span>
+                                              </div>
+                                           );
+                                        } catch (e) { return <span className="text-slate-400">-</span>; }
+                                    })()}
+                                 </td>
+                                 <td className="px-4 py-3 text-right">
+                                    <button 
+                                      className="text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 px-2 py-1 rounded font-mono transition-colors"
+                                      onClick={() => navigator.clipboard.writeText(m.id)}
+                                      title="클릭하여 ID 복사"
+                                    >
+                                       {m.id}
+                                    </button>
+                                 </td>
+                              </tr>
+                           ))}
+                           {(!whitelistData?.ids || whitelistData.ids.length === 0) && (
+                              <tr>
+                                 <td colSpan={6} className="py-20 text-center text-slate-400 text-sm">
+                                    등록된 멤버십 회원이 없습니다.
+                                 </td>
+                              </tr>
+                           )}
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
+            </div>
           ) : (
             <div className="flex flex-col gap-6">
                 {/* Package Filters */}
@@ -1336,6 +1937,25 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                      ))}
                    </div>
                  </div>
+
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">구독 플랜 (Plan)</label>
+                    <div className="flex gap-2">
+                      {['free', 'monthly', 'yearly'].map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setEditPlan(p)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
+                            editPlan === p 
+                              ? 'bg-primary text-white border-primary' 
+                              : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {p === 'free' ? '무료' : p === 'monthly' ? '월간' : '연간'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                  <div>
                    <label className="block text-xs font-bold text-slate-500 mb-1">이용 기간 연장</label>

@@ -35,6 +35,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
   const [targetGroupId, setTargetGroupId] = React.useState<string>(activeGroupId === 'all' ? (groups[0]?.id || 'default') : activeGroupId);
   const [isCreatingNewGroup, setIsCreatingNewGroup] = React.useState(false);
   const [newGroupName, setNewGroupName] = React.useState('');
+  const [isGroupSelectOpen, setIsGroupSelectOpen] = React.useState(false);
 
   // Reset group selection when modal opens
   React.useEffect(() => {
@@ -50,8 +51,6 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
   }, [selectedPackage, activeGroupId, groups]);
 
   const { user } = useAuth();
-
-
 
   // [Restored] Popular Video Preview Logic (Only for Topics)
   const popularVideos = React.useMemo(() => {
@@ -188,6 +187,105 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
   };
 
   const isAllSelected = selectedPackage && selectedPackage.channels.length === selectedChannelIds.length;
+
+  // Reusable Group Selector Component
+  const renderGroupSelector = (isFooter = false) => (
+    <div className={`relative ${isFooter ? 'w-full' : 'min-w-[140px] max-w-[50%]'}`}>
+      {isCreatingNewGroup ? (
+         <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95 bg-white dark:bg-slate-800 p-1.5 rounded-xl border-2 border-indigo-500 shadow-lg relative z-50">
+            <span className="material-symbols-outlined text-indigo-500 text-lg pl-1">create_new_folder</span>
+            <input 
+              type="text" 
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="새 그룹명 입력"
+              className="flex-1 bg-transparent text-xs font-bold outline-none min-w-[80px] w-full text-slate-900 dark:text-white placeholder:text-slate-400"
+              autoFocus
+              onKeyDown={(e) => {
+                 if (e.key === 'Enter') {
+                    // Visual feedback or focus out
+                    (e.target as HTMLInputElement).blur();
+                 }
+              }}
+            />
+            {/* Confirm Visual Button */}
+            <button 
+              onClick={(e) => {
+                 e.stopPropagation();
+                 if (!newGroupName.trim()) return alert("그룹 이름을 입력해주세요.");
+                 setTargetGroupId('__NEW_GROUP__');
+                 setIsCreatingNewGroup(false);
+              }}
+              className="size-6 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg flex items-center justify-center transition-colors shadow-sm"
+              title="이름 확정"
+            >
+              <span className="material-symbols-outlined text-sm font-bold">check</span>
+            </button>
+            {/* Cancel Button */}
+            <button 
+              onClick={() => setIsCreatingNewGroup(false)} 
+              className="size-6 bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-slate-400 hover:text-rose-500 rounded-lg flex items-center justify-center transition-colors"
+              title="취소"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+         </div>
+       ) : (
+        <>
+            <button 
+              onClick={() => setIsGroupSelectOpen(!isGroupSelectOpen)}
+              className={`w-full flex items-center justify-between text-left bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 outline-none transition-colors ${isFooter ? 'py-2.5' : ''}`}
+            >
+              <div className="flex items-center gap-1.5 truncate mr-1">
+                <span className={`material-symbols-outlined text-[14px] ${targetGroupId === '__NEW_GROUP__' ? 'text-emerald-500' : 'text-indigo-500'}`}>
+                  {targetGroupId === '__NEW_GROUP__' ? 'create_new_folder' : 'folder'}
+                </span>
+                <span className={`truncate ${targetGroupId === '__NEW_GROUP__' ? 'text-emerald-600 dark:text-emerald-400 font-black' : ''}`}>
+                  {targetGroupId === '__NEW_GROUP__' ? newGroupName : (groups.find(g => g.id === targetGroupId)?.name || '그룹 선택')}
+                </span>
+              </div>
+              <span className={`material-symbols-outlined text-slate-400 text-sm transition-transform shrink-0 ${isGroupSelectOpen ? 'rotate-180' : ''}`}>expand_more</span>
+            </button>
+            
+            {isGroupSelectOpen && (
+               <>
+                 <div className="fixed inset-0 z-[60]" onClick={() => setIsGroupSelectOpen(false)} />
+                 <div className={`absolute ${isFooter ? 'bottom-full mb-1' : 'top-full mt-1'} right-0 w-52 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden z-[70] animate-in zoom-in-95 duration-200 flex flex-col`}>
+                    <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
+                      <button
+                        onClick={() => {
+                           setIsCreatingNewGroup(true);
+                           setIsGroupSelectOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2.5 text-xs font-bold text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+                      >
+                         <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
+                         새 그룹 만들기
+                      </button>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar flex flex-col p-1">
+                       <div className="text-[10px] font-bold text-slate-400 px-3 py-1.5 mt-1">저장할 그룹 선택</div>
+                       {groups.map(g => (
+                          <button
+                            key={g.id}
+                            onClick={() => {
+                               setTargetGroupId(g.id);
+                               setIsGroupSelectOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 ${targetGroupId === g.id ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'}`}
+                          >
+                             <span className={`material-symbols-outlined text-[16px] ${targetGroupId === g.id ? 'filled' : ''}`}>folder</span>
+                             {g.name}
+                          </button>
+                       ))}
+                    </div>
+                 </div>
+               </>
+            )}
+        </>
+       )}
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
@@ -391,83 +489,137 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                </button>
              </div>
 
-             {/* Modal Body - Channel Grid */}
-             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white dark:bg-slate-900">
-               <div className="flex items-center justify-between mb-6">
-                 <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                   <span className="material-symbols-outlined text-indigo-500">subscriptions</span>
-                   포함된 채널 <span className="text-indigo-500">({selectedPackage.channels.length})</span>
-                 </h3>
-
-               </div>
+             {/* Modal Body - 2 Columns Layout */}
+             <div className="flex-1 overflow-hidden flex flex-col md:flex-row bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
                
-               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                 {selectedPackage.channels.map((ch, idx) => {
-                    const isSelected = selectedChannelIds.includes(ch.id);
-                    return (
-                      <div 
-                        key={`${ch.id}-${idx}`} 
-                        onClick={() => toggleChannelCallback(ch.id)}
-                        className={`flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
-                          isSelected 
-                          ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-500 ring-1 ring-indigo-500/20' 
-                          : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 hover:border-indigo-500/30 opacity-60 hover:opacity-100'
-                        }`}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-0 right-0 p-2 text-indigo-500">
-                            <span className="material-symbols-outlined text-lg">check_circle</span>
-                          </div>
-                        )}
-                        <img src={ch.thumbnail} alt={ch.title} className={`size-12 rounded-full border-2 shadow-sm ${isSelected ? 'border-indigo-500' : 'border-white dark:border-slate-700'}`} />
-                        <div className="flex-1 min-w-0">
-                          <h4 className={`font-bold text-sm truncate transition-colors ${isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-900 dark:text-slate-200'}`}>{ch.title}</h4>
-                          <div className="text-[10px] text-slate-400 truncate flex items-center gap-2">
-                             <span>{ch.customUrl || ch.id}</span>
-                             {(ch.subscriberCount) && <span className="flex items-center gap-0.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1 rounded"><span className="material-symbols-outlined text-[10px]">group</span> {ch.subscriberCount}</span>}
-                          </div>
-                        </div>
-                        <a href={`https://youtube.com/${ch.customUrl || 'channel/' + ch.id}`} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-red-500 p-2 z-10" onClick={(e) => e.stopPropagation()}>
-                          <span className="material-symbols-outlined text-lg">open_in_new</span>
-                        </a>
+               {/* Left Column: Channels */}
+               <div className={`flex flex-col overflow-hidden ${popularVideos.length > 0 ? 'md:w-1/3 border-b md:border-b-0 md:border-r border-slate-100 dark:border-slate-800' : 'w-full'}`}>
+                 {/* Fixed Header with Group Select */}
+                 <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 z-20 shrink-0 flex items-center justify-between gap-2 overflow-visible">
+                   <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 shrink-0">
+                     <span className="material-symbols-outlined text-indigo-500 text-lg">subscriptions</span>
+                     <span>{mode === 'topic' ? '추천 소재 채널' : '포함된 채널'}</span>
+                     <span className="text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded text-xs ml-0.5">{selectedPackage.channels.length}</span>
+                   </h3>
+                   
+                   {/* Group Selection Dropdown (Only for Package Mode) */}
+                   {mode !== 'topic' && (
+                      <div className="flex items-center gap-2">
+                         <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">선택할 그룹 선택</span>
+                         {renderGroupSelector(false)}
                       </div>
-                    );
-                 })}
+                   )}
+                 </div>
+                 
+                 {/* Scrollable List */}
+                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-white dark:bg-slate-900">
+                   <div className={`grid gap-2 ${popularVideos.length > 0 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
+                     {selectedPackage.channels.map((ch, idx) => {
+                        const isSelected = selectedChannelIds.includes(ch.id);
+                        return (
+                          <div 
+                            key={`${ch.id}-${idx}`} 
+                            onClick={() => toggleChannelCallback(ch.id)}
+                            className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer group relative ${
+                              isSelected 
+                              ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-500 ring-1 ring-indigo-500/20' 
+                              : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-500/30'
+                            }`}
+                          >
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 text-indigo-500">
+                                <span className="material-symbols-outlined text-sm">check_circle</span>
+                              </div>
+                            )}
+                            <img src={ch.thumbnail} alt={ch.title} className="size-8 rounded-full bg-slate-100 object-cover shrink-0" />
+                            <div className="flex-1 min-w-0 pr-5">
+                              <h4 className={`font-bold text-xs truncate ${isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-900 dark:text-slate-200'}`}>{ch.title}</h4>
+                            </div>
+                            <a href={`https://youtube.com/${ch.customUrl || 'channel/' + ch.id}`} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-red-500 p-1 z-10" onClick={(e) => e.stopPropagation()}>
+                              <span className="material-symbols-outlined text-sm">open_in_new</span>
+                            </a>
+                          </div>
+                        );
+                     })}
+                   </div>
+                 </div>
+
+                 {/* Action Area (Buttons Only) */}
+                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 z-10 shrink-0">
+                    {/* Topic Mode Only: Group Selector Here */}
+                    {mode === 'topic' && (
+                       <div className="mb-3">
+                          <div className="text-[10px] font-bold text-slate-400 mb-1 ml-1">저장할 그룹 선택</div>
+                          {renderGroupSelector(true)}
+                       </div>
+                    )}
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setSelectedPackage(null)}
+                        className="flex-1 py-3 text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                      >
+                        취소
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (selectedChannelIds.length === 0) return alert('최소 1개 이상의 채널을 선택해주세요.');
+                          
+                          const isNewGroup = isCreatingNewGroup || targetGroupId === '__NEW_GROUP__';
+                          if (isNewGroup && !newGroupName.trim()) return alert('새 그룹 이름을 입력해주세요.');
+                          
+                          const pkgToAdd = {
+                            ...selectedPackage,
+                            channels: selectedPackage.channels.filter(c => selectedChannelIds.includes(c.id))
+                          };
+                          onAdd(pkgToAdd, isNewGroup ? 'new' : targetGroupId, isNewGroup ? newGroupName : undefined);
+                          setSelectedPackage(null);
+                        }}
+                        disabled={isAdding || selectedChannelIds.length === 0}
+                        className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-1.5"
+                      >
+                         {isAdding ? <span className="material-symbols-outlined text-sm animate-spin">sync</span> : <span className="material-symbols-outlined text-sm">add_circle</span>}
+                         {selectedChannelIds.length}개 추가
+                      </button>
+                    </div>
+                 </div>
                </div>
 
-
-
-
-               {/* [Restored & Moved] Popular Videos Section (Only for Topics) */}
+               {/* Right Column: Popular Videos (Only if available) */}
                {popularVideos.length > 0 && (
-                 <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
-                      <span className="material-symbols-outlined text-rose-500 text-lg">local_fire_department</span>
-                      최고 인기 동영상 <span className="text-xs text-slate-400 font-normal">(소재 참고용)</span>
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {popularVideos.map(video => (
-                        <a 
-                          key={video.id}
-                          href={`https://www.youtube.com/watch?v=${video.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="group block bg-slate-50 dark:bg-slate-800/50 rounded-lg overflow-hidden hover:ring-2 hover:ring-rose-500 transition-all"
-                        >
-                           <div className="aspect-video relative overflow-hidden">
-                              <img src={video.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                              <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[9px] px-1 rounded font-bold">{video.duration}</div>
-                           </div>
-                           <div className="p-2">
-                              <h4 className="font-bold text-[11px] text-slate-900 dark:text-white line-clamp-2 leading-tight group-hover:text-rose-500 transition-colors">{video.title}</h4>
-                              <div className="flex items-center gap-1 mt-1.5 text-[9px] text-slate-500">
-                                 <span className="font-bold text-slate-700 dark:text-slate-300">조회수 {video.views}</span>
-                                 <span>•</span>
-                                 <span>{new Date(video.date).toLocaleDateString()}</span>
-                              </div>
-                           </div>
-                        </a>
-                      ))}
+                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/20">
+                    {/* Fixed Header */}
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 shrink-0">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span className="material-symbols-outlined text-rose-500 text-lg">local_fire_department</span>
+                        핫 트렌드 영상 <span className="text-xs text-slate-400 font-normal">(상위 인기)</span>
+                      </h3>
+                    </div>
+                    
+                    {/* Scrollable List */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {popularVideos.map(video => (
+                          <a 
+                            key={video.id}
+                            href={`https://www.youtube.com/watch?v=${video.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group bg-white dark:bg-slate-800 rounded-xl overflow-hidden hover:ring-2 hover:ring-rose-500 transition-all border border-slate-200 dark:border-slate-700 hover:shadow-md flex flex-col"
+                          >
+                             <div className="aspect-video relative overflow-hidden bg-slate-200">
+                                <img src={video.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                                <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[9px] px-1 rounded font-bold">{video.duration}</div>
+                             </div>
+                             <div className="p-2.5 flex-1 flex flex-col">
+                                <h4 className="font-bold text-[11px] text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover:text-rose-500 transition-colors mb-1.5">{video.title}</h4>
+                                <div className="mt-auto flex items-center justify-between text-[10px] text-slate-500">
+                                   <span className="font-bold text-slate-700 dark:text-slate-300">조회수 {video.views}</span>
+                                   <span>{new Date(video.date).toLocaleDateString()}</span>
+                                </div>
+                             </div>
+                          </a>
+                        ))}
+                      </div>
                     </div>
                  </div>
                )}
@@ -475,91 +627,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
               </div>
 
              {/* Modal Footer with Group Selection */}
-             <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 backdrop-blur-sm space-y-4">
-                
-                {/* Group Selection Area */}
-                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm">folder_open</span>
-                      저장할 그룹 선택
-                    </span>
-                    <button 
-                      onClick={() => setIsCreatingNewGroup(!isCreatingNewGroup)}
-                      className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"
-                    >
-                      {isCreatingNewGroup ? '기존 그룹 선택' : '+ 새 그룹 만들기'}
-                    </button>
-                  </div>
 
-                  {isCreatingNewGroup ? (
-                    <div className="flex items-center gap-2 animate-in slide-in-from-top-2">
-                       <input 
-                         type="text" 
-                         value={newGroupName}
-                         onChange={(e) => setNewGroupName(e.target.value)}
-                         placeholder="새 그룹 이름 입력"
-                         className="flex-1 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:font-medium"
-                         autoFocus
-                       />
-                       <div className="text-[10px] text-indigo-500 font-bold px-2 whitespace-nowrap">
-                         (새 그룹 생성)
-                       </div>
-                    </div>
-                  ) : (
-                    <div className="relative animate-in slide-in-from-top-2 group-select-wrapper">
-                      <select
-                        value={targetGroupId}
-                        onChange={(e) => setTargetGroupId(e.target.value)}
-                        className="w-full appearance-none bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer transition-all hover:bg-slate-100 dark:hover:bg-white/5"
-                      >
-                        {groups.map(g => (
-                          <option key={g.id} value={g.id}>{g.name}</option>
-                        ))}
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-sm group-hover:text-indigo-500 transition-colors">expand_more</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setSelectedPackage(null)}
-                    disabled={isAdding}
-                    className="flex-1 py-3.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl transition-all disabled:opacity-50 hover:shadow-sm"
-                  >
-                    취소
-                  </button>
-                  <button 
-                    onClick={() => {
-                      if (selectedChannelIds.length === 0) return alert('최소 1개 이상의 채널을 선택해주세요.');
-                      if (isCreatingNewGroup && !newGroupName.trim()) return alert('새 그룹 이름을 입력해주세요.');
-                      
-                      // Clone package but only with selected channels
-                      const pkgToAdd = {
-                        ...selectedPackage,
-                        channels: selectedPackage.channels.filter(c => selectedChannelIds.includes(c.id))
-                      };
-                      onAdd(pkgToAdd, targetGroupId, isCreatingNewGroup ? newGroupName : undefined);
-                      setSelectedPackage(null);
-                    }}
-                    disabled={isAdding || selectedChannelIds.length === 0}
-                    className="flex-[2] bg-indigo-500 text-white py-3.5 rounded-xl text-xs font-black uppercase shadow-lg shadow-indigo-500/30 hover:bg-indigo-600 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                     {isAdding ? (
-                       <>
-                         <span className="material-symbols-outlined text-sm animate-spin">sync</span>
-                         추가 중...
-                       </>
-                     ) : (
-                       <>
-                         <span className="material-symbols-outlined text-sm">add_circle</span>
-                         선택한 {selectedChannelIds.length}개 채널 {isCreatingNewGroup ? '새 그룹에 추가' : '추가하기'}
-                       </>
-                     )}
-                  </button>
-                </div>
-             </div>
 
            </div>
          </div>

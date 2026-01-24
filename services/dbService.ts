@@ -3,6 +3,7 @@ import {
   doc, 
   setDoc, 
   getDocs, 
+  getDoc, // Added Import
   deleteDoc, 
   writeBatch,
   query,
@@ -186,4 +187,31 @@ export const replyToInquiry = async (inquiryId: string, userId: string, answer: 
     message: "1:1 문의하기 탭에서 관리자의 답변을 확인하세요.",
     type: "info"
   });
+};
+
+// --- Membership Whitelist (Auto-Approval) ---
+// Save updated channel IDs to a designated document in 'system_data' collection
+export const saveWhitelist = async (memberIds: string[]) => {
+  // We overwrite the entire list. Using a single doc for simplicity.
+  // Assuming member list < 1MB (approx 50,000 IDs). If more, need sharding.
+  await setDoc(doc(db, "system_data", "membership_whitelist"), {
+    validChannelIds: memberIds,
+    updatedAt: new Date().toISOString()
+  });
+};
+
+// Check if a specific channel ID exists in the whitelist
+export const checkWhitelist = async (channelId: string): Promise<boolean> => {
+  if (!channelId) return false;
+  try {
+    const snap = await getDoc(doc(db, "system_data", "membership_whitelist"));
+    if (snap.exists()) {
+      const data = snap.data();
+      return data.validChannelIds?.includes(channelId) || false;
+    }
+    return false;
+  } catch (e) {
+    console.error("Whitelist check failed", e);
+    return false;
+  }
 };

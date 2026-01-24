@@ -18,6 +18,7 @@ import {
   autoDetectShortsChannels
 } from './services/youtubeService';
 import { analyzeVideoVirality } from './services/geminiService';
+import { MembershipPage } from './src/components/MembershipPage';
 import { RecommendedPackageList } from './src/components/RecommendedPackageList';
 import { 
   saveChannelToDb,
@@ -60,6 +61,41 @@ const getTimeAgo = (date: string) => {
 };
 
 // --- 서브 컴포넌트 ---
+
+interface RestrictedOverlayProps {
+  onCheckStatus: () => void;
+  onSubscribe: () => void;
+}
+
+const RestrictedOverlay: React.FC<RestrictedOverlayProps> = ({ onCheckStatus, onSubscribe }) => (
+  <div className="absolute inset-0 z-50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md flex items-center justify-center rounded-3xl">
+     <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-sm mx-4 animate-in zoom-in duration-300">
+        <div className="size-16 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 mx-auto mb-4 flex items-center justify-center shadow-inner">
+           <span className="material-symbols-outlined text-3xl">lock</span>
+        </div>
+        <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">접근 권한이 없습니다</h3>
+        <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed font-medium">
+           이 기능은 <span className="text-rose-500 font-bold">멤버십 전용</span> 기능입니다.<br/>
+           멤버십 승인 후 이용하실 수 있습니다.
+        </p>
+        <div className="flex flex-col gap-3 w-full">
+           <button 
+              onClick={onSubscribe}
+              className="w-full px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-indigo-500/30 transition-all flex items-center justify-center gap-2 group"
+           >
+              <span className="material-symbols-outlined text-lg group-hover:animate-bounce">diamond</span>
+              멤버십 구독하러 가기
+           </button>
+           <button 
+              onClick={onCheckStatus}
+              className="w-full px-6 py-3.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm transition-colors"
+           >
+              내 승인 상태 확인하기
+           </button>
+        </div>
+     </div>
+  </div>
+);
 
 const VelocitySpeedometer = ({ score }: { score: string }) => {
   const numericScore = parseFloat(score);
@@ -166,24 +202,27 @@ const SidebarItem = ({
   label, 
   active, 
   onClick,
-  className = ""
+  className = "",
+  isCollapsed
 }: { 
   icon: string, 
   label: string, 
   active: boolean, 
   onClick: () => void,
-  className?: string
+  className?: string,
+  isCollapsed?: boolean
 }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
       active
         ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md transform scale-[1.02]' 
         : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
     } ${className}`}
+    title={isCollapsed ? label : undefined}
   >
     <span className="material-symbols-outlined text-[18px]">{icon}</span>
-    {label}
+    {!isCollapsed && label}
   </button>
 );
 
@@ -208,11 +247,18 @@ const Sidebar = ({
   onToggleShortsDetectorMode,
   isTopicMode,
   onToggleTopicMode,
+  isMembershipMode,
+  onToggleMembershipMode,
   hasPendingSync,
   isSyncNoticeDismissed,
   isApiKeyMissing,
   usage,
-  isReadOnly
+  isReadOnly,
+  isCollapsed,
+  onToggleCollapse,
+  isMobileMenuOpen,
+  onCloseMobileMenu,
+  onOpenMyPage
 }: { 
   ytKey: string,
   onYtKeyChange: (val: string) => void,
@@ -237,7 +283,14 @@ const Sidebar = ({
   onToggleShortsDetectorMode: (val: boolean) => void,
   isTopicMode: boolean,
   onToggleTopicMode: (val: boolean) => void,
+  isMembershipMode: boolean,
+  onToggleMembershipMode: (val: boolean) => void,
   isReadOnly?: boolean;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  isMobileMenuOpen?: boolean;
+  onCloseMobileMenu?: () => void;
+  onOpenMyPage?: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support') => void;
 }) => {
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
@@ -245,51 +298,96 @@ const Sidebar = ({
   const isWarning = !isApiKeyMissing && percent < 30;
 
   return (
-    <aside className="w-72 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen shrink-0 bg-white dark:bg-background-dark hidden lg:flex">
-      <button 
-        onClick={() => {
-          onToggleUsageMode(false); 
-          onToggleExplorerMode(false); 
-          onTogglePackageMode(false); 
-          onToggleMyMode(true); 
-          onToggleShortsDetectorMode(false); 
-          onToggleTopicMode(false);
-        }}
-        className="p-6 flex items-center gap-3 text-left w-full hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group"
-      >
-        <div className="size-10 bg-primary rounded-lg flex items-center justify-center text-white neon-glow group-hover:scale-110 transition-transform duration-300">
-          <span className="material-symbols-outlined">analytics</span>
-        </div>
-        <div>
-          <h1 className="text-sm font-bold leading-tight tracking-tighter uppercase dark:text-white text-slate-900 group-hover:text-primary transition-colors">Tube Radar 2.0</h1>
-          <p className="text-slate-400 dark:text-slate-500 text-[9px] font-bold uppercase tracking-widest">By 디스이즈머니</p>
-        </div>
-      </button>
+    <>
+      {/* Mobile Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden animate-in fade-in"
+          onClick={onCloseMobileMenu}
+        />
+      )}
       
-      <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-50 bg-white dark:bg-background-dark border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen shrink-0 transition-all duration-300
+        ${isMobileMenuOpen ? 'translate-x-0 w-72 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
+        ${!isMobileMenuOpen ? (isCollapsed ? 'w-20' : 'w-72') : ''} 
+      `}>
+      <div className={`flex items-center ${isCollapsed ? 'justify-center p-4' : 'justify-between p-6'} transition-all`}>
+        {isCollapsed ? (
+          <button 
+            onClick={onToggleCollapse}
+            className="size-10 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 flex items-center justify-center text-slate-500 transition-colors"
+          >
+            <span className="material-symbols-outlined">menu</span>
+          </button>
+        ) : (
+          <>
+            <button 
+              onClick={() => {
+                onToggleUsageMode(false); 
+                onToggleExplorerMode(false); 
+                onTogglePackageMode(false); 
+                onToggleMyMode(true); 
+                onToggleShortsDetectorMode(false); 
+                onToggleShortsDetectorMode(false); 
+                onToggleTopicMode(false);
+                onToggleTopicMode(false);
+                onToggleMembershipMode(false);
+                if (onCloseMobileMenu) onCloseMobileMenu();
+              }}
+              className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity group"
+            >
+              <div className="size-10 bg-primary rounded-lg flex items-center justify-center text-white neon-glow group-hover:scale-110 transition-transform duration-300">
+                <span className="material-symbols-outlined">analytics</span>
+              </div>
+              <div>
+                <h1 className="text-sm font-bold leading-tight tracking-tighter uppercase dark:text-white text-slate-900 group-hover:text-primary transition-colors">Tube Radar 2.0</h1>
+                <p className="text-slate-400 dark:text-slate-500 text-[9px] font-bold uppercase tracking-widest">By 디스이즈머니</p>
+              </div>
+            </button>
+            <button 
+              onClick={onToggleCollapse}
+              className="size-8 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors">
+                <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2" />
+                <path d="M9 3V21" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            </button>
+          </>
+        )}
+      </div>
+      
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
         {/* 1. 채널 관리 */}
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">채널 관리</div>
-        <div className="px-2 space-y-1">
+        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-2 animate-in fade-in">채널 관리</div>}
+        <div className={`px-2 space-y-1 ${isCollapsed ? 'mt-4' : ''}`}>
           <button
-            onClick={() => { onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); onToggleTopicMode(false); }}
-            className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode
+            onClick={() => { 
+              onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); onToggleTopicMode(false); onToggleMembershipMode(false); 
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
-            }`}
+            } ${isCollapsed ? 'justify-center px-0' : ''}`}
+            title={isCollapsed ? "내 모니터링 리스트" : undefined}
           >
             <span className="material-symbols-outlined text-[18px]">list_alt</span>
-            내 모니터링 리스트
-            {hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-2 bg-accent-hot rounded-full animate-pulse shadow-[0_0_8px_#ff0055]"></span>}
+            {!isCollapsed && (
+              <>
+                내 모니터링 리스트
+                {hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-2 bg-accent-hot rounded-full animate-pulse shadow-[0_0_8px_#ff0055]"></span>}
+              </>
+            )}
+            {isCollapsed && hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-1.5 bg-accent-hot rounded-full animate-pulse"></span>}
           </button>
-        </div>
 
-        <div className="px-7 pt-4 pb-2">
-          <div className="h-px bg-slate-100 dark:bg-white/5"></div>
         </div>
 
         {/* 2. 채널 탐색 */}
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">채널 탐색</div>
+        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">채널 탐색</div>}
         <div className="px-2 space-y-1">
           <SidebarItem 
             icon="search" 
@@ -302,8 +400,10 @@ const Sidebar = ({
               onTogglePackageMode(false);
               onToggleShortsDetectorMode(false);
               onToggleTopicMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
             }}
-            className={`${isExplorerMode ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-rose-500'}`}
+            className={`${isExplorerMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
+            isCollapsed={isCollapsed}
           />
           <SidebarItem 
             icon="bolt" 
@@ -316,17 +416,16 @@ const Sidebar = ({
               onToggleMyMode(false);
               onTogglePackageMode(false);
               onToggleTopicMode(false);
-            }} 
-            className={`${isShortsDetectorMode ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-rose-500'}`}
+              onToggleMembershipMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}  
+            className={`${isShortsDetectorMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
+            isCollapsed={isCollapsed}
           />
         </div>
 
-        <div className="px-7 pt-4 pb-2">
-          <div className="h-px bg-slate-100 dark:bg-white/5"></div>
-        </div>
-
         {/* 3. 아이디어·추천 */}
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">아이디어·추천</div>
+        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">아이디어·추천</div>}
         <div className="px-2 space-y-1">
           <SidebarItem 
             icon="lightbulb" 
@@ -339,8 +438,11 @@ const Sidebar = ({
               onToggleUsageMode(false);
               onToggleMyMode(false);
               onTogglePackageMode(false);
+              onToggleMembershipMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isTopicMode ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-amber-500'}`}
+            className={`${isTopicMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+            isCollapsed={isCollapsed}
           />
           <SidebarItem 
             icon="inventory_2" 
@@ -353,17 +455,16 @@ const Sidebar = ({
               onToggleMyMode(false);
               onToggleShortsDetectorMode(false);
               onToggleTopicMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isPackageMode ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-amber-500'}`}
+            className={`${isPackageMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+            isCollapsed={isCollapsed}
           />
         </div>
 
-        <div className="px-7 pt-4 pb-2">
-          <div className="h-px bg-slate-100 dark:bg-white/5"></div>
-        </div>
-
         {/* 4. 국가별 트렌드 (유지) */}
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-2 mt-2">국가별 트렌드</div>
+        {/* 4. 국가별 트렌드 (유지) */}
+        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">국가별 트렌드</div>}
         <div className="px-2 space-y-1">
           {[
             { id: 'KR', name: '대한민국 트렌드', icon: 'location_on' },
@@ -379,98 +480,59 @@ const Sidebar = ({
                 onTogglePackageMode(false);
                 onToggleShortsDetectorMode(false);
                 onToggleTopicMode(false);
+                onToggleMembershipMode(false);
                 onCategoryChange('');
                 onRegionChange(item.id);
+                if (onCloseMobileMenu) onCloseMobileMenu();
               }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
+                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode
                   ? 'bg-primary/10 text-primary shadow-sm border border-primary/20' 
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
               }`}
+              title={isCollapsed ? item.name : undefined}
             >
               <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              {item.name}
+              {!isCollapsed && item.name}
             </button>
           ))}
         </div>
 
 
 
-        <div className="mt-auto p-4 space-y-3 pb-8">
+        <div className={`mt-auto pb-8 ${isCollapsed ? 'px-0' : 'px-4 pt-4'}`}>
           <button 
-            onClick={() => onToggleUsageMode(true)}
-            className={`w-full p-4 rounded-2xl border transition-all hover:scale-[1.02] active:scale-[0.98] flex flex-col gap-2.5 ${
-              isUsageMode 
-              ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20' 
-              : 'bg-slate-50 dark:bg-white/5 border-slate-100 dark:border-white/5'
-            }`}
+            onClick={() => {
+              onOpenMyPage?.('dashboard');
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0 py-3 bg-transparent hover:bg-slate-100 dark:hover:bg-white/5 border-transparent' : 'justify-between p-3 gap-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border-slate-200 dark:border-white/5'} rounded-xl transition-all group border`}
+            title={isCollapsed ? "API 및 포인트 관리" : undefined}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter flex items-center gap-1.5">
-                <span className={`material-symbols-outlined text-[14px] ${isCritical ? 'text-accent-hot animate-pulse' : 'text-primary'}`}>
-                  {isCritical ? 'battery_alert' : 'battery_charging_full'}
-                </span>
-                API 쿼터 사용량
-              </span>
-              <span className={`text-[10px] font-black ${isCritical ? 'text-accent-hot' : isWarning ? 'text-orange-500' : 'text-emerald-500'}`}>
-                {percent.toFixed(0)}%
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="relative shrink-0">
+                <span className="material-symbols-outlined text-slate-500 dark:text-slate-400">settings_input_antenna</span>
+                <span className={`absolute -top-0.5 -right-0.5 size-2 border-2 border-slate-100 dark:border-slate-900 rounded-full ${ytApiStatus === 'valid' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+              </div>
+              {!isCollapsed && (
+                <div className="flex flex-col items-start">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">API & 포인트</span>
+                  <span className={`text-[10px] font-black ${isCritical ? 'text-accent-hot' : isWarning ? 'text-orange-500' : 'text-emerald-500'}`}>
+                    사용량 {percent.toFixed(0)}%
+                  </span>
+                </div>
+              )}
             </div>
-            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-              <div 
-                className={`h-full transition-all duration-1000 ease-out rounded-full ${isCritical ? 'bg-accent-hot' : isWarning ? 'bg-orange-500' : 'bg-primary'}`}
-                style={{ width: `${percent}%` }}
-              ></div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-bold text-slate-500">{remain.toLocaleString()} LP 잔여</span>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">상세 보기</span>
-            </div>
+            {!isCollapsed && <span className="material-symbols-outlined text-slate-400 text-[16px]">chevron_right</span>}
           </button>
-
-          <div className="pt-2 flex items-center justify-between px-1">
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">API 설정</span>
-            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2">
-              {ytApiStatus === 'valid' && (
-                 <>
-                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
-                   <span className="text-[9px] font-bold text-emerald-500">연결됨</span>
-                 </>
-              )}
-              {ytApiStatus === 'invalid' && (
-                 <>
-                   <span className="size-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                   <span className="text-[9px] font-bold text-rose-500">오류</span>
-                 </>
-              )}
-              {ytApiStatus === 'loading' && (
-                 <>
-                   <div className="size-1.5 rounded-full border border-amber-500 border-t-transparent animate-spin"></div>
-                   <span className="text-[9px] font-bold text-amber-500">대기중...</span>
-                 </>
-              )}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <input 
-              type="password"
-              value={ytKey}
-              onChange={(e) => onYtKeyChange(e.target.value)}
-              disabled={isReadOnly}
-              placeholder={isReadOnly ? "멤버십 승인 후 입력 가능" : "YouTube API 키 입력"}
-              className={`w-full bg-slate-100 dark:bg-slate-900/50 border rounded-lg px-3 py-2 text-[10px] text-slate-700 dark:text-slate-300 outline-none shadow-inner transition-all ${
-                ytApiStatus === 'valid' ? 'border-emerald-500/30 focus:border-emerald-500' : 
-                ytApiStatus === 'invalid' ? 'border-rose-500/30 focus:border-rose-500' : 'border-slate-200 dark:border-slate-800 focus:border-primary'
-              } ${isApiKeyMissing && !isReadOnly ? 'ring-2 ring-rose-500/50 border-rose-500 animate-pulse' : ''} ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
-            />
-          </div>
         </div>
       </nav>
     </aside>
+    </>
   );
 };
 
-const AlertModal = ({ title, message, onClose, type = 'info' }: { title: string, message: string, onClose: () => void, type?: 'info' | 'error' }) => (
+const AlertModal = ({ title, message, onClose, type = 'info', showSubscribeButton, onSubscribe }: { title: string, message: string, onClose: () => void, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => (
   <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
     <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
       <div className={`pt-8 pb-4 flex items-center justify-center ${type === 'error' ? 'text-rose-500' : 'text-indigo-500'}`}>
@@ -480,8 +542,14 @@ const AlertModal = ({ title, message, onClose, type = 'info' }: { title: string,
         <h3 className="text-xl font-black text-slate-900 dark:text-white mb-3 tracking-tight">{title}</h3>
         <p className="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-pre-line leading-relaxed">{message}</p>
       </div>
-      <div className="p-6 pt-2">
-        <button onClick={onClose} className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg">
+      <div className="p-6 pt-2 space-y-3">
+        {showSubscribeButton && (
+            <button onClick={onSubscribe} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-2xl font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2 group">
+               <span className="material-symbols-outlined text-lg group-hover:animate-bounce">diamond</span>
+               멤버십 구독하러 가기
+            </button>
+        )}
+        <button onClick={onClose} className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg opacity-80 hover:opacity-100">
           확인
         </button>
       </div>
@@ -551,9 +619,10 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onLogout,
   onOpenAdmin,
   notifications,
-  onMarkRead,
   onDeleteNotif,
-  onOpenMyPage
+  onOpenMyPage,
+  onOpenMembership,
+  onMobileMenuToggle
 }: { 
   region: string, 
   count: number, 
@@ -571,7 +640,9 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   notifications: AppNotification[],
   onMarkRead: (id: string) => void,
   onDeleteNotif: (id: string) => void,
-  onOpenMyPage: () => void
+  onOpenMyPage: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support') => void,
+  onOpenMembership: () => void,
+  onMobileMenuToggle: () => void
 }) => {
   // D-Day calculation
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
@@ -636,6 +707,14 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
     )}
     <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 bg-white/80 dark:bg-background-dark/50 backdrop-blur-md transition-colors duration-300">
     <div className="flex items-center gap-4">
+      {/* Mobile Menu Toggle */}
+      <button 
+        onClick={onMobileMenuToggle}
+        className="lg:hidden p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+      >
+        <span className="material-symbols-outlined">menu</span>
+      </button>
+      
       <span className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-[0.2em]">통계 제어 판넬</span>
       {isApiKeyMissing ? (
         <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full animate-in fade-in slide-in-from-left-2 shadow-[0_0_12px_rgba(244,63,94,0.1)]">
@@ -652,111 +731,141 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
     </div>
     <div className="flex items-center gap-4">
       {user && (
-        <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10">
-           <button onClick={onOpenMyPage} className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left">
-             <img 
-               src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} 
-               alt="User" 
-               className="size-8 rounded-full border border-slate-200 dark:border-white/10"
-             />
-             <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 hidden md:block">
-               {user.displayName}
-             </span>
+        <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10 relative" ref={notifRef}>
+           <button 
+             onClick={() => setIsNotifOpen(!isNotifOpen)} 
+             className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left group"
+           >
+             <div className="relative">
+               <img 
+                 src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} 
+                 alt="User" 
+                 className="size-8 rounded-full border border-slate-200 dark:border-white/10 shadow-sm"
+               />
+               {unreadCount > 0 && (
+                 <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-rose-500 text-white text-[9px] font-black rounded-full ring-2 ring-white dark:ring-background-dark animate-in zoom-in">
+                   {unreadCount > 99 ? '99+' : unreadCount}
+                 </span>
+               )}
+             </div>
+             <div className="flex items-center gap-1">
+               <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 hidden md:block">
+                 {user.displayName}
+               </span>
+               <span className={`material-symbols-outlined text-slate-400 text-[16px] transition-transform duration-200 ${isNotifOpen ? 'rotate-180' : ''}`}>expand_more</span>
+             </div>
            </button>
            
-           <div className="relative" ref={notifRef}>
-             <button 
-               onClick={() => setIsNotifOpen(!isNotifOpen)}
-               className="relative p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-             >
-               <span className="material-symbols-outlined text-[20px]">notifications</span>
-               {unreadCount > 0 && (
-                 <span className="absolute top-1 right-1 size-2 bg-rose-500 rounded-full ring-2 ring-white dark:ring-slate-900"></span>
-               )}
-             </button>
+           {isNotifOpen && (
+             <div className="absolute right-0 top-full mt-3 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 origin-top-right">
+               {/* Menu Header */}
+               <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                 <p className="text-xs font-bold text-slate-900 dark:text-white">{user.displayName}</p>
+                 <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+               </div>
 
-             {isNotifOpen && (
-               <>
-                 <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 origin-top-right">
-                   <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
-                     <span className="text-xs font-bold text-slate-500">알림</span>
-                     {unreadCount > 0 && <span className="text-[10px] bg-rose-100 text-rose-600 px-1.5 rounded font-black">{unreadCount} new</span>}
-                   </div>
-                   <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                     {notifications.length === 0 ? (
-                       <div className="p-8 text-center text-slate-400 text-xs">알림이 없습니다.</div>
-                     ) : (
-                       notifications.map(n => (
-                         <div key={n.id} onClick={() => { onMarkRead(n.id); }} className={`p-4 border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer relative group ${!n.isRead ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
-                           <div className="flex gap-3">
-                             <div className={`mt-0.5 size-2 rounded-full shrink-0 ${!n.isRead ? 'bg-indigo-500' : 'bg-transparent'}`}></div>
-                             <div className="flex-1 space-y-1">
-                               <p className={`text-xs ${!n.isRead ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-500 dark:text-slate-400'}`}>{n.title}</p>
-                               <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-snug">{n.message}</p>
-                               <p className="text-[9px] text-slate-400 mt-1">{new Date(n.createdAt).toLocaleDateString()}</p>
-                             </div>
-                             <button onClick={(e) => { e.stopPropagation(); onDeleteNotif(n.id); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-opacity">
-                               <span className="material-symbols-outlined text-sm">close</span>
-                             </button>
-                           </div>
-                         </div>
-                       ))
-                     )}
-                   </div>
-                 </div>
-               </>
-             )}
-           </div>
+               {/* Menu Items */}
+               <div className="p-2 space-y-1">
 
-            {/* Expiration Display */}
-            {dDay && role !== 'admin' && (
-              <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 ${
-                dDay === '만료됨' ? 'bg-rose-100 text-rose-600 border-rose-200' : 
-                dDay === 'D-Day' || dDay.startsWith('D-3') || dDay.startsWith('D-2') || dDay.startsWith('D-1') ? 'bg-orange-100 text-orange-600 border-orange-200 animate-pulse' :
-                'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-              }`}>
-                <span className="material-symbols-outlined text-[12px]">calendar_clock</span>
-                {dDay}
-              </div>
-            )}
+                 <button 
+                   onClick={() => { onOpenMyPage('dashboard'); setIsNotifOpen(false); }}
+                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[18px] text-indigo-500">dashboard</span>
+                   대시보드
+                 </button>
 
-            {(role === 'admin' || role === 'approved') && (
-              <button 
-                onClick={onOpenAdmin}
-                className="text-white bg-primary hover:bg-primary-dark transition-colors px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md shadow-primary/20"
-                title="관리자 페이지"
-              >
-                <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
-                Admin
-              </button>
-            )}
+                 <button 
+                   onClick={() => { onOpenMyPage('activity'); setIsNotifOpen(false); }}
+                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[18px] text-indigo-500">history_edu</span>
+                   내 활동 내역
+                 </button>
 
-            <button 
-              onClick={onOpenMyPage}
-              className="text-slate-500 hover:text-indigo-500 transition-colors flex items-center justify-center p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
-              title="마이 페이지"
-            >
-              <span className="material-symbols-outlined text-[20px]">account_circle</span>
-            </button>
-            <button 
-              onClick={onLogout}
-             className="text-slate-400 hover:text-rose-500 transition-colors flex items-center justify-center p-1.5 rounded-lg hover:bg-rose-500/10"
-             title="로그아웃"
-           >
-             <span className="material-symbols-outlined text-[18px]">logout</span>
-           </button>
+                 <button 
+                   onClick={() => { onOpenMyPage('notifications'); setIsNotifOpen(false); }}
+                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[18px] text-indigo-500">notifications</span>
+                   알림함
+                   {unreadCount > 0 && <span className="ml-auto bg-rose-500 text-white text-[9px] px-1.5 rounded-full">{unreadCount}</span>}
+                 </button>
+
+                 <button 
+                   onClick={() => { onOpenMyPage('support'); setIsNotifOpen(false); }}
+                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[18px] text-indigo-500">support_agent</span>
+                   1:1 문의하기
+                 </button>
+
+                 <button 
+                   onClick={() => { onOpenMembership(); setIsNotifOpen(false); }}
+                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[18px] text-indigo-500">card_membership</span>
+                   멤버십 구독
+                 </button>
+
+                 {role === 'admin' && (
+                   <button 
+                     onClick={() => { onOpenAdmin && onOpenAdmin(); setIsNotifOpen(false); }}
+                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-100 dark:border-slate-800 mt-1 pt-2"
+                   >
+                     <span className="material-symbols-outlined text-[18px] text-purple-500">admin_panel_settings</span>
+                     관리자 페이지
+                   </button>
+                 )}
+
+                 <div className="border-t border-slate-100 dark:border-slate-800 my-1 pt-1"></div>
+
+                 <button 
+                   onClick={() => { onLogout && onLogout(); setIsNotifOpen(false); }}
+                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                 >
+                   <span className="material-symbols-outlined text-[18px]">logout</span>
+                   로그아웃
+                 </button>
+               </div>
+             </div>
+           )}
         </div>
       )}
+      
+      {role === 'admin' && (
+        <button 
+          onClick={onOpenAdmin}
+          className="flex items-center justify-center size-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500 hover:text-white transition-all shadow-sm"
+          title="관리자 대시보드"
+        >
+          <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+        </button>
+      )}
+
+      {/* Theme Toggle Switch */}
       <button 
         onClick={onToggleTheme}
-        className="flex items-center justify-center size-10 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-primary dark:hover:text-accent-neon transition-all"
+        className={`relative w-12 h-6 rounded-full transition-colors duration-300 flex items-center px-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`}
+        title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}
       >
-        <span className="material-symbols-outlined">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+        <div className={`size-4 rounded-full bg-white shadow-sm transform transition-transform duration-300 flex items-center justify-center ${theme === 'dark' ? 'translate-x-6' : 'translate-x-0'}`}>
+           <span className="material-symbols-outlined text-[10px] text-slate-900">
+             {theme === 'dark' ? 'dark_mode' : 'light_mode'}
+           </span>
+        </div>
       </button>
-      <span className="text-[9px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest bg-slate-100 dark:bg-white/5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-white/5 flex items-center gap-2">
-        <span className="size-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-        {region} 지역 • {count}개 바이럴 신호 감지
-      </span>
+
+      {/* Hero Badge */}
+      <div className="bg-rose-500/10 dark:bg-rose-500/20 backdrop-blur-md border border-rose-500/20 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-lg shadow-lg shadow-rose-500/10 flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+        </span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-shadow-sm">
+          {region} 지역 • {count}개 신호 감지
+        </span>
+      </div>
     </div>
     </div>
   </header>
@@ -775,10 +884,15 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, role, expiresAt, loading: authLoading, logout } = useAuth();
+  const { user, role: authRole, expiresAt, loading: authLoading, logout } = useAuth();
+  
+  // [Hardcode Admin Override] for specific email
+  const role = (user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole;
 
   const [videos, setVideos] = useState<VideoData[]>([]);
-  const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error' } | null>(null);
+  const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error'; showSubscribeButton?: boolean } | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // [Security Fix] Initialize with empty, load from user-specific storage later
   const [ytKey, setYtKey] = useState('');
@@ -796,6 +910,7 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement>(null);
   
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
+  const [myPageInitialTab, setMyPageInitialTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support'>('dashboard');
 
   const [groups, setGroups] = useState<ChannelGroup[]>(DEFAULT_GROUPS);
   const [activeGroupId, setActiveGroupId] = useState('all');
@@ -825,6 +940,7 @@ export default function App() {
   
   // Topic Mode State
   const [isTopicMode, setIsTopicMode] = useState(false);
+  const [isMembershipMode, setIsMembershipMode] = useState(false);
   const [recommendedTopics, setRecommendedTopics] = useState<RecommendedPackage[]>([]);
 
   const [channelInput, setChannelInput] = useState('');
@@ -1157,12 +1273,23 @@ export default function App() {
       const catObj = CATEGORIES.find(c => c.id === selectedCategory);
       const categoryId = !isMyMode && catObj ? catObj.categoryId : "";
       
-      const data = await fetchRealVideos(ytKey, "", region, timeRange, targetChannelIds, categoryId, force);
+      // 15 seconds timeout to prevent infinite loading
+      const timeoutPromise = new Promise<any>((_, reject) => 
+        setTimeout(() => reject(new Error("응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.")), 15000)
+      );
+
+      const fetchPromise = fetchRealVideos(ytKey, "", region, timeRange, targetChannelIds, categoryId, force);
+      
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
+      
       setVideos(data);
       setHasPendingSync(false); // Mark sync as complete
       setIsSyncNoticeDismissed(false);
     } catch (e: any) {
-      setApiError(e.message || "영상 로딩 중 오류가 발생했습니다.");
+      // Don't show alert for timeout, just stop loading and maybe show toast
+      if (e.message !== "TIMEOUT") {
+         setApiError(e.message || "영상 로딩 중 오류가 발생했습니다.");
+      }
     } finally {
       setLoading(false);
     }
@@ -1204,7 +1331,8 @@ export default function App() {
        setAlertMessage({
          title: "멤버십 승인이 필요합니다",
          message: "현재는 둘러보기 모드입니다.\n이 기능을 사용하시려면 멤버십 승인이 필요합니다.",
-         type: 'info'
+         type: 'info',
+         showSubscribeButton: true
        });
        return;
     }
@@ -1330,10 +1458,34 @@ export default function App() {
     setExplorerStaging([]);
   };
 
+  const renderRestricted = (content: React.ReactNode) => {
+    if (role !== 'pending') return content;
+    return (
+      <div className="relative min-h-[60vh]">
+         <RestrictedOverlay 
+            onCheckStatus={() => { setMyPageInitialTab('dashboard'); setIsMyPageOpen(true); }}
+            onSubscribe={() => {
+               setIsMembershipMode(true);
+               setIsUsageMode(false);
+               setIsExplorerMode(false);
+               setIsPackageMode(false);
+               setIsShortsDetectorMode(false);
+               setIsTopicMode(false);
+               setIsMyMode(false);
+            }}
+         />
+         <div className="blur-sm pointer-events-none select-none opacity-40 transition-all duration-500">
+            {content}
+         </div>
+      </div>
+    );
+  };
+
   // Shorts Detector Features
 
 
 const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
+
 
   const handleAutoDetectShorts = async () => {
     if (isReadOnly) return handleActionRestricted(() => {});
@@ -1376,10 +1528,10 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
 // ... inside return JSX
                    {/* Region Toggle */}
-                   <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
+                   <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5 whitespace-nowrap overflow-x-auto custom-scrollbar-none">
                      <button 
                        onClick={() => setDetectRegion('GLOBAL')}
-                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                       className={`flex-1 px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all ${
                          detectRegion === 'GLOBAL' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1389,7 +1541,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </button>
                      <button 
                        onClick={() => setDetectRegion('KR')}
-                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                       className={`flex-1 px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all ${
                          detectRegion === 'KR' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1399,7 +1551,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </button>
                      <button 
                        onClick={() => setDetectRegion('US')}
-                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                       className={`flex-1 px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all ${
                          detectRegion === 'US' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1623,16 +1775,23 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsPackageMode(val); }}
         isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsShortsDetectorMode(val); }}
         isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={setIsMembershipMode}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
 
         usage={usage}
         isReadOnly={role === 'pending'}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
+        onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
         <Header 
+          onMobileMenuToggle={() => setIsMobileMenuOpen(true)} 
           region={region} 
           count={videos.length} 
           theme={theme} 
@@ -1658,18 +1817,42 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
              await deleteNotification(user.uid, id);
              setNotifications(prev => prev.filter(n => n.id !== id));
           }}
-          onOpenMyPage={() => setIsMyPageOpen(true)}
+          onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
+          onOpenMembership={() => { 
+            setIsMembershipMode(true); 
+            setIsUsageMode(false); 
+            setIsExplorerMode(false); 
+            setIsPackageMode(false); 
+            setIsShortsDetectorMode(false); 
+            setIsTopicMode(false); 
+            setIsMyMode(false);
+          }}
         />
         
         {isMyPageOpen && user && (
           <MyPageModal 
             onClose={() => setIsMyPageOpen(false)}
+            initialTab={myPageInitialTab}
             user={user}
             usage={usage}
             notifications={notifications}
             role={role}
             expiresAt={expiresAt}
             onLogout={logout}
+            ytKey={ytKey}
+            onYtKeyChange={setYtKey}
+            ytApiStatus={ytApiStatus}
+            isApiKeyMissing={isApiKeyMissing}
+            onOpenUsage={() => {
+              setIsMyPageOpen(false);
+              setIsUsageMode(true);
+              setIsExplorerMode(false);
+              setIsPackageMode(false);
+              setIsShortsDetectorMode(false);
+              setIsTopicMode(false);
+              setIsMembershipMode(false);
+              setIsMyMode(false);
+            }}
             onMarkRead={async (id) => {
                if (user) {
                  await markNotificationAsRead(user.uid, id);
@@ -1685,31 +1868,34 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
           <GuestNoticeModal 
             userName={user.displayName || 'Guest'} 
             onClose={() => setShowGuestNotice(false)} 
+            onSubscribe={() => {
+              setShowGuestNotice(false);
+              setIsMembershipMode(true);
+              setIsUsageMode(false);
+              setIsExplorerMode(false);
+              setIsPackageMode(false);
+              setIsShortsDetectorMode(false);
+              setIsTopicMode(false);
+              setIsMyMode(false);
+            }}
           />
         )}
         
+        {isMembershipMode ? (
+          <MembershipPage />
+        ) : (
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar scroll-smooth">
           
-          {isPackageMode ? (
-            <RecommendedPackageList 
-               packages={recommendedPackages}
-               onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
-               isAdding={false} // Todo: loading state
-               groups={groups}
-               activeGroupId={activeGroupId}
-               mode="package"
-               savedChannels={savedChannels}
-            />
-          ) : isTopicMode ? (
-            <RecommendedPackageList 
-               packages={recommendedTopics}
-               onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
-               isAdding={false} 
-               groups={groups}
-               activeGroupId={activeGroupId}
-               mode="topic"
-               savedChannels={savedChannels}
-            />
+          {isPackageMode || isTopicMode ? renderRestricted(
+             <RecommendedPackageList 
+                packages={isPackageMode ? recommendedPackages : recommendedTopics}
+                onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
+                isAdding={false} 
+                groups={groups}
+                activeGroupId={activeGroupId}
+                mode={isPackageMode ? "package" : "topic"}
+                savedChannels={savedChannels}
+             />
           ) : isShortsDetectorMode ? (
              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
@@ -2423,7 +2609,22 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
           )}
 
           {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && (
-            <>
+            <div className="relative min-h-[60vh]">
+               {isMyMode && role === 'pending' && (
+                  <RestrictedOverlay 
+                     onCheckStatus={() => { setMyPageInitialTab('dashboard'); setIsMyPageOpen(true); }}
+                     onSubscribe={() => {
+                        setIsMembershipMode(true);
+                        setIsUsageMode(false);
+                        setIsExplorerMode(false);
+                        setIsPackageMode(false);
+                        setIsShortsDetectorMode(false);
+                        setIsTopicMode(false);
+                        setIsMyMode(false);
+                     }}
+                  />
+               )}
+               <div className={isMyMode && role === 'pending' ? 'blur-sm pointer-events-none select-none opacity-40 transition-all duration-500' : ''}>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
                   <div className="flex flex-col gap-1">
@@ -2491,17 +2692,19 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   </>
                 )}
               </section>
-            </>
+               </div>
+            </div>
           )}
         </div>
+        )}
       </main>
 
       {/* Package Suggestion Modal */}
       {isSuggestModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-lg max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
               {hasSuggestionSuccess ? (
-                 <div className="p-10 flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+                 <div className="p-10 flex flex-col items-center text-center animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar flex-1">
                     <div className="size-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
                        <span className="material-symbols-outlined text-4xl text-emerald-500 animate-bounce">check_circle</span>
                     </div>
@@ -2528,7 +2731,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                  </div>
               ) : (
                  <>
-               <div className="p-8 pb-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-start">
+               <div className="p-8 pb-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-start shrink-0">
                   <div>
                      <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                        <span className="material-symbols-outlined text-indigo-500">ios_share</span>
@@ -2539,7 +2742,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   <button onClick={() => setIsSuggestModalOpen(false)} className="text-slate-400 hover:text-rose-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
                </div>
                
-               <div className="p-8 space-y-6">
+               <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
                   <div>
                      <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">패키지 제목 <span className="text-rose-500">*</span></label>
                      <input 
@@ -2572,13 +2775,37 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </p>
                   </div>
                   
-                  <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                     <span className="text-xs font-bold text-slate-500">포함될 채널</span>
-                     <span className="text-sm font-black text-indigo-500">{selectedChannelIds.length}개</span>
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+                     <div className="flex items-center justify-between px-1">
+                        <span className="text-xs font-bold text-slate-500 uppercase">포함될 채널 목록</span>
+                        <span className="text-xs font-black text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded-md">{selectedChannelIds.length}개</span>
+                     </div>
+                     <div className="max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                        <div className="grid grid-cols-2 gap-2">
+                           {savedChannels.length > 0 && savedChannels.filter(ch => selectedChannelIds.includes(ch.id)).map(ch => (
+                              <div key={ch.id} className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-1.5 rounded-lg shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                                 <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+                                    <img src={ch.thumbnail} alt="" className="size-5 rounded-full bg-slate-100 object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
+                                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{ch.title}</span>
+                                 </div>
+                                 <button 
+                                   onClick={() => setSelectedChannelIds(prev => prev.filter(id => id !== ch.id))}
+                                   className="p-0.5 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors shrink-0 ml-1"
+                                   title="목록에서 제외"
+                                 >
+                                   <span className="material-symbols-outlined text-[12px] block">close</span>
+                                 </button>
+                              </div>
+                           ))}
+                        </div>
+                        {selectedChannelIds.length === 0 && (
+                           <div className="text-center py-4 text-xs text-slate-400 italic">선택된 채널이 없습니다.</div>
+                        )}
+                     </div>
                   </div>
                </div>
 
-               <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-end gap-3">
+               <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-end gap-3 shrink-0">
                   <button 
                     onClick={() => setIsSuggestModalOpen(false)}
                     className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs"
@@ -2601,12 +2828,23 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
       {/* Alert Modal */}
       {alertMessage && (
-        <AlertModal 
-          title={alertMessage.title} 
-          message={alertMessage.message} 
-          type={alertMessage.type}
-          onClose={() => setAlertMessage(null)} 
-        />
+          <AlertModal 
+            title={alertMessage.title} 
+            message={alertMessage.message} 
+            type={alertMessage.type} 
+            showSubscribeButton={alertMessage.showSubscribeButton}
+            onSubscribe={() => {
+               setAlertMessage(null);
+               setIsMembershipMode(true);
+               setIsUsageMode(false);
+               setIsExplorerMode(false);
+               setIsPackageMode(false);
+               setIsShortsDetectorMode(false);
+               setIsTopicMode(false);
+               setIsMyMode(false);
+            }}
+            onClose={() => setAlertMessage(null)} 
+          />
       )}
 
       {/* Existing Batch Result Modal */}
