@@ -727,7 +727,10 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
       ) : hasPendingSync && (
         <div className="flex items-center gap-2 px-3 py-1 bg-accent-hot/10 border border-accent-hot/20 rounded-full animate-in fade-in slide-in-from-left-2">
           <span className="size-1.5 bg-accent-hot rounded-full animate-pulse"></span>
-          <span className="text-[9px] font-black text-accent-hot uppercase tracking-tighter">새로운 채널/그룹 변경사항이 있습니다</span>
+          <span className="text-[9px] font-black text-accent-hot uppercase tracking-tighter">
+            <span className="md:hidden">Sync Needed</span>
+            <span className="hidden md:inline">새로운 채널/그룹 변경사항이 있습니다</span>
+          </span>
           <button onClick={onDismissSync} className="text-accent-hot hover:text-white transition-colors ml-1 leading-none p-0.5 rounded-full hover:bg-rose-500/20"><span className="material-symbols-outlined text-[12px] font-black">close</span></button>
         </div>
       )}
@@ -760,7 +763,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
            </button>
            
            {isNotifOpen && (
-             <div className="absolute right-0 top-full mt-3 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 origin-top-right">
+             <div className="absolute right-0 -mr-2 md:mr-0 top-full mt-3 w-64 max-w-[calc(100vw-32px)] bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 origin-top-right">
                {/* Menu Header */}
                <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
                  <p className="text-xs font-bold text-slate-900 dark:text-white">{user.displayName}</p>
@@ -1902,7 +1905,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
              />
           ) : isShortsDetectorMode ? (
              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-               <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
+               <div className="space-y-6">
                  <div className="space-y-2">
                    <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-rose-500 uppercase flex items-center gap-3">
                      <span className="material-symbols-outlined text-2xl md:text-3xl">bolt</span>
@@ -2155,7 +2158,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
           ) : isExplorerMode ? (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-              <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-emerald-500 uppercase flex items-center gap-3">
                     <span className="material-symbols-outlined">search_insights</span>
@@ -2167,20 +2170,21 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   </p>
                 </div>
 
-                <div className="flex flex-col md:flex-row gap-3 bg-slate-50 dark:bg-black/20 p-4 rounded-2xl border border-slate-100 dark:border-white/5">
+                <div className="flex flex-row gap-2 bg-slate-50 dark:bg-black/20 p-2 md:p-4 rounded-2xl border border-slate-100 dark:border-white/5">
                   <div className="flex-1 flex items-center bg-white dark:bg-background-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 shadow-inner">
-                    <span className="material-symbols-outlined text-slate-400 mr-3">search</span>
+                    <span className="material-symbols-outlined text-slate-400 mr-2 md:mr-3 text-lg md:text-2xl">search</span>
                     <input 
                       type="text"
                       value={explorerQuery}
                       onChange={(e) => setExplorerQuery(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleExplorerSearch()}
-                      placeholder="관심 있는 키워드 입력 (예: 재테크, 캠핑, 시니어...)"
-                      className="w-full bg-transparent border-none py-3 text-xs text-slate-900 dark:text-white focus:ring-0 outline-none"
+                      placeholder="키워드 입력..."
+                      className="w-full bg-transparent border-none py-3 text-xs text-slate-900 dark:text-white focus:ring-0 outline-none placeholder:truncate"
                     />
                   </div>
-                  <button onClick={handleExplorerSearch} disabled={isExplorerSearching} className="w-full md:w-auto bg-emerald-500 text-white px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50">
-                    {isExplorerSearching ? '탐색 중...' : '채널 검색'}
+                  <button onClick={handleExplorerSearch} disabled={isExplorerSearching} className="w-auto bg-emerald-500 text-white px-4 md:px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50">
+                    <span className="hidden md:inline">{isExplorerSearching ? '탐색 중...' : '채널 검색'}</span>
+                    <span className="md:hidden"><span className="material-symbols-outlined text-lg leading-none">search</span></span>
                   </button>
                 </div>
 
@@ -2198,34 +2202,32 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                         </h3>
                         <p className="text-[10px] text-slate-400">추가하기 전 리스트를 확인하고 필요 없는 채널은 제외하세요.</p>
                       </div>
-                      <div className="flex flex-col gap-3 w-full md:flex-row md:items-center">
-                         <div className="flex items-center gap-2 w-full md:w-auto">
-                            <span className="text-[10px] font-black text-slate-400 uppercase whitespace-nowrap">저장할 그룹:</span>
+                      <div className="flex flex-row items-center gap-2 w-full md:w-auto">
+                         <div className="flex items-center gap-2 flex-1 min-w-0 md:w-auto">
+                            <span className="text-[10px] font-black text-slate-400 uppercase whitespace-nowrap hidden md:inline">저장할 그룹:</span>
                             <select 
                                 value={explorerTargetGroupId}
                                 onChange={(e) => setExplorerTargetGroupId(e.target.value)}
-                                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-3 pr-8 py-2 text-[11px] font-bold outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                                className="flex-1 md:flex-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-3 pr-8 py-2 text-[11px] font-bold outline-none focus:border-emerald-500 transition-colors cursor-pointer w-full md:w-40"
                             >
                                 {groups.filter(g => g.id !== 'all').map(g => (
                                     <option key={g.id} value={g.id}>{g.name}</option>
                                 ))}
                             </select>
                          </div>
-                         <div className="flex items-center gap-2 w-full md:w-auto">
-                             <button onClick={() => setExplorerStaging([])} className="flex-1 md:flex-none text-[10px] font-black uppercase text-slate-400 hover:text-rose-500 transition-colors px-3 py-2 bg-slate-100 dark:bg-slate-800 md:bg-transparent md:dark:bg-transparent rounded-lg">비우기</button>
-                             <button 
-                                onClick={commitStagingToSaved}
-                                disabled={explorerStaging.length === 0}
-                                className={`flex-[2] md:flex-none px-6 py-3 rounded-xl text-[11px] font-black uppercase shadow-lg transition-all ${
-                                   explorerStaging.length > 0 
-                                   ? 'bg-emerald-500 text-white hover:scale-105 active:scale-95' 
-                                   : 'bg-slate-200 dark:bg-slate-800 text-slate-400 grayscale cursor-not-allowed'
-                                }`}
-                             >
-                                <span className="hidden md:inline">선택한 {explorerStaging.length}개 채널 모니터링 등록</span>
-                                <span className="md:hidden">{explorerStaging.length}개 등록</span>
-                             </button>
-                         </div>
+                         <button onClick={() => setExplorerStaging([])} className="hidden md:block text-[10px] font-black uppercase text-slate-400 hover:text-rose-500 transition-colors px-3 py-2 bg-slate-100 dark:bg-slate-800 md:bg-transparent md:dark:bg-transparent rounded-lg">비우기</button>
+                         <button 
+                            onClick={commitStagingToSaved}
+                            disabled={explorerStaging.length === 0}
+                            className={`flex-none px-4 md:px-6 py-2.5 rounded-xl text-[11px] font-black uppercase shadow-lg transition-all ${
+                               explorerStaging.length > 0 
+                               ? 'bg-emerald-500 text-white hover:scale-105 active:scale-95' 
+                               : 'bg-slate-200 dark:bg-slate-800 text-slate-400 grayscale cursor-not-allowed'
+                            }`}
+                         >
+                            <span className="hidden md:inline">선택한 {explorerStaging.length}개 채널 모니터링 등록</span>
+                            <span className="md:hidden">{explorerStaging.length}개 등록</span>
+                         </button>
                       </div>
                    </div>
 
@@ -2292,7 +2294,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
               </div>
             </div>
           ) : isMyMode && (
-            <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl space-y-6 animate-in slide-in-from-top-4 duration-500 shadow-xl dark:shadow-2xl">
+            <div className="animate-in slide-in-from-top-4 duration-500">
               <style>{`
                 @keyframes neon-blink {
                   0%, 100% { box-shadow: 0 0 10px rgba(19, 55, 236, 0.4), 0 0 20px rgba(19, 55, 236, 0.2); border-color: rgba(19, 55, 236, 0.6); }
@@ -2315,50 +2317,60 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                     </p>
                   </div>
                   
-                  <div className="flex items-center gap-3 relative">
+
+                </div>
+
+                <div className="flex flex-row gap-2 bg-slate-50 dark:bg-black/20 p-2 md:p-4 rounded-2xl border border-slate-100 dark:border-white/5 items-center">
+                  <div className="flex-1 flex flex-col gap-2 justify-center min-w-0">
+                    <textarea 
+                      value={channelInput} onChange={(e) => setChannelInput(e.target.value)}
+                      placeholder="채널 추가..."
+                      className="w-full bg-white dark:bg-background-dark border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-xs text-slate-900 dark:text-white focus:border-accent-neon outline-none transition-all shadow-inner resize-none h-12 flex items-center pt-3.5 placeholder:truncate"
+                    />
+                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold px-1 uppercase tracking-tighter italic hidden sm:block">※ 채널 주소 입력 시 자동으로 데이터가 수집 목록에 구성됩니다.</p>
+                  </div>
+                  <div className="flex items-center gap-1 md:gap-2 h-12 self-start mt-0 sm:mt-0 shrink-0">
+                    <button onClick={handleAddChannelBatch} disabled={loading} className="bg-accent-hot text-white w-12 md:w-auto px-0 md:px-8 h-full rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50 flex items-center justify-center">
+                        <span className="hidden md:inline">{loading ? '처리 중...' : '채널 추가'}</span>
+                        <span className="md:hidden material-symbols-outlined">add</span>
+                    </button>
+                    <div className="w-px h-8 bg-slate-300 dark:bg-white/10 mx-0.5 hidden md:block"></div>
+                    
                     {hasPendingSync && !isApiKeyMissing && !isSyncNoticeDismissed && (
-                      <div className="absolute -top-14 right-0 bg-accent-hot text-white text-[10px] font-black px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(255,0,85,0.4)] animate-bounce flex items-center gap-2 whitespace-nowrap z-50">
+                      <div className="absolute bottom-full mb-3 right-0 bg-accent-hot text-white text-[10px] font-black px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(255,0,85,0.4)] animate-bounce flex items-center gap-2 whitespace-nowrap z-50">
                         <span className="material-symbols-outlined text-sm animate-pulse">sync_problem</span>
-                        내 모니터링 리스트 메뉴 에서 동기화 필요
+                        <span className="hidden md:inline">내 모니터링 리스트 메뉴 에서 동기화 필요</span>
+                        <span className="md:hidden">동기화 필요</span>
                         <button onClick={() => setIsSyncNoticeDismissed(true)} className="ml-1 hover:opacity-70 transition-opacity p-0.5 leading-none"><span className="material-symbols-outlined text-[14px]">close</span></button>
-                        <div className="absolute -bottom-1.5 right-8 size-3 bg-accent-hot rotate-45"></div>
+                        <div className="absolute -bottom-1.5 right-4 size-3 bg-accent-hot rotate-45"></div>
                       </div>
                     )}
-                    <button onClick={handleExport} title="내보내기" className="size-10 bg-slate-100 dark:bg-slate-900 border border-black/5 dark:border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-accent-neon transition-all"><span className="material-symbols-outlined">download</span></button>
-                    <button onClick={() => importInputRef.current?.click()} title="가져오기" className="size-10 bg-slate-100 dark:bg-slate-900 border border-black/5 dark:border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-accent-neon transition-all"><span className="material-symbols-outlined">upload_file</span></button>
+                    <button onClick={handleExport} title="내보내기" className="h-full w-10 md:w-14 shrink-0 bg-white dark:bg-slate-900 substrate-detailed border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-accent-neon transition-all"><span className="material-symbols-outlined text-[18px] md:text-[24px]">download</span></button>
+                    <button onClick={() => importInputRef.current?.click()} title="가져오기" className="h-full w-10 md:w-14 shrink-0 bg-white dark:bg-slate-900 substrate-detailed border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-accent-neon transition-all"><span className="material-symbols-outlined text-[18px] md:text-[24px]">upload_file</span></button>
                     <input type="file" ref={importInputRef} onChange={handleImport} accept=".json" className="hidden" />
                     <button 
                       onClick={() => loadVideos(true)} 
                       title="새로고침" 
-                      className={`size-10 border rounded-xl flex items-center justify-center transition-all ${
+                      className={`h-full w-10 md:w-14 shrink-0 border rounded-xl flex items-center justify-center transition-all ${
                         hasPendingSync && !isApiKeyMissing && !isSyncNoticeDismissed
                         ? 'bg-accent-hot text-white border-transparent ring-4 ring-accent-hot/20 animate-pulse' 
-                        : 'bg-slate-100 dark:bg-slate-900 border-black/5 dark:border-white/5 text-slate-500 hover:text-accent-neon'
+                        : 'bg-white dark:bg-slate-900 substrate-detailed border-slate-200 dark:border-slate-800 text-slate-500 hover:text-accent-neon'
                       }`}
                     >
-                      <span className={`material-symbols-outlined ${loading ? 'animate-spin' : ''}`}>refresh</span>
+                      <span className={`material-symbols-outlined ${loading ? 'animate-spin' : ''} text-[18px] md:text-[24px]`}>refresh</span>
                     </button>
                   </div>
                 </div>
-
-                <div className="flex flex-col sm:flex-row w-full gap-3 bg-slate-50 dark:bg-black/20 p-4 rounded-2xl border border-slate-100 dark:border-white/5">
-                  <div className="flex-1 flex flex-col gap-2">
-                    <textarea 
-                      value={channelInput} onChange={(e) => setChannelInput(e.target.value)}
-                      placeholder="채널 핸들(@), URL, 또는 채널 ID 입력 (여러 개 가능)..."
-                      className="w-full bg-white dark:bg-background-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-900 dark:text-white focus:border-accent-neon outline-none transition-all shadow-inner resize-none h-12"
-                    />
-                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold px-1 uppercase tracking-tighter italic">※ 채널 주소 입력 시 자동으로 데이터가 수집 목록에 구성됩니다.</p>
-                  </div>
-                  <button onClick={handleAddChannelBatch} disabled={loading} className="bg-accent-hot text-white px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50">
-                    {loading ? '처리 중...' : '채널 추가'}
-                  </button>
-                </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 pb-4 border-b border-slate-100 dark:border-white/5">
+              <div className="relative">
+                <style>{`
+                  .no-scrollbar::-webkit-scrollbar { display: none; }
+                  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+                `}</style>
+                <div className="flex flex-nowrap md:flex-wrap items-center gap-3 pb-4 border-b border-slate-100 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar pr-12 md:pr-0">
                 {sortedGroups.map(group => (
-                  <div key={group.id} className="relative group/tab">
+                  <div key={group.id} className="relative group/tab shrink-0">
                     {editingGroupId === group.id ? (
                       <div className="flex items-center gap-1 bg-primary/20 p-1.5 rounded-xl border border-primary">
                         <input autoFocus type="text" value={editingGroupName} onChange={(e) => setEditingGroupName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveRenameGroup()} className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-28 px-2 focus:ring-0" />
@@ -2388,9 +2400,11 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   </div>
                 ))}
                 {!isAddingGroup ? (
-                  <button onClick={() => setIsAddingGroup(true)} className="size-10 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-primary flex items-center justify-center transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary"><span className="material-symbols-outlined">add</span></button>
+                   <div className="shrink-0">
+                    <button onClick={() => setIsAddingGroup(true)} className="size-10 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-primary flex items-center justify-center transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0"><span className="material-symbols-outlined">add</span></button>
+                   </div>
                 ) : (
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200">
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
                     <input 
                       autoFocus 
                       type="text" 
@@ -2416,6 +2430,10 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                     </div>
                   </div>
                 )}
+                </div>
+                <div className="absolute top-0 right-0 bottom-4 w-16 bg-gradient-to-l from-white dark:from-[#0f1014] to-transparent pointer-events-none md:hidden flex items-center justify-end pr-2">
+                   <span className="material-symbols-outlined text-slate-300 dark:text-slate-600 animate-pulse">chevron_right</span>
+                </div>
               </div>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-1 gap-2 sm:gap-0">
@@ -2633,7 +2651,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                )}
                <div className={isMyMode && role === 'pending' ? 'blur-sm pointer-events-none select-none opacity-40 transition-all duration-500' : ''}>
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                   <div className="flex flex-col gap-1">
                     <h2 className="text-xl md:text-2xl font-black tracking-tighter uppercase italic dark:text-white text-slate-900 flex items-center gap-3">
                       <span className={`size-3 rounded-full animate-pulse ${isApiKeyMissing ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.8)]' : isMyMode ? (hasPendingSync && !isSyncNoticeDismissed ? 'bg-accent-hot shadow-[0_0_12px_#ff0055]' : 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]') : 'bg-primary'}`}></span>

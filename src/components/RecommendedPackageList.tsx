@@ -289,7 +289,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
 
   return (
     <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
-       <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-xl dark:shadow-2xl relative overflow-hidden">
+       <div className="relative overflow-hidden">
          <div className="space-y-4 w-full relative z-10">
             <div className="flex items-center justify-between">
                <h2 className={`text-2xl font-black italic tracking-tighter uppercase flex items-center gap-3 ${mode === 'topic' ? 'text-amber-500' : 'text-indigo-500'}`}>
