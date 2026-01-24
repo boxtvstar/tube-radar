@@ -705,7 +705,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
         </button>
       </div>
     )}
-    <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 bg-white/80 dark:bg-background-dark/50 backdrop-blur-md transition-colors duration-300">
+    <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 bg-white/80 dark:bg-background-dark/50 backdrop-blur-md transition-colors duration-300">
     <div className="flex items-center gap-4">
       {/* Mobile Menu Toggle */}
       <button 
@@ -737,7 +737,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
     </div>
     <div className="flex items-center gap-4">
       {user && (
-        <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10 relative" ref={notifRef}>
+        <div className="flex items-center gap-3 md:pl-4 md:border-l border-slate-200 dark:border-white/10 relative order-last md:order-none" ref={notifRef}>
            <button 
              onClick={() => setIsNotifOpen(!isNotifOpen)} 
              className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left group"
@@ -1955,7 +1955,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      <button 
                      onClick={handleAutoDetectShorts} 
                      disabled={isDetectingShorts}
-                     className="w-full md:w-auto bg-rose-500 text-white px-8 py-3 md:py-4 rounded-2xl text-sm font-black uppercase shadow-lg shadow-rose-500/30 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
+                     className={`w-full md:w-auto text-white px-8 py-3 md:py-4 rounded-2xl text-sm font-black uppercase shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2 ${
+                       isDetectingShorts ? 'bg-rose-500 opacity-60 cursor-wait' : 'bg-rose-500 hover:scale-[1.02]'
+                     }`}
                    >
                      {isDetectingShorts ? (
                        <>
@@ -1963,7 +1965,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                        </>
                      ) : (
                        <>
-                         <span className="material-symbols-outlined">youtube_searched_for</span> 탐색 시작 (1 Credit)
+                         <span className="material-symbols-outlined">youtube_searched_for</span> 탐색 시작
                        </>
                      )}
                    </button>
@@ -2170,7 +2172,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                   </p>
                 </div>
 
-                <div className="flex flex-row gap-2 bg-slate-50 dark:bg-black/20 p-2 md:p-4 rounded-2xl border border-slate-100 dark:border-white/5">
+                <div className="flex flex-row gap-2">
                   <div className="flex-1 flex items-center bg-white dark:bg-background-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 shadow-inner">
                     <span className="material-symbols-outlined text-slate-400 mr-2 md:mr-3 text-lg md:text-2xl">search</span>
                     <input 
@@ -2312,7 +2314,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       모니터링 허브
                     </h2>
                     <p className="text-slate-500 text-[11px] font-medium leading-relaxed">
-                      모니터링할 유튜브 채널을 추가하세요. <br className="hidden md:block" />
+                      모니터링할 유튜브 채널을 추가하세요. <br />
                       추가된 채널들의 신규 영상은 <span className="text-accent-hot font-bold">실시간 통합 피드</span>에서 분석됩니다.
                     </p>
                   </div>
@@ -2320,7 +2322,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
                 </div>
 
-                <div className="flex flex-row gap-2 bg-slate-50 dark:bg-black/20 p-2 md:p-4 rounded-2xl border border-slate-100 dark:border-white/5 items-center">
+                <div className="flex flex-row gap-2 items-center mb-8">
                   <div className="flex-1 flex flex-col gap-2 justify-center min-w-0">
                     <textarea 
                       value={channelInput} onChange={(e) => setChannelInput(e.target.value)}
@@ -2329,7 +2331,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                     />
                     <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold px-1 uppercase tracking-tighter italic hidden sm:block">※ 채널 주소 입력 시 자동으로 데이터가 수집 목록에 구성됩니다.</p>
                   </div>
-                  <div className="flex items-center gap-1 md:gap-2 h-12 self-start mt-0 sm:mt-0 shrink-0">
+                  <div className="flex items-center gap-1 md:gap-2 h-12 self-start mt-0 sm:mt-0 shrink-0 relative">
                     <button onClick={handleAddChannelBatch} disabled={loading} className="bg-accent-hot text-white w-12 md:w-auto px-0 md:px-8 h-full rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50 flex items-center justify-center">
                         <span className="hidden md:inline">{loading ? '처리 중...' : '채널 추가'}</span>
                         <span className="md:hidden material-symbols-outlined">add</span>
@@ -2436,11 +2438,36 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-1 gap-2 sm:gap-0">
-                <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="relative flex flex-row items-center gap-2 sm:justify-between px-1 mt-4 overflow-x-auto no-scrollbar pb-2">
+                  <div className="relative w-40 sm:w-64 shrink-0">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[16px] text-slate-400">search</span>
+                    <input 
+                      type="text" 
+                      value={channelFilterQuery}
+                      onChange={(e) => setChannelFilterQuery(e.target.value)}
+                      placeholder="채널 검색..." 
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold focus:ring-1 focus:ring-primary focus:border-primary transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
+                    />
+                    {channelFilterQuery && (
+                      <button onClick={() => setChannelFilterQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500">
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                  <button 
+                    onClick={() => setChannelSortMode(prev => prev === 'latest' ? 'name' : 'latest')}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-500 hover:text-primary transition-all shrink-0 whitespace-nowrap"
+                    title={channelSortMode === 'latest' ? '최신순 (등록 역순)' : '이름순 (가나다)'}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{channelSortMode === 'latest' ? 'schedule' : 'sort_by_alpha'}</span>
+                    <span>{channelSortMode === 'latest' ? '최신순' : '이름순'}</span>
+                  </button>
+
                   <button 
                     onClick={handleSelectAllInCurrentGroup}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-black uppercase text-slate-500 hover:text-primary transition-all shrink-0"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-black uppercase text-slate-500 hover:text-primary transition-all shrink-0 whitespace-nowrap"
                   >
                     <span className="material-symbols-outlined text-[16px]">
                       {currentGroupChannels.length > 0 && currentGroupChannels.every(c => selectedChannelIds.includes(c.id)) ? 'check_box' : 'check_box_outline_blank'}
@@ -2448,73 +2475,46 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                     {currentGroupChannels.length > 0 && currentGroupChannels.every(c => selectedChannelIds.includes(c.id)) ? '전체 해제' : '전체 선택'}
                   </button>
 
-                  <div className="relative flex-1 sm:flex-initial">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-[14px] text-slate-400">search</span>
-                    <input 
-                      type="text" 
-                      value={channelFilterQuery}
-                      onChange={(e) => setChannelFilterQuery(e.target.value)}
-                      placeholder="채널 검색..." 
-                      className="w-full sm:w-40 pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[11px] font-bold focus:ring-1 focus:ring-primary focus:border-primary transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
-                    />
-                    {channelFilterQuery && (
-                      <button 
-                        onClick={() => setChannelFilterQuery('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">cancel</span>
-                      </button>
-                    )}
-                  </div>
+                  {selectedChannelIds.length > 0 && (
+                    <span className="text-[10px] font-black text-primary animate-pulse whitespace-nowrap hidden sm:inline px-1">
+                      {selectedChannelIds.length}개
+                    </span>
+                  )}
 
                   <button 
-                    onClick={() => setChannelSortMode(prev => prev === 'latest' ? 'name' : 'latest')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-500 hover:text-primary transition-all shrink-0"
-                    title={channelSortMode === 'latest' ? '최신순 (등록 역순)' : '이름순 (가나다)'}
+                    onClick={() => setIsChannelListExpanded(!isChannelListExpanded)}
+                    className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-primary transition-colors bg-slate-100 dark:bg-white/5 px-3 py-2 rounded-xl shrink-0 whitespace-nowrap"
                   >
-                    <span className="material-symbols-outlined text-[16px]">{channelSortMode === 'latest' ? 'schedule' : 'sort_by_alpha'}</span>
-                    <span className="hidden sm:inline">{channelSortMode === 'latest' ? '최신순' : '이름순'}</span>
+                    <span className="material-symbols-outlined text-[16px]">{isChannelListExpanded ? 'expand_less' : 'expand_more'}</span>
+                    {isChannelListExpanded ? '접기' : <><span className="md:hidden">전체 ({currentGroupChannels.length})</span><span className="hidden md:inline">전체 보기 ({currentGroupChannels.length})</span></>}
                   </button>
                 </div>
-                
-                {selectedChannelIds.length > 0 ? (
-                  <p className="hidden sm:block text-[10px] font-black text-primary animate-pulse uppercase tracking-tighter ml-auto mr-4">
-                    {selectedChannelIds.length}개 선택됨
-                  </p>
-                ) : null}
-
-                <button 
-                  onClick={() => setIsChannelListExpanded(!isChannelListExpanded)}
-                  className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-primary transition-colors ml-auto sm:ml-0 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg shrink-0"
-                >
-                  <span className="material-symbols-outlined text-[16px]">{isChannelListExpanded ? 'expand_less' : 'expand_more'}</span>
-                  {isChannelListExpanded ? '접기' : `전체 보기 (${currentGroupChannels.length})`}
-                </button>
               </div>
 
               {selectedChannelIds.length > 0 && (
-                <div className="flex items-center justify-between bg-primary/10 border border-primary/30 p-5 rounded-2xl animate-in fade-in slide-in-from-top-2 shadow-[0_0_20px_rgba(19,55,236,0.1)]">
-                   <div className="flex items-center gap-4">
-                      <div className="size-10 bg-primary text-white rounded-full flex items-center justify-center font-black text-sm shadow-lg shadow-primary/20">
+                <div className="flex flex-col md:flex-row items-center justify-between bg-primary/10 border border-primary/30 p-3 md:p-5 rounded-2xl animate-in fade-in slide-in-from-top-2 shadow-[0_0_20px_rgba(19,55,236,0.1)] gap-3 md:gap-0">
+                   <div className="flex items-center gap-3 md:gap-4 w-full md:w-auto">
+                      <div className="size-8 md:size-10 bg-primary text-white rounded-full flex items-center justify-center font-black text-xs md:text-sm shadow-lg shadow-primary/20 shrink-0">
                         {selectedChannelIds.length}
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-[11px] font-black text-primary uppercase leading-tight">개 채널 선택됨</span>
-                        <button onClick={() => setSelectedChannelIds([])} className="text-[9px] font-bold text-slate-500 hover:text-rose-500 underline text-left">선택 취소</button>
+                      <div className="flex flex-row items-baseline gap-2">
+                        <span className="text-xs md:text-sm font-black text-primary uppercase">개 채널 선택됨</span>
+                        <button onClick={() => setSelectedChannelIds([])} className="text-[10px] md:text-xs font-bold text-slate-500 hover:text-rose-500 underline whitespace-nowrap">선택 취소</button>
                       </div>
                    </div>
-                   <div className="flex items-center gap-3">
+                   <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto justify-end">
                       <div className="relative group/bulk">
                         <button 
                           onClick={() => setMovingGroupId(prev => prev === 'bulk' ? null : 'bulk')} 
-                          className={`px-6 py-3 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-3 border-2 neon-blink-btn ${
+                          className={`px-3 py-2 md:px-6 md:py-3 rounded-xl text-[10px] md:text-[11px] font-black uppercase transition-all flex items-center gap-1.5 md:gap-3 border-2 neon-blink-btn ${
                             movingGroupId === 'bulk' 
                             ? 'bg-primary text-white border-primary shadow-xl scale-105' 
                             : 'bg-primary text-white border-primary shadow-lg shadow-primary/40'
                           }`}
                         >
-                          <span className="material-symbols-outlined text-[18px]">move_group</span>
-                          선택한 그룹으로 이동
+                          <span className="material-symbols-outlined text-[16px] md:text-[18px]">move_group</span>
+                          <span className="md:hidden">이동</span>
+                          <span className="hidden md:inline">선택한 그룹으로 이동</span>
                         </button>
                         {movingGroupId === 'bulk' && (
                           <div className="absolute right-0 top-full mt-3 bg-white dark:bg-slate-card border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 p-3 min-w-[180px] animate-in zoom-in-95 fade-in">
@@ -2539,11 +2539,12 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       
                       <button 
                         onClick={() => setIsSuggestModalOpen(true)} 
-                        className="px-6 py-3 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-2 border-slate-900 dark:border-white hover:bg-indigo-600 hover:border-indigo-600 dark:hover:bg-indigo-500 dark:hover:border-indigo-500"
+                        className="px-3 py-2 md:px-6 md:py-3 rounded-xl text-[10px] md:text-[11px] font-black uppercase transition-all flex items-center gap-1.5 md:gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-2 border-slate-900 dark:border-white hover:bg-indigo-600 hover:border-indigo-600 dark:hover:bg-indigo-500 dark:hover:border-indigo-500"
                         title="선택한 채널 공유 제안하기"
                       >
-                        <span className="material-symbols-outlined text-[18px]">ios_share</span>
-                        공유 제안
+                        <span className="material-symbols-outlined text-[16px] md:text-[18px]">ios_share</span>
+                        <span className="md:hidden">공유</span>
+                        <span className="hidden md:inline">공유 제안</span>
                       </button>
 
                       <button onClick={async () => {
@@ -2554,8 +2555,8 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                           setSavedChannels(prev => prev.filter(c => !selectedChannelIds.includes(c.id)));
                           setSelectedChannelIds([]);
                         }
-                      }} className="size-12 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all">
-                        <span className="material-symbols-outlined">delete</span>
+                      }} className="size-9 md:size-12 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shrink-0">
+                        <span className="material-symbols-outlined text-[18px] md:text-[24px]">delete</span>
                       </button>
                    </div>
                 </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel } from '../../types';
@@ -118,6 +118,47 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     setNotifMessage('');
     setNotifModalOpen(true);
   };
+
+  // Badge Counts State
+  const [counts, setCounts] = useState({
+    pendingUsers: 0,
+    pendingPackages: 0,
+    pendingTopics: 0,
+    unrepliedInquiries: 0
+  });
+
+  // Fetch Counts on Mount
+  useEffect(() => {
+    const fetchCounts = async () => {
+        try {
+            // 1. Pending Users
+            const qUsers = query(collection(db, 'users'), where('role', '==', 'pending'));
+            const snapUsers = await getDocs(qUsers);
+            
+            // 2. Unreplied Inquiries
+            const qInquiries = query(collection(db, 'inquiries'), where('isAnswered', '==', false));
+            const snapInquiries = await getDocs(qInquiries);
+
+            // 3. Pending Packages (if user submission exists)
+            const qPkgs = query(collection(db, 'recommended_packages'), where('status', '==', 'pending'));
+            const snapPkgs = await getDocs(qPkgs);
+
+            // 4. Pending Topics
+            const qTopics = query(collection(db, 'recommended_topics'), where('status', '==', 'pending'));
+            const snapTopics = await getDocs(qTopics);
+
+            setCounts({
+                pendingUsers: snapUsers.size,
+                unrepliedInquiries: snapInquiries.size,
+                pendingPackages: snapPkgs.size,
+                pendingTopics: snapTopics.size
+            });
+        } catch (e) {
+            console.error("Failed to fetch notification counts", e);
+        }
+    };
+    fetchCounts();
+  }, []);
 
   const handleSendInlineReply = async (inquiryId: string, userId: string, userName: string) => {
     if (!replyMessage.trim()) return;
@@ -616,24 +657,19 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const [isResolvingChannel, setIsResolvingChannel] = useState(false);
   
   // YouTube API Key for Admin
+  // YouTube API Key for Admin (Auto-load from user settings)
   const [adminYtKey, setAdminYtKey] = useState(''); 
-  const [isKeyLoaded, setIsKeyLoaded] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('admin_yt_key');
-    if (saved) {
-      setAdminYtKey(saved);
-      console.log("Admin Key Loaded from Storage");
+    const userKey = localStorage.getItem('tube_radar_api_key');
+    if (userKey) {
+      setAdminYtKey(userKey);
+    } else {
+      // Fallback: check legacy
+      const legacy = localStorage.getItem('admin_yt_key');
+      if (legacy) setAdminYtKey(legacy);
     }
-    setIsKeyLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (isKeyLoaded) {
-      if (adminYtKey) localStorage.setItem('admin_yt_key', adminYtKey);
-      // Optional: else localStorage.removeItem('admin_yt_key'); // 사용자 요청에 따라 유지하는 게 나음 (실수로 지워지는 것 방지)
-    }
-  }, [adminYtKey, isKeyLoaded]); 
+  }, []); 
 
   const fetchPackages = async () => {
     try {
@@ -1126,48 +1162,75 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     <div className="fixed inset-0 z-50 bg-slate-50 dark:bg-black animate-in fade-in duration-200 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex flex-col gap-4 p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
+          {/* Top Row: Title & Close */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <h2 className="text-2xl font-black italic tracking-tighter text-slate-900 dark:text-white uppercase flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">admin_panel_settings</span>
-                Admin Dashboard
-              </h2>
+            <h2 className="text-lg md:text-2xl font-black italic tracking-tighter text-slate-900 dark:text-white uppercase flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-xl md:text-2xl">admin_panel_settings</span>
+              Admin Dashboard
+            </h2>
+            
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors flex items-center gap-2 text-slate-500">
+               <span className="text-sm font-bold uppercase hidden md:inline">Close</span>
+               <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+          </div>
 
-              {/* Main Tabs */}
-              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto no-scrollbar">
+            {/* New Row: Tabs */}
+          <div className="w-full overflow-x-auto no-scrollbar pb-2">
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-max">
                  <button 
                    onClick={() => setActiveTab('users')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap relative ${activeTab === 'users' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    사용자 관리
+                   {counts.pendingUsers > 0 && (
+                     <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] text-white ring-2 ring-white dark:ring-slate-900 animate-pulse">
+                        {counts.pendingUsers > 9 ? '9+' : counts.pendingUsers}
+                     </span>
+                   )}
                  </button>
                  <button 
                    onClick={() => setActiveTab('packages')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'packages' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap relative ${activeTab === 'packages' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
                       <span>추천 팩 관리</span>
                       {activeTab !== 'packages' && <span className="bg-accent-hot size-2 rounded-full"></span>}
                    </div>
+                   {counts.pendingPackages > 0 && (
+                     <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] text-white ring-2 ring-white dark:ring-slate-900">
+                        {counts.pendingPackages}
+                     </span>
+                   )}
                  </button>
                  <button 
                    onClick={() => setActiveTab('topics')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'topics' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap relative ${activeTab === 'topics' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
                       <span>추천 소재 관리</span>
                       {activeTab !== 'topics' && <span className="bg-amber-500 size-2 rounded-full"></span>}
                    </div>
+                   {counts.pendingTopics > 0 && (
+                     <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] text-white ring-2 ring-white dark:ring-slate-900">
+                        {counts.pendingTopics}
+                     </span>
+                   )}
                  </button>
 
                  <button 
                    onClick={() => setActiveTab('inquiries')}
-                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'inquiries' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap relative ${activeTab === 'inquiries' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
                       <span>문의 수신함</span>
                       {activeTab !== 'inquiries' && <span className="bg-indigo-500 size-2 rounded-full"></span>}
                    </div>
+                   {counts.unrepliedInquiries > 0 && (
+                     <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] text-white ring-2 ring-white dark:ring-slate-900 animate-pulse">
+                        {counts.unrepliedInquiries}
+                     </span>
+                   )}
                  </button>
                  
                  <button 
@@ -1180,23 +1243,17 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    </div>
                  </button>
               </div>
-            </div>
-            
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors flex items-center gap-2 text-slate-500">
-               <span className="text-sm font-bold uppercase">Close</span>
-               <span className="material-symbols-outlined">close</span>
-            </button>
           </div>
 
-          <div className="flex items-center justify-between">
-            {activeTab === 'users' ? (
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            {activeTab === 'users' && (
               <>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
                   {['all', 'approved', 'pending'].map((f) => (
                     <button
                       key={f}
                       onClick={() => setFilter(f as any)}
-                      className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
+                      className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
                         filter === f 
                           ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
                           : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -1207,9 +1264,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       })
                     </button>
                   ))}
-                  <button 
+                    <button 
                     onClick={() => setShowNoticeInput(!showNoticeInput)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ml-4 ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ml-auto md:ml-4 whitespace-nowrap flex-shrink-0 ${
                       isNoticeActive ? 'bg-accent-hot/10 text-accent-hot border border-accent-hot/20' : 'bg-slate-100 text-slate-500'
                     }`}
                   >
@@ -1242,35 +1299,35 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    )}
                    <button 
                      onClick={() => openNotifModal(null, 'all')}
-                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ml-2 bg-indigo-500 text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20"
+                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ml-2 bg-indigo-500 text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20 whitespace-nowrap shrink-0"
                    >
                      <span className="material-symbols-outlined text-sm">mail</span>
-                     전체 쪽지 발송
+                     전체 쪽지
                    </button>
                 </div>
               </>
-            ) : (
-              <div className="flex items-center gap-4 w-full">
-                 <button 
-                  onClick={() => { resetPkgForm(); setIsPackageModalOpen(true); }}
-                  className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
-                 >
-                    <span className="material-symbols-outlined text-sm">add_box</span>
-                    추천 팩 만들기
-                 </button>
-                 <div className="flex-1 flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5">
-                    <span className="material-symbols-outlined text-slate-400 text-sm">key</span>
-                    <input 
-                      type="password"
-                      placeholder="채널 검색을 위한 관리자용 YouTube API Key 입력 (필수)"
-                      value={adminYtKey}
-                      onChange={(e) => setAdminYtKey(e.target.value)}
-                      className="flex-1 bg-transparent border-none text-xs text-slate-700 dark:text-slate-300 focus:ring-0"
-                    />
+            )}
+            
+            {/* Packages/Topics Tab Controls - Show ONLY here */}
+            {((activeTab === 'packages' || activeTab === 'topics')) && (
+               <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full">
+                 <div className="flex-1">
+                    <button 
+                      onClick={() => { resetPkgForm(); setIsPackageModalOpen(true); }}
+                      className="flex items-center justify-center gap-2 bg-primary text-white px-6 py-3 md:py-2 rounded-xl text-sm md:text-sm font-black uppercase hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 w-full"
+                    >
+                        <span className="material-symbols-outlined text-base md:text-lg">add_box</span>
+                        <span>{activeTab === 'packages' ? '새 추천 팩 만들기' : '새 추천 소재 만들기'}</span>
+                    </button>
+                    {!adminYtKey && (
+                      <p className="text-[10px] text-rose-500 font-bold mt-1 text-center animate-pulse">
+                        ※ API Key가 감지되지 않았습니다. 메인 설정에서 키를 등록해주세요.
+                      </p>
+                    )}
                  </div>
               </div>
             )}
-          </div>
+           </div>
         </div>
         
         {/* Notice Input Panel */}
@@ -1293,13 +1350,13 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-8 max-w-7xl mx-auto w-full">
+        <div className="flex-1 overflow-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
           {loading ? (
             <div className="flex justify-center py-40">
               <div className="size-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
             </div>
           ) : activeTab === 'users' ? (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-xs font-bold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
@@ -1307,10 +1364,10 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       <input type="checkbox" checked={selectedIds.size === filteredUsers.length && filteredUsers.length > 0} onChange={toggleSelectAll} className="rounded text-primary focus:ring-primary" />
                     </th>
                     <th className="px-6 py-4">사용자</th>
-                    <th className="px-6 py-4">관리자 메모</th>
-                    <th className="px-6 py-4">이메일</th>
-                    <th className="px-6 py-4">플랜</th>
-                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors" onClick={() => handleSort('lastLoginAt')}>
+                    <th className="px-6 py-4 hidden md:table-cell">관리자 메모</th>
+                    <th className="px-6 py-4 hidden md:table-cell">이메일</th>
+                    <th className="px-6 py-4 hidden md:table-cell">플랜</th>
+                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('lastLoginAt')}>
                       <div className="flex items-center gap-1">
                         최근 접속
                         <span className="material-symbols-outlined text-[14px]">
@@ -1318,7 +1375,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </span>
                       </div>
                     </th>
-                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors" onClick={() => handleSort('expiresAt')}>
+                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('expiresAt')}>
                       <div className="flex items-center gap-1">
                         만료일
                         <span className="material-symbols-outlined text-[14px]">
@@ -1355,7 +1412,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          <span className="font-bold text-sm dark:text-slate-200 whitespace-nowrap">{u.displayName}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 hidden md:table-cell">
                             {/* Memo Edit Input */}
                             {editingMemoId === u.uid ? (
                               <div className="flex items-center gap-1 mt-1 animate-in fade-in">
@@ -1381,8 +1438,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                </button>
                             )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{u.email}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 hidden md:table-cell">{u.email}</td>
+                    <td className="px-6 py-4 hidden md:table-cell">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
                         u.plan === 'yearly' ? 'bg-purple-100 text-purple-600 border-purple-200' :
                         u.plan === 'monthly' ? 'bg-indigo-100 text-indigo-600 border-indigo-200' :
@@ -1391,7 +1448,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         {u.plan === 'yearly' ? 'Yearly' : u.plan === 'monthly' ? 'Monthly' : 'Free'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap">
+                    <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap hidden md:table-cell">
                       {u.lastLoginAt ? (
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-700 dark:text-slate-300">{new Date(u.lastLoginAt).toLocaleDateString()}</span>
@@ -1399,7 +1456,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </div>
                       ) : '-'}
                     </td>
-                    <td className="px-6 py-4 text-xs font-mono whitespace-nowrap">
+                    <td className="px-6 py-4 text-xs font-mono whitespace-nowrap hidden md:table-cell">
                       {u.expiresAt ? (
                         <div className="flex flex-col">
                           <span className="text-slate-600 dark:text-slate-400 font-bold">{new Date(u.expiresAt).toLocaleDateString()}</span>
