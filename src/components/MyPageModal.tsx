@@ -227,7 +227,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
       <div 
-        className="bg-white dark:bg-slate-900 w-full max-w-4xl h-[80vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800"
+        className="bg-white dark:bg-slate-900 w-full h-full md:max-w-4xl md:h-[80vh] rounded-none md:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -291,9 +291,9 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         </div>
 
         {/* Layout */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar Tabs */}
-          <div className="w-48 md:w-60 bg-slate-50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex flex-col p-4 gap-2 shrink-0">
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+          {/* Sidebar Tabs (Desktop) */}
+          <div className="hidden md:flex w-48 md:w-60 bg-slate-50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex-col p-4 gap-2 shrink-0">
             <button
               onClick={() => setActiveTab('dashboard')}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${activeTab === 'dashboard' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-500' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300'}`}
@@ -332,6 +332,38 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                 로그아웃
               </button>
             </div>
+          </div>
+
+          {/* Mobile Tabs */}
+          <div className="flex md:hidden overflow-x-auto p-2 gap-2 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 custom-scrollbar hide-scrollbar">
+             {[
+               { id: 'dashboard', icon: 'dashboard', label: '대시보드' },
+               { id: 'activity', icon: 'history_edu', label: '활동내역' },
+               { id: 'notifications', icon: 'notifications', label: '알림' },
+               { id: 'support', icon: 'support_agent', label: '문의' },
+             ].map(tab => (
+               <button
+                 key={tab.id}
+                 onClick={() => setActiveTab(tab.id as any)}
+                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                   activeTab === tab.id 
+                   ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20' 
+                   : 'text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800'
+                 }`}
+               >
+                 <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
+                 {tab.label}
+                 {tab.id === 'notifications' && notifications.filter(n => !n.isRead).length > 0 && (
+                    <span className="size-1.5 bg-rose-500 rounded-full"></span>
+                 )}
+               </button>
+             ))}
+             <button 
+                onClick={onLogout}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap text-rose-500 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 ml-auto"
+             >
+                <span className="material-symbols-outlined text-[16px]">logout</span>
+             </button>
           </div>
 
           {/* Content Area */}

@@ -715,11 +715,14 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
         <span className="material-symbols-outlined">menu</span>
       </button>
       
-      <span className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-[0.2em]">통계 제어 판넬</span>
+      <span className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-[0.2em] hidden md:block">통계 제어 판넬</span>
       {isApiKeyMissing ? (
         <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full animate-in fade-in slide-in-from-left-2 shadow-[0_0_12px_rgba(244,63,94,0.1)]">
           <span className="size-1.5 bg-rose-500 rounded-full animate-pulse"></span>
-          <span className="text-[9px] font-black text-rose-500 uppercase tracking-tighter">YouTube API 키 설정이 필요합니다</span>
+          <span className="text-[9px] font-black text-rose-500 uppercase tracking-tighter">
+            <span className="md:hidden">KEY 설정</span>
+            <span className="hidden md:inline">YouTube API 키 설정이 필요합니다</span>
+          </span>
         </div>
       ) : hasPendingSync && (
         <div className="flex items-center gap-2 px-3 py-1 bg-accent-hot/10 border border-accent-hot/20 rounded-full animate-in fade-in slide-in-from-left-2">
@@ -863,7 +866,8 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
           <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
         </span>
         <span className="text-[10px] font-black uppercase tracking-widest text-shadow-sm">
-          {region} 지역 • {count}개 신호 감지
+          <span className="md:hidden">{region}</span>
+          <span className="hidden md:inline">{region} 지역 • {count}개 신호 감지</span>
         </span>
       </div>
     </div>
@@ -1900,22 +1904,22 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
              <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
                  <div className="space-y-2">
-                   <h2 className="text-2xl font-black italic tracking-tighter text-rose-500 uppercase flex items-center gap-3">
-                     <span className="material-symbols-outlined text-3xl">bolt</span>
+                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-rose-500 uppercase flex items-center gap-3">
+                     <span className="material-symbols-outlined text-2xl md:text-3xl">bolt</span>
                      오늘 뜨는 쇼츠 채널 찾기
                    </h2>
-                    <p className="text-slate-500 text-[11px] font-medium leading-relaxed">
+                    <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
                       키워드나 조건 없이, <span className="text-emerald-500 font-bold">최근 7일간 YouTube가 추천하는 다양한 쇼츠</span>를 탐색합니다.<br />
                       마치 쇼츠 피드를 넘기듯 <span className="text-rose-500 font-bold">이번 주 트렌드</span>를 무작위로 발견해보세요.
                     </p>
                  </div>
 
-                 <div className="flex items-center gap-4">
+                 <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
                    {/* Region Toggle Buttons (GLOBAL / KR / US) */}
-                   <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
+                   <div className="flex w-full md:w-auto bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
                      <button 
                        onClick={() => setDetectRegion('GLOBAL')}
-                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                       className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'GLOBAL' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1925,7 +1929,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </button>
                      <button 
                        onClick={() => setDetectRegion('KR')}
-                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                       className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'KR' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1935,7 +1939,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </button>
                      <button 
                        onClick={() => setDetectRegion('US')}
-                       className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                       className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'US' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1945,10 +1949,10 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </button>
                    </div>
 
-                   <button 
+                     <button 
                      onClick={handleAutoDetectShorts} 
                      disabled={isDetectingShorts}
-                     className="bg-rose-500 text-white px-8 py-4 rounded-2xl text-sm font-black uppercase shadow-lg shadow-rose-500/30 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:grayscale flex items-center gap-2"
+                     className="w-full md:w-auto bg-rose-500 text-white px-8 py-3 md:py-4 rounded-2xl text-sm font-black uppercase shadow-lg shadow-rose-500/30 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-2"
                    >
                      {isDetectingShorts ? (
                        <>
@@ -1969,7 +1973,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                </div>
 
                {shortsDetectorResults.length > 0 && (
-                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
+                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2 md:gap-3">
                    {shortsDetectorResults.map((result, idx) => {
                       const isAdded = savedChannels.some(sc => sc.id === result.id);
                       return (
@@ -2153,17 +2157,17 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
               <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
                 <div className="space-y-2">
-                  <h2 className="text-2xl font-black italic tracking-tighter text-emerald-500 uppercase flex items-center gap-3">
+                  <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-emerald-500 uppercase flex items-center gap-3">
                     <span className="material-symbols-outlined">search_insights</span>
                     키워드 검색 채널 수집
                   </h2>
-                  <p className="text-slate-500 text-[11px] font-medium leading-relaxed">
+                  <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
                     키워드로 새로운 유튜브 채널을 발굴하세요. <b>한 번의 검색으로 50개의 채널</b>을 탐색할 수 있습니다.<br />
                     아래 결과에서 선택하여 검토 영역에 담은 후, <span className="text-emerald-500 font-bold">내 모니터링 리스트</span>에 일괄 추가하세요.
                   </p>
                 </div>
 
-                <div className="flex gap-3 bg-slate-50 dark:bg-black/20 p-4 rounded-2xl border border-slate-100 dark:border-white/5">
+                <div className="flex flex-col md:flex-row gap-3 bg-slate-50 dark:bg-black/20 p-4 rounded-2xl border border-slate-100 dark:border-white/5">
                   <div className="flex-1 flex items-center bg-white dark:bg-background-dark border border-slate-200 dark:border-slate-700 rounded-xl px-4 shadow-inner">
                     <span className="material-symbols-outlined text-slate-400 mr-3">search</span>
                     <input 
@@ -2175,7 +2179,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       className="w-full bg-transparent border-none py-3 text-xs text-slate-900 dark:text-white focus:ring-0 outline-none"
                     />
                   </div>
-                  <button onClick={handleExplorerSearch} disabled={isExplorerSearching} className="bg-emerald-500 text-white px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50">
+                  <button onClick={handleExplorerSearch} disabled={isExplorerSearching} className="w-full md:w-auto bg-emerald-500 text-white px-8 h-12 rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50">
                     {isExplorerSearching ? '탐색 중...' : '채널 검색'}
                   </button>
                 </div>
@@ -2194,31 +2198,34 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                         </h3>
                         <p className="text-[10px] text-slate-400">추가하기 전 리스트를 확인하고 필요 없는 채널은 제외하세요.</p>
                       </div>
-                      <div className="flex items-center gap-3">
-                         <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-3 w-full md:flex-row md:items-center">
+                         <div className="flex items-center gap-2 w-full md:w-auto">
                             <span className="text-[10px] font-black text-slate-400 uppercase whitespace-nowrap">저장할 그룹:</span>
                             <select 
                                 value={explorerTargetGroupId}
                                 onChange={(e) => setExplorerTargetGroupId(e.target.value)}
-                                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-3 pr-8 py-2 text-[11px] font-bold outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-3 pr-8 py-2 text-[11px] font-bold outline-none focus:border-emerald-500 transition-colors cursor-pointer"
                             >
                                 {groups.filter(g => g.id !== 'all').map(g => (
                                     <option key={g.id} value={g.id}>{g.name}</option>
                                 ))}
                             </select>
                          </div>
-                         <button onClick={() => setExplorerStaging([])} className="text-[10px] font-black uppercase text-slate-400 hover:text-rose-500 transition-colors px-3 py-2">전체 비우기</button>
-                         <button 
-                            onClick={commitStagingToSaved}
-                            disabled={explorerStaging.length === 0}
-                            className={`px-6 py-3 rounded-xl text-[11px] font-black uppercase shadow-lg transition-all ${
-                               explorerStaging.length > 0 
-                               ? 'bg-emerald-500 text-white hover:scale-105 active:scale-95' 
-                               : 'bg-slate-200 dark:bg-slate-800 text-slate-400 grayscale cursor-not-allowed'
-                            }`}
-                         >
-                            선택한 {explorerStaging.length}개 채널 모니터링 등록
-                         </button>
+                         <div className="flex items-center gap-2 w-full md:w-auto">
+                             <button onClick={() => setExplorerStaging([])} className="flex-1 md:flex-none text-[10px] font-black uppercase text-slate-400 hover:text-rose-500 transition-colors px-3 py-2 bg-slate-100 dark:bg-slate-800 md:bg-transparent md:dark:bg-transparent rounded-lg">비우기</button>
+                             <button 
+                                onClick={commitStagingToSaved}
+                                disabled={explorerStaging.length === 0}
+                                className={`flex-[2] md:flex-none px-6 py-3 rounded-xl text-[11px] font-black uppercase shadow-lg transition-all ${
+                                   explorerStaging.length > 0 
+                                   ? 'bg-emerald-500 text-white hover:scale-105 active:scale-95' 
+                                   : 'bg-slate-200 dark:bg-slate-800 text-slate-400 grayscale cursor-not-allowed'
+                                }`}
+                             >
+                                <span className="hidden md:inline">선택한 {explorerStaging.length}개 채널 모니터링 등록</span>
+                                <span className="md:hidden">{explorerStaging.length}개 등록</span>
+                             </button>
+                         </div>
                       </div>
                    </div>
 
@@ -2628,12 +2635,12 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
                   <div className="flex flex-col gap-1">
-                    <h2 className="text-2xl font-black tracking-tighter uppercase italic dark:text-white text-slate-900 flex items-center gap-3">
+                    <h2 className="text-xl md:text-2xl font-black tracking-tighter uppercase italic dark:text-white text-slate-900 flex items-center gap-3">
                       <span className={`size-3 rounded-full animate-pulse ${isApiKeyMissing ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.8)]' : isMyMode ? (hasPendingSync && !isSyncNoticeDismissed ? 'bg-accent-hot shadow-[0_0_12px_#ff0055]' : 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]') : 'bg-primary'}`}></span>
                       {isMyMode ? '실시간 통합 피드' : '트렌드 분석'}
                     </h2>
                     {!isMyMode && (
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium ml-6 animate-in slide-in-from-left-2 fade-in">
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium ml-6 animate-in slide-in-from-left-2 fade-in hidden md:block">
                         단순 조회수 순위가 아닙니다. <span className="text-primary font-bold">현재 YouTube 알고리즘의 선택</span>(급상승/바이럴)을 받은 영상을 우선적으로 분석한 결과입니다.
                       </p>
                     )}
@@ -2655,7 +2662,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
               <section className="flex flex-col gap-6">
                 {isApiKeyMissing ? (
-                   <div className="py-32 text-center border border-dashed border-rose-500/50 rounded-3xl bg-rose-500/[0.02] shadow-sm flex flex-col items-center gap-5 animate-in slide-in-from-bottom-4">
+                   <div className="py-20 md:py-32 text-center border border-dashed border-rose-500/50 rounded-3xl bg-rose-500/[0.02] shadow-sm flex flex-col items-center gap-5 animate-in slide-in-from-bottom-4">
                       <div className="size-20 bg-rose-500/10 rounded-full flex items-center justify-center animate-pulse">
                          <span className="material-symbols-outlined text-rose-500 text-5xl">key</span>
                       </div>
