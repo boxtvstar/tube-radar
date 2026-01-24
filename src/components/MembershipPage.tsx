@@ -1,9 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+
+// NicePay Script Type Declaration
+declare global {
+  interface Window {
+    NicePay: any;
+  }
+}
 
 export const MembershipPage = () => {
   const { user } = useAuth();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [isSdkLoaded, setIsSdkLoaded] = useState(false);
+
+  useEffect(() => {
+    // Load NicePay Script (Standard V1)
+    const script = document.createElement('script');
+    script.src = "https://pay.nicepay.co.kr/v1/js/";
+    script.async = true;
+    
+    script.onload = () => {
+      console.log("NicePay SDK script loaded");
+      // Manual says to use AUTHNICE object
+      if ((window as any).AUTHNICE) {
+        console.log("AUTHNICE object found");
+        setIsSdkLoaded(true);
+      } else {
+        console.error("SDK loaded but AUTHNICE object not found");
+      }
+    };
+
+    script.onerror = () => {
+      console.error("Failed to load NicePay SDK");
+      alert("결제 모듈 로드에 실패했습니다. (Network/Blocker Issue)");
+    };
+
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   const plans = [
     {
@@ -37,14 +74,46 @@ export const MembershipPage = () => {
         '광고 제거',
         '프리미엄 고객 지원'
       ],
-      cta: '시작하기',
+      cta: '신청하기',
       popular: true,
       disabled: false
     }
   ];
 
   const handleSubscribe = (planId: string) => {
-    alert("현재 결제 시스템 점검 중입니다.\n관리자에게 문의해주세요.");
+    if (planId === 'free') return;
+    
+    // Check for AUTHNICE object
+    const nicePay = (window as any).AUTHNICE;
+
+    if (!nicePay) {
+       alert("결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
+       return;
+    }
+
+    // Verify Client Key
+    // Hardcoded for debugging to ensure no .env issues first, then switch back to env
+    const clientKey = "S2_0f00dc1ab0594022bf7d365a00587375"; 
+    
+    console.log("Requesting Payment via AUTHNICE.requestPay");
+
+    try {
+      nicePay.requestPay({
+        clientId: clientKey,
+        method: 'card', 
+        orderId: 'tr_' + Date.now(), 
+        amount: billingCycle === 'monthly' ? 19900 : 199000,
+        goodsName: "TubeRadar Pro Subscription", 
+        returnUrl: window.location.origin + '?mode=payment_result', 
+        fnError: function (result: any) {
+          console.error("NicePay Error:", result);
+          alert(`결제 실패: ${result.msg || 'Unknown Error'}`);
+        }
+      });
+    } catch (e: any) {
+      console.error("NicePay Request Failed:", e);
+      alert("결제 요청 중 오류가 발생했습니다: " + e.message);
+    }
   };
 
   return (
@@ -151,7 +220,7 @@ export const MembershipPage = () => {
           ))}
         </div>
 
-        {/* FAQ Section (Optional) */}
+        {/* FAQ Section */}
         <div className="pt-10 border-t border-slate-200 dark:border-slate-800">
           <h3 className="text-center text-xl font-bold text-slate-900 dark:text-white mb-8">자주 묻는 질문</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">

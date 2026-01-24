@@ -38,6 +38,7 @@ import {
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 import type { AutoDetectResult } from './services/youtubeService';
+import { PaymentResult } from './src/components/PaymentResult';
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
 
@@ -948,6 +949,16 @@ export default function App() {
   // Topic Mode State
   const [isTopicMode, setIsTopicMode] = useState(false);
   const [isMembershipMode, setIsMembershipMode] = useState(false);
+
+  // Payment Result Routing
+  const [isPaymentResultMode, setIsPaymentResultMode] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'payment_result' || window.location.pathname === '/payment/result') {
+      setIsPaymentResultMode(true);
+    }
+  }, []);
+
   const [recommendedTopics, setRecommendedTopics] = useState<RecommendedPackage[]>([]);
 
   const [channelInput, setChannelInput] = useState('');
@@ -1768,6 +1779,10 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         </div>
       </div>
     );
+  }
+
+  if (isPaymentResultMode) {
+    return <PaymentResult />;
   }
 
   return (
