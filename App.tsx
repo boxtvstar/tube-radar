@@ -390,12 +390,11 @@ const Sidebar = ({
         <div className={`px-2 space-y-1 ${isCollapsed ? 'mt-4' : ''}`}>
           <button
             onClick={() => { 
-              onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); onToggleTopicMode(false); onToggleMembershipMode(false); if(onToggleComparisonMode) onToggleComparisonMode(false);
-              onToggleNationalTrendMode(false); onToggleCategoryTrendMode(false);
+              onToggleMyMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -422,14 +421,6 @@ const Sidebar = ({
             active={isExplorerMode} 
             onClick={() => {
               onToggleExplorerMode(true);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleShortsDetectorMode(false);
-              onToggleTopicMode(false);
-              onToggleNationalTrendMode(false);
-              onToggleCategoryTrendMode(false);
-              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`${isExplorerMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
@@ -441,15 +432,6 @@ const Sidebar = ({
             active={!!isShortsDetectorMode} 
             onClick={() => {
               onToggleShortsDetectorMode(true);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleTopicMode(false);
-              onToggleMembershipMode(false);
-              onToggleNationalTrendMode(false);
-              onToggleCategoryTrendMode(false);
-              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}  
             className={`${isShortsDetectorMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
@@ -461,15 +443,6 @@ const Sidebar = ({
             active={!!isComparisonMode} 
             onClick={() => {
               if (onToggleComparisonMode) onToggleComparisonMode(true);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleShortsDetectorMode(false);
-              onToggleTopicMode(false);
-              onToggleMembershipMode(false);
-              onToggleNationalTrendMode(false);
-              onToggleCategoryTrendMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`${isComparisonMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
@@ -486,14 +459,6 @@ const Sidebar = ({
             active={isTopicMode} 
             onClick={() => {
               onToggleTopicMode(true);
-              onToggleShortsDetectorMode(false);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleMembershipMode(false);
-              onToggleNationalTrendMode(false);
-              onToggleCategoryTrendMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isTopicMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
@@ -505,12 +470,6 @@ const Sidebar = ({
             active={isPackageMode} 
             onClick={() => {
               onTogglePackageMode(true);
-              onToggleUsageMode(false);
-              onToggleExplorerMode(false);
-              onToggleMyMode(false);
-              onToggleShortsDetectorMode(false);
-              onToggleTopicMode(false);
-              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isPackageMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
@@ -528,15 +487,6 @@ const Sidebar = ({
             active={isNationalTrendMode} 
             onClick={() => {
               onToggleNationalTrendMode(true);
-              onToggleCategoryTrendMode(false);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleShortsDetectorMode(false);
-              onToggleTopicMode(false);
-              onToggleMembershipMode(false);
-              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isNationalTrendMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
@@ -548,16 +498,6 @@ const Sidebar = ({
             active={isCategoryTrendMode} 
             onClick={() => {
               onToggleCategoryTrendMode(true);
-              onToggleNationalTrendMode(false);
-              onToggleRadarMode(false);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleShortsDetectorMode(false);
-              onToggleTopicMode(false);
-              onToggleMembershipMode(false);
-              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isCategoryTrendMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
@@ -570,16 +510,6 @@ const Sidebar = ({
             active={isRadarMode} 
             onClick={() => {
               onToggleRadarMode(true);
-              onToggleNationalTrendMode(false);
-              onToggleCategoryTrendMode(false);
-              onToggleExplorerMode(false);
-              onToggleUsageMode(false);
-              onToggleMyMode(false);
-              onTogglePackageMode(false);
-              onToggleShortsDetectorMode(false);
-              onToggleTopicMode(false);
-              onToggleMembershipMode(false);
-              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isRadarMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
@@ -590,7 +520,7 @@ const Sidebar = ({
         <div className={`mt-auto pb-8 ${isCollapsed ? 'px-0' : 'px-4 pt-4'}`}>
           <button 
             onClick={() => {
-              onOpenMyPage?.('dashboard');
+              onOpenMyPage?.('usage');
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0 py-3 bg-transparent hover:bg-slate-100 dark:hover:bg-white/5 border-transparent' : 'justify-between p-3 gap-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border-slate-200 dark:border-white/5'} rounded-xl transition-all group border`}
@@ -1014,7 +944,7 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement>(null);
   
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
-  const [myPageInitialTab, setMyPageInitialTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support'>('dashboard');
+  const [myPageInitialTab, setMyPageInitialTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>('dashboard');
 
   const [groups, setGroups] = useState<ChannelGroup[]>(DEFAULT_GROUPS);
   const [activeGroupId, setActiveGroupId] = useState('all');
@@ -1100,15 +1030,24 @@ export default function App() {
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+
   const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
   const [showGuestNotice, setShowGuestNotice] = useState(false);
   
   const [isNationalTrendMode, setIsNationalTrendMode] = useState(false);
   const [isCategoryTrendMode, setIsCategoryTrendMode] = useState(false);
 
+  // Removed isUsageMode state (integrated into MyPage)
+  // const [isUsageMode, setIsUsageMode] = useState(false); 
+
   const [usage, setUsage] = useState<ApiUsage>(getApiUsage());
   
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const handleOpenMyPage = (tab: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage' = 'dashboard') => {
+    setMyPageInitialTab(tab);
+    setIsMyPageOpen(true);
+  };
 
   const isApiKeyMissing = useMemo(() => !ytKey || ytApiStatus !== 'valid', [ytKey, ytApiStatus]);
 
@@ -1306,6 +1245,61 @@ export default function App() {
 
 
 
+
+  // --- Background Auto-Update Service (Stale Data Handler) ---
+  const hasRunAutoUpdate = useRef(false);
+
+  useEffect(() => {
+    // Run only once per session, when user is logged in and list is loaded
+    if (hasRunAutoUpdate.current || !user || !ytKey || savedChannels.length === 0) return;
+
+    const runAutoUpdate = async () => {
+      hasRunAutoUpdate.current = true;
+      const MAX_AUTO_UPDATE = 3; // Limit to 3 channels per session to save Quota
+      const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+      const now = new Date().getTime();
+
+      const staleChannels = savedChannels.filter(ch => {
+        // Use lastUpdated if available, otherwise fallback to addedAt
+        const lastDate = ch.lastUpdated || ch.addedAt;
+        if (!lastDate) return true; // Treat missing date as stale
+        return (now - lastDate) > SIX_MONTHS_MS;
+      });
+
+      if (staleChannels.length > 0) {
+        console.log(`[AutoUpdate] Found ${staleChannels.length} stale channels. Updating top ${Math.min(staleChannels.length, MAX_AUTO_UPDATE)}...`);
+        
+        // Update DB silently
+        for (const ch of staleChannels.slice(0, MAX_AUTO_UPDATE)) {
+          try {
+             // Fetch fresh info
+             const info = await getChannelInfo(ytKey, ch.id);
+             if (info) {
+               const updated = { 
+                   ...ch, 
+                   ...info, 
+                   lastUpdated: Date.now() 
+               };
+               
+               // Update DB immediately
+               await saveChannelToDb(user.uid, updated);
+               console.log(`[AutoUpdate] Refreshed: ${ch.title}`);
+               
+               // Gentle delay between updates
+               await new Promise(r => setTimeout(r, 2000));
+             }
+          } catch (e) {
+             console.warn("[AutoUpdate] Failed to refresh:", ch.title);
+          }
+        }
+      }
+    };
+    
+    // Start 10 seconds after load to prioritize UI rendering
+    const timer = setTimeout(runAutoUpdate, 10000);
+    return () => clearTimeout(timer);
+  }, [user, ytKey, savedChannels]);
+
   // [Security Fix] Load/Save User-Specific Settings
   const [isKeyLoaded, setIsKeyLoaded] = useState(false);
 
@@ -1377,14 +1371,14 @@ export default function App() {
 
   useEffect(() => {
     // [Fix] Allow loadVideos in National/Category Trend modes (removed exclusions)
-    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode) {
+    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode) {
       if (!isMyMode || !hasPendingSync) {
         loadVideos();
       } else {
         setLoading(false);
       }
     }
-  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isUsageMode, hasPendingSync, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
+  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, hasPendingSync, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
 
   const handleOpenAutoDetectDetail = (result: AutoDetectResult) => {
     // Convert AutoDetectResult to VideoData for the modal
@@ -1506,15 +1500,33 @@ export default function App() {
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    setLoading(true);
+    setProgress({ current: 1, total: 100, message: "백업 파일을 분석하고 있습니다..." });
+
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
+        // Visual delay for better UX
+        await new Promise(r => setTimeout(r, 600));
+        
         const json = JSON.parse(event.target?.result as string);
+        setProgress({ current: 60, total: 100, message: "데이터베이스 복원 중..." });
+        
+        await new Promise(r => setTimeout(r, 600));
+
         if (json.savedChannels) setSavedChannels(json.savedChannels);
         if (json.groups) setGroups(json.groups);
+        
+        setProgress({ current: 100, total: 100, message: "복원 완료!" });
+        await new Promise(r => setTimeout(r, 500));
+        
         alert("성공적으로 복원되었습니다.");
       } catch (err) {
         alert("올바르지 않은 파일 형식입니다.");
+      } finally {
+        setProgress(null);
+        setLoading(false);
       }
     };
     reader.readAsText(file);
@@ -1522,6 +1534,7 @@ export default function App() {
   };
 
   const isReadOnly = role === 'pending';
+  const [progress, setProgress] = useState<{ current: number; total: number; message: string } | null>(null);
   
   // --- Bulk Update Channel Stats (For Avg Views) ---
   const handleUpdateChannelStats = async () => {
@@ -1530,6 +1543,9 @@ export default function App() {
     if (!confirm) return;
 
     setLoading(true);
+    const total = currentGroupChannels.length;
+    setProgress({ current: 0, total, message: "채널 정보를 분석하고 있습니다..." });
+    
     let updatedCount = 0;
     
     try {
@@ -1538,14 +1554,14 @@ export default function App() {
       // Filter target channels that belong to current views
       const targetIds = currentGroupChannels.map(c => c.id);
       
-      for (const id of targetIds) {
+      for (let i = 0; i < total; i++) {
+          const id = targetIds[i];
           const original = updatedChannels.find(c => c.id === id);
           if (original) {
              try {
                 // Fetch fresh info (calculates avg)
                 const info = await getChannelInfo(ytKey, original.id);
                 if (info) {
-
 
                    const updated = { ...original, ...info, addedAt: original.addedAt, groupId: original.groupId }; // Preserve metadata
                    
@@ -1561,10 +1577,13 @@ export default function App() {
                 console.warn(`Failed to update ${original.title}`, e);
              }
           }
+          // Update Progress
+          setProgress({ current: i + 1, total, message: `분석 완료: ${original?.title || 'Unknown'}` });
       }
       
       setSavedChannels(updatedChannels);
-      alert(`${updatedCount}개의 채널 정보가 최신화되었습니다.`);
+      // alert(`${updatedCount}개의 채널 정보가 최신화되었습니다.`); // Remove alert, UI shows completion
+      
       // Refresh videos with new stats
       await loadVideos(true);
       
@@ -1573,6 +1592,8 @@ export default function App() {
       alert(`업데이트 중 오류가 발생했습니다:\n${e.message || JSON.stringify(e)}`);
     } finally {
       setLoading(false);
+      // Give user a moment to see 100%
+      setTimeout(() => setProgress(null), 500);
     }
   };
 
@@ -1596,6 +1617,10 @@ export default function App() {
     
     const queries = channelInput.split(/[\s,\n]+/).filter(q => q.trim().length > 0);
     setLoading(true);
+    
+    const total = queries.length;
+    setProgress({ current: 0, total, message: "채널을 검색하고 있습니다..." });
+
     const newChannels: SavedChannel[] = [];
     const duplicates: string[] = [];
     const existingIds = new Set(savedChannels.map(c => c.id));
@@ -1603,9 +1628,12 @@ export default function App() {
 
     try {
       for (let i = 0; i < queries.length; i++) {
-        setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
+        // setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
         const infoFinal = await getChannelInfo(ytKey, queries[i]);
         
+        // Update Progress
+        setProgress({ current: i + 1, total, message: infoFinal ? `등록 완료: ${infoFinal.title}` : `검색 중: ${queries[i]}` });
+
         if (infoFinal) {
           if (existingIds.has(infoFinal.id)) {
             duplicates.push(infoFinal.title);
@@ -1626,9 +1654,15 @@ export default function App() {
         });
         setLoading(false);
         setBatchStatus(null);
+        setProgress(null);
         return;
       }
     }
+    
+    // Reset Progress
+    setTimeout(() => setProgress(null), 800);
+    
+    // ... rest of logic ... (need to keep original rest logic)
 
     if (newChannels.length > 0) {
       setSavedChannels(prev => [...newChannels, ...prev]);
@@ -2164,15 +2198,15 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setVideos([]); setIsRadarMode(false); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) setIsRadarMode(false); setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) setIsRadarMode(false); setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); setIsRadarMode(false); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); setIsRadarMode(false); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsRadarMode(false); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={setIsMembershipMode}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={setIsComparisonMode}
-        isRadarMode={isRadarMode} onToggleRadarMode={setIsRadarMode}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -2186,9 +2220,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={setIsNationalTrendMode}
+        onToggleNationalTrendMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={setIsCategoryTrendMode}
+        onToggleCategoryTrendMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); } setIsCategoryTrendMode(val); }}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -3249,14 +3283,11 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       <span className={`size-3 rounded-full animate-pulse ${isApiKeyMissing ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.8)]' : isMyMode ? (hasPendingSync && !isSyncNoticeDismissed ? 'bg-accent-hot shadow-[0_0_12px_#ff0055]' : 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]') : 'bg-primary'}`}></span>
                       {isMyMode ? '실시간 통합 피드' : '트렌드 분석'}
                     </h2>
-                    {!isMyMode && (
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium ml-6 animate-in slide-in-from-left-2 fade-in hidden md:block">
-                        단순 조회수 순위가 아닙니다. <span className="text-primary font-bold">현재 YouTube 알고리즘의 선택</span>(급상승/바이럴)을 받은 영상을 우선적으로 분석한 결과입니다.
-                      </p>
-                    )}
+
                   </div>
                   
                   <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5 items-center">
+                    {/* Channel Update Button - Hidden
                     {isMyMode && (
                       <button
                         onClick={handleUpdateChannelStats}
@@ -3267,7 +3298,8 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                          <span className="hidden md:inline">채널 갱신</span>
                       </button>
                     )}
-                    {[3, 5, 7].map(d => (
+                    */}
+                    {[3, 5, 7, 15, 30].map(d => (
                       <button
                         key={d}
                         onClick={() => setTimeRange(d)}
@@ -3609,7 +3641,34 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         />
       )}
 
-
+      {/* Progress Modal (Energy Bar) */}
+      {progress && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6 text-center animate-in zoom-in-95 duration-300">
+            <div className="size-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4 ring-4 ring-primary/5">
+               <span className="material-symbols-outlined text-3xl animate-spin">sync</span>
+            </div>
+            <div>
+               <h3 className="text-xl font-bold dark:text-white mb-2">데이터 분석 중...</h3>
+               <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 min-h-[20px]">{progress.message}</p>
+               
+               <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-4 overflow-hidden relative shadow-inner">
+                  <div 
+                     className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.6)] transition-all duration-300 ease-out"
+                     style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                  >
+                      <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                  </div>
+               </div>
+               <div className="flex justify-between text-xs font-bold text-slate-400 mt-2 px-1">
+                  <span>{progress.current} / {progress.total}</span>
+                  <span>{Math.round((progress.current / progress.total) * 100)}%</span>
+               </div>
+            </div>
+            <p className="text-[10px] text-slate-400">잠시만 기다려주세요. 창을 닫지 마세요.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

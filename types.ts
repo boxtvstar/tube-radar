@@ -51,6 +51,10 @@ export interface SavedChannel {
   topVideos?: VideoSnippet[];
   addedAt?: number;
   customAvgViews?: number; // Calculated average of recent 20 videos
+  lastUpdated?: number; // timestamp for caching
+  totalViews?: string;
+  joinDate?: string; // ISO string
+  country?: string;
 }
 
 export interface ViralStat {
@@ -64,7 +68,7 @@ export interface ViralStat {
 
 export interface ApiUsageLog {
   timestamp: string;
-  type: 'search' | 'list';
+  type: 'search' | 'list' | 'system';
   cost: number;
   details?: string;
 }

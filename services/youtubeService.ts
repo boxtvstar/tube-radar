@@ -127,7 +127,11 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
       thumbnail: channel.snippet.thumbnails.default.url,
       subscriberCount: formatNumber(parseInt(channel.statistics.subscriberCount || "0")),
       videoCount: formatNumber(parseInt(channel.statistics.videoCount || "0")),
-      customAvgViews: customAvg
+      customAvgViews: customAvg,
+      totalViews: formatNumber(parseInt(channel.statistics.viewCount || "0")),
+      joinDate: channel.snippet.publishedAt,
+      country: channel.snippet.country,
+      lastUpdated: Date.now()
     };
   } catch (e) {
     return null;
@@ -323,14 +327,25 @@ export const fetchRealVideos = async (
        channelMap.set(ch.id, {
           avgViews: ch.customAvgViews || 10000, 
           subscribers: ch.subscriberCount,
-          totalViews: "0", 
-          joinDate: new Date().toISOString(), 
-          country: "KR"
+          totalViews: ch.totalViews || "0", 
+          joinDate: ch.joinDate || new Date().toISOString(), 
+          country: ch.country || "KR"
        });
     });
 
     const videoItemsAny = videoItems as any[];
-    const targetChannelIds = Array.from(new Set(videoItemsAny.map((v: any) => v.snippet.channelId)));
+    // Filter optimization: Only fetch channels that are NOT in savedChannels or EXPIRED cache ( > 1 hour)
+    const allChannelIds = Array.from(new Set(videoItemsAny.map((v: any) => v.snippet.channelId))) as string[];
+    
+    const targetChannelIds = allChannelIds.filter(id => {
+       const saved = savedChannels.find(c => c.id === id);
+       // If we have saved data AND it's fresh (less than 1 hour old), skip fetch
+       if (saved && saved.lastUpdated && Date.now() - saved.lastUpdated < 3600000) {
+          // Additional check: ensure we have the critical fields
+          if (saved.totalViews && saved.joinDate) return false;
+       }
+       return true;
+    });
     
     // Chunk Channel Lookup (Max 50 per call)
     const channelChunks = [];
@@ -481,6 +496,19 @@ export interface AutoDetectResult extends SavedChannel {
 
 export const autoDetectShortsChannels = async (apiKey: string, regionCode: string = "KR"): Promise<AutoDetectResult[]> => {
   try {
+    // 0. CHECK CACHE (Daily Cache)
+    const today = new Date().toDateString();
+    const cacheKey = `yt_shorts_autodetect_${regionCode}_${today}`;
+    const cached = localStorage.getItem(cacheKey);
+    
+    if (cached) {
+      try {
+        const { data, timestamp } = JSON.parse(cached);
+        // Valid for 24 hours (actually valid for the whole calendar day by key, but safety check)
+        if (data && data.length > 0) return data; 
+      } catch (e) { localStorage.removeItem(cacheKey); }
+    }
+
     // 1. SEARCH API (Cost: 100) - Find candidates (Focus on Recent Shorts)
     // type=video, videoDuration=short, order=date, maxResults=50
     const past48h = new Date();
@@ -540,6 +568,8 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
         const hours = (new Date().getTime() - new Date(publishedAt).getTime()) / (1000 * 60 * 60);
         return hours > 0.1 ? views / hours : views; // Avoid div by zero/small num
     };
+    
+    const isKoreanText = (text: string) => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(text);
 
     vData.items.forEach((video: any) => {
         const durationSec = parseDuration(video.contentDetails.duration);
@@ -553,20 +583,21 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
         const chData = channelsMap.get(video.snippet.channelId);
         if (!chData) return;
         
-        // Filter 3: Country (Relaxed)
-        // We already used relevanceLanguage in search, so we trust that mostly.
-        // We just filter out explicit blacklist countries.
-        // Also, if region is strict (e.g. KR), we prefer channels that are either KR or have no country set (assuming local language match).
+        // Filter 3: Country (Relaxed Mode for Maximum Results)
         const channelCountry = chData.snippet.country;
         
+        // 1. Always exclude Blacklisted Countries (Spam/Irrelevant)
         if (channelCountry && BLACKLIST_COUNTRIES.includes(channelCountry)) return;
 
-        // Optional: strict check only if country IS set and doesn't match region (e.g. searching KR but channel is US)
-        if (regionCode && regionCode !== 'GLOBAL' && channelCountry && channelCountry !== regionCode) {
-             // Allow if country is not set, as language match handles it.
-             // But if country IS set to something else (e.g. US), and we want KR, we might skip.
-             // However, for more results, let's just allow it if not blacklisted, trusting relevanceLanguage.
-             // (User feedback: strict list was too small)
+        // 2. Region Check (Relaxed)
+        // Only reject if country is EXPLICITLY set to something else.
+        // If country is undefined, we ACCEPT it (trusting the search query relevance).
+        if (regionCode && regionCode !== 'GLOBAL') {
+             if (channelCountry && channelCountry !== regionCode) {
+                 return; // Strict mismatch (e.g. User wants KR, Channel is US -> Skip)
+             }
+             // If channelCountry is undefined -> KEEP IT
+             // If channelCountry === regionCode -> KEEP IT
         }
 
         // Calc metrics
@@ -605,6 +636,10 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
          const vphB = getVPH(b.representativeVideo.views, b.representativeVideo.publishedAt!);
          return vphB - vphA; // Descending
     });
+    
+    // Save to Cache
+    localStorage.setItem(cacheKey, JSON.stringify({ data: results, timestamp: Date.now() }));
+    
     return results;
 
   } catch (e: any) {

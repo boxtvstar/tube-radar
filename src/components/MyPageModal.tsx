@@ -14,7 +14,7 @@ interface MyPageModalProps {
   expiresAt: string | null;
   onLogout: () => void;
   onMarkRead: (id: string) => void;
-  initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support';
+  initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage';
   ytKey: string;
   onYtKeyChange: (val: string) => void;
   ytApiStatus: 'idle' | 'valid' | 'invalid' | 'loading';
@@ -50,7 +50,12 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   isApiKeyMissing,
   onOpenUsage
 }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support'>(initialTab);
+// ... (Top of file remains same until state)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>(initialTab as any);
+  // ...
+
+
+
   const [proposals, setProposals] = useState<(RecommendedPackage & { itemType: 'package' | 'topic' })[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
   const [isLoadingProposals, setIsLoadingProposals] = useState(false);
@@ -322,6 +327,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
               <span className="material-symbols-outlined text-[20px]">support_agent</span>
               1:1 문의하기
             </button>
+            <button
+              onClick={() => setActiveTab('usage')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${activeTab === 'usage' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-500' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300'}`}
+            >
+              <span className="material-symbols-outlined text-[20px]">analytics</span>
+              API 사용량
+            </button>
             
             <div className="mt-auto">
               <button 
@@ -341,6 +353,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                { id: 'activity', icon: 'history_edu', label: '활동내역' },
                { id: 'notifications', icon: 'notifications', label: '알림' },
                { id: 'support', icon: 'support_agent', label: '문의' },
+               { id: 'usage', icon: 'analytics', label: 'API' },
              ].map(tab => (
                <button
                  key={tab.id}
@@ -430,7 +443,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <button 
-                     onClick={onOpenUsage}
+                     onClick={() => setActiveTab('usage')}
                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm hover:border-indigo-400 hover:shadow-md transition-all group relative block text-left w-full"
                    >
                       <div className="absolute top-5 right-5 text-slate-300 group-hover:text-indigo-500 transition-colors">
@@ -836,6 +849,103 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                     * 문의하신 내용은 관리자만 확인할 수 있습니다.<br/>
                     * 답변 완료 시 알림으로 알려드립니다.
                   </p>
+                </div>
+              </div>
+            )}
+            
+            {/* 5. Usage Tab */}
+            {activeTab === 'usage' && (
+              <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">API 사용량 분석</h3>
+                
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 flex flex-col items-center justify-center text-center shadow-sm">
+                   <div className="relative size-48 mb-8">
+                      <svg className="size-full -rotate-90" viewBox="0 0 36 36">
+                        <path className="text-slate-100 dark:text-slate-800" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2" />
+                        <path 
+                          className={`${usagePercent < 10 ? 'text-rose-500' : (usagePercent < 30 ? 'text-amber-500' : 'text-emerald-500')} transition-all duration-1000 ease-out`} 
+                          strokeDasharray={`${usagePercent}, 100`} 
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          strokeWidth="2" 
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">REMAINING</span>
+                        <span className="text-5xl font-black text-slate-900 dark:text-white mb-2">{usagePercent.toFixed(0)}<span className="text-xl text-slate-400">%</span></span>
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${usagePercent < 10 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                           {usagePercent < 10 ? 'Critical Low' : 'Good Condition'}
+                        </span>
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-8">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                         <div className="text-xs text-slate-400 font-bold uppercase mb-1">사용된 포인트</div>
+                         <div className="text-xl font-black text-slate-900 dark:text-white">{usage.used.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                         <div className="text-xs text-slate-400 font-bold uppercase mb-1">전체 할당량</div>
+                         <div className="text-xl font-black text-slate-900 dark:text-white">{usage.total.toLocaleString()}</div>
+                      </div>
+                   </div>
+
+                   {/* Usage Logs */}
+                   <div className="w-full max-w-md">
+                      <div className="flex items-center justify-between mb-3 px-1">
+                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">최근 상세 기록 (Today)</span>
+                         <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                            {usage.logs?.length || 0}건
+                         </span>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden relative">
+                         <div className="max-h-48 overflow-y-auto custom-scrollbar p-0">
+                            {usage.logs && usage.logs.length > 0 ? (
+                               <table className="w-full text-left border-collapse">
+                                  <thead className="bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-500 font-bold uppercase sticky top-0 z-10">
+                                     <tr>
+                                        <th className="px-4 py-2">Time</th>
+                                        <th className="px-4 py-2">Type</th>
+                                        <th className="px-4 py-2 text-right">Cost</th>
+                                     </tr>
+                                  </thead>
+                                  <tbody className="text-xs">
+                                     {usage.logs.map((log: any, idx: number) => (
+                                        <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-100/50 dark:hover:bg-slate-700/30 transition-colors">
+                                           <td className="px-4 py-2.5 font-mono text-slate-400">
+                                              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                           </td>
+                                           <td className="px-4 py-2.5">
+                                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${log.type === 'search' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                 {log.type}
+                                              </span>
+                                              <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[120px]" title={log.details}>
+                                                 {log.details}
+                                              </div>
+                                           </td>
+                                           <td className="px-4 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300">
+                                              -{log.cost}
+                                           </td>
+                                        </tr>
+                                     ))}
+                                  </tbody>
+                               </table>
+                            ) : (
+                               <div className="flex flex-col items-center justify-center py-8 text-slate-400 opacity-60">
+                                  <span className="material-symbols-outlined mb-1 text-xl">history</span>
+                                  <span className="text-[10px]">기록 없음</span>
+                               </div>
+                            )}
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="mt-6 text-xs text-slate-400 max-w-sm leading-relaxed">
+                      * 할당량은 매일 오후 5:00 (KST)에 자동으로 초기화됩니다.<br/>
+                      * 초기화 시 기록도 자동 삭제됩니다.
+                   </div>
                 </div>
               </div>
             )}

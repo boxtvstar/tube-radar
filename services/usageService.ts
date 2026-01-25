@@ -42,7 +42,12 @@ export const getApiUsage = (): ApiUsage => {
       used: 0,
       lastReset: new Date().toISOString(),
       details: { search: 0, list: 0 },
-      logs: []
+      logs: [{
+        timestamp: new Date().toISOString(),
+        type: 'system',
+        cost: 0,
+        details: '일일 할당량 초기화 (매일 17:00 KST)'
+      }]
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(usage));
   }
@@ -58,14 +63,29 @@ export const trackUsage = (type: 'search' | 'list', units: number = 1, details?:
   if (type === 'search') usage.details.search += cost;
   else usage.details.list += cost;
   
-  // Add Log
+  // Add Log (Grouped)
   if (!usage.logs) usage.logs = [];
-  usage.logs.unshift({
-    timestamp: new Date().toISOString(),
-    type,
-    cost,
-    details: details || (type === 'search' ? '키워드 검색' : '영상/채널 데이터 요청')
-  });
+
+  const now = new Date();
+  const latestLog = usage.logs[0];
+  const currentDetails = details || (type === 'search' ? '키워드 검색' : '영상/채널 데이터 요청');
+
+  // 2초 이내의 동일 타입/내용 호출은 하나로 합침
+  if (latestLog && 
+      latestLog.type === type && 
+      latestLog.details === currentDetails &&
+      (now.getTime() - new Date(latestLog.timestamp).getTime() < 2000)) {
+      
+      latestLog.cost += cost;
+      latestLog.timestamp = now.toISOString(); // 시간 최신화
+  } else {
+      usage.logs.unshift({
+        timestamp: now.toISOString(),
+        type,
+        cost,
+        details: currentDetails
+      });
+  }
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(usage));
   
