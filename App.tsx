@@ -39,6 +39,10 @@ import {
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 import type { AutoDetectResult } from './services/youtubeService';
 import { PaymentResult } from './src/components/PaymentResult';
+import { ComparisonView } from './src/components/ComparisonView';
+import { VideoDetailModal } from './src/components/VideoDetailModal';
+import { ChannelRadar } from './src/components/ChannelRadar';
+
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
 
@@ -122,18 +126,19 @@ const VelocitySpeedometer = ({ score }: { score: string }) => {
   );
 };
 
-const VideoCard: React.FC<{ video: VideoData }> = ({ video }) => {
+const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video, onClick }) => {
   const isExtremeViral = parseFloat(video.viralScore) > 10;
   const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
   
   return (
-    <div className={`bg-white dark:bg-slate-card border ${isExtremeViral ? 'border-primary/40 ring-1 ring-primary/20' : 'border-slate-200 dark:border-slate-800'} rounded-2xl overflow-hidden group hover:border-primary/50 transition-all flex flex-col md:flex-row md:h-52 shadow-xl dark:shadow-black/30 relative animate-in slide-in-from-bottom-4 duration-300`}>
-      <a 
-        href={videoUrl} 
-        target="_blank" 
-        rel="noopener noreferrer" 
+    <div 
+      onClick={onClick}
+      className={`bg-white dark:bg-slate-card border ${isExtremeViral ? 'border-primary/40 ring-1 ring-primary/20' : 'border-slate-200 dark:border-slate-800'} rounded-2xl overflow-hidden group hover:border-primary/50 transition-all flex flex-col md:flex-row md:h-52 shadow-xl dark:shadow-black/30 relative animate-in slide-in-from-bottom-4 duration-300 ${onClick ? 'cursor-pointer' : ''}`}
+    >
+      <div 
         className="relative w-full md:w-80 bg-black overflow-hidden shrink-0 h-48 md:h-full border-r border-slate-200 dark:border-slate-800/50"
       >
+
         <img 
           className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700" 
           src={video.thumbnailUrl} 
@@ -145,17 +150,17 @@ const VideoCard: React.FC<{ video: VideoData }> = ({ video }) => {
         <div className={`absolute top-3 left-3 z-10 ${isExtremeViral ? 'viral-badge-neon px-3' : 'bg-slate-900 border border-white/10 px-2'} text-white text-[10px] font-black py-1 rounded shadow-lg uppercase tracking-tighter`}>
           {video.viralScore}
         </div>
-      </a>
+      </div>
       
       <div className="flex-1 p-5 md:p-6 flex flex-col justify-between overflow-hidden relative">
         <div className="space-y-3">
           <div className="flex justify-between items-start gap-4">
             <div className="flex-1 min-w-0">
-              <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="block group/title">
+              <div className="block group/title cursor-pointer">
                 <h3 className="font-bold text-sm md:text-base leading-tight dark:text-white text-slate-900 group-hover/title:text-primary transition-colors line-clamp-2 min-h-[2.6rem] mb-1">
                   {video.title}
                 </h3>
-              </a>
+              </div>
               <p className="text-[11px] text-slate-500 font-medium truncate mb-2">{video.channelName} • {video.uploadTime}</p>
             </div>
             <div className="shrink-0">
@@ -259,7 +264,16 @@ const Sidebar = ({
   onToggleCollapse,
   isMobileMenuOpen,
   onCloseMobileMenu,
-  onOpenMyPage
+  onOpenMyPage,
+
+  isComparisonMode,
+  onToggleComparisonMode,
+  isNationalTrendMode,
+  onToggleNationalTrendMode,
+  isCategoryTrendMode,
+  onToggleCategoryTrendMode,
+  isRadarMode,
+  onToggleRadarMode
 }: { 
   ytKey: string,
   onYtKeyChange: (val: string) => void,
@@ -292,7 +306,16 @@ const Sidebar = ({
   isMobileMenuOpen?: boolean;
   onCloseMobileMenu?: () => void;
   onOpenMyPage?: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support') => void;
+  isComparisonMode?: boolean;
+  onToggleComparisonMode?: (val: boolean) => void;
+  isNationalTrendMode: boolean;
+  onToggleNationalTrendMode: (val: boolean) => void;
+  isCategoryTrendMode: boolean;
+  onToggleCategoryTrendMode: (val: boolean) => void;
+  isRadarMode: boolean;
+  onToggleRadarMode: (val: boolean) => void;
 }) => {
+  if (!usage) return null;
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
   const isCritical = !isApiKeyMissing && percent < 10;
@@ -333,7 +356,9 @@ const Sidebar = ({
                 onToggleShortsDetectorMode(false); 
                 onToggleTopicMode(false);
                 onToggleTopicMode(false);
+                onToggleTopicMode(false);
                 onToggleMembershipMode(false);
+                if (onToggleComparisonMode) onToggleComparisonMode(false);
                 if (onCloseMobileMenu) onCloseMobileMenu();
               }}
               className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity group"
@@ -365,11 +390,12 @@ const Sidebar = ({
         <div className={`px-2 space-y-1 ${isCollapsed ? 'mt-4' : ''}`}>
           <button
             onClick={() => { 
-              onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); onToggleTopicMode(false); onToggleMembershipMode(false); 
+              onToggleUsageMode(false); onToggleExplorerMode(false); onTogglePackageMode(false); onToggleMyMode(true); onToggleShortsDetectorMode(false); onToggleTopicMode(false); onToggleMembershipMode(false); if(onToggleComparisonMode) onToggleComparisonMode(false);
+              onToggleNationalTrendMode(false); onToggleCategoryTrendMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -401,6 +427,9 @@ const Sidebar = ({
               onTogglePackageMode(false);
               onToggleShortsDetectorMode(false);
               onToggleTopicMode(false);
+              onToggleNationalTrendMode(false);
+              onToggleCategoryTrendMode(false);
+              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`${isExplorerMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
@@ -418,9 +447,32 @@ const Sidebar = ({
               onTogglePackageMode(false);
               onToggleTopicMode(false);
               onToggleMembershipMode(false);
+              onToggleNationalTrendMode(false);
+              onToggleCategoryTrendMode(false);
+              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}  
             className={`${isShortsDetectorMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
+            isCollapsed={isCollapsed}
+          />
+          <SidebarItem 
+            icon="compare_arrows" 
+            label="채널 비교 분석" 
+            active={!!isComparisonMode} 
+            onClick={() => {
+              if (onToggleComparisonMode) onToggleComparisonMode(true);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+              onToggleShortsDetectorMode(false);
+              onToggleTopicMode(false);
+              onToggleMembershipMode(false);
+              onToggleNationalTrendMode(false);
+              onToggleCategoryTrendMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isComparisonMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
             isCollapsed={isCollapsed}
           />
         </div>
@@ -440,6 +492,8 @@ const Sidebar = ({
               onToggleMyMode(false);
               onTogglePackageMode(false);
               onToggleMembershipMode(false);
+              onToggleNationalTrendMode(false);
+              onToggleCategoryTrendMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isTopicMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
@@ -456,6 +510,7 @@ const Sidebar = ({
               onToggleMyMode(false);
               onToggleShortsDetectorMode(false);
               onToggleTopicMode(false);
+              if (onToggleComparisonMode) onToggleComparisonMode(false);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isPackageMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
@@ -464,42 +519,73 @@ const Sidebar = ({
         </div>
 
         {/* 4. 국가별 트렌드 (유지) */}
-        {/* 4. 국가별 트렌드 (유지) */}
-        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">국가별 트렌드</div>}
+        {/* 4. 트렌드 분석 */}
+        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">트렌드 분석</div>}
         <div className="px-2 space-y-1">
-          {[
-            { id: 'KR', name: '대한민국 트렌드', icon: 'location_on' },
-            { id: 'US', name: '미국 트렌드', icon: 'public' },
-            { id: 'JP', name: '일본 트렌드', icon: 'language' }
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                onToggleUsageMode(false);
-                onToggleExplorerMode(false);
-                onToggleMyMode(false);
-                onTogglePackageMode(false);
-                onToggleShortsDetectorMode(false);
-                onToggleTopicMode(false);
-                onToggleMembershipMode(false);
-                onCategoryChange('');
-                onRegionChange(item.id);
-                if (onCloseMobileMenu) onCloseMobileMenu();
-              }}
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
-                region === item.id && !isMyMode && !selectedCategory && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode
-                  ? 'bg-primary/10 text-primary shadow-sm border border-primary/20' 
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
-              }`}
-              title={isCollapsed ? item.name : undefined}
-            >
-              <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              {!isCollapsed && item.name}
-            </button>
-          ))}
+          <SidebarItem 
+            icon="public" 
+            label="실시간 국가 트렌드" 
+            active={isNationalTrendMode} 
+            onClick={() => {
+              onToggleNationalTrendMode(true);
+              onToggleCategoryTrendMode(false);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+              onToggleShortsDetectorMode(false);
+              onToggleTopicMode(false);
+              onToggleMembershipMode(false);
+              if (onToggleComparisonMode) onToggleComparisonMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }} 
+            className={`${isNationalTrendMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+            isCollapsed={isCollapsed}
+          />
+          <SidebarItem 
+            icon="category" 
+            label="실시간 카테고리 트렌드" 
+            active={isCategoryTrendMode} 
+            onClick={() => {
+              onToggleCategoryTrendMode(true);
+              onToggleNationalTrendMode(false);
+              onToggleRadarMode(false);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+              onToggleShortsDetectorMode(false);
+              onToggleTopicMode(false);
+              onToggleMembershipMode(false);
+              if (onToggleComparisonMode) onToggleComparisonMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }} 
+            className={`${isCategoryTrendMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+            isCollapsed={isCollapsed}
+          />
+
+          <SidebarItem 
+            icon="radar" 
+            label="채널 급등 레이더" 
+            active={isRadarMode} 
+            onClick={() => {
+              onToggleRadarMode(true);
+              onToggleNationalTrendMode(false);
+              onToggleCategoryTrendMode(false);
+              onToggleExplorerMode(false);
+              onToggleUsageMode(false);
+              onToggleMyMode(false);
+              onTogglePackageMode(false);
+              onToggleShortsDetectorMode(false);
+              onToggleTopicMode(false);
+              onToggleMembershipMode(false);
+              if (onToggleComparisonMode) onToggleComparisonMode(false);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }} 
+            className={`${isRadarMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
+            isCollapsed={isCollapsed}
+          />
         </div>
-
-
 
         <div className={`mt-auto pb-8 ${isCollapsed ? 'px-0' : 'px-4 pt-4'}`}>
           <button 
@@ -881,9 +967,18 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
 };
 
 const CATEGORIES = [
-  { id: 'AI', name: 'IT/기술', icon: 'psychology', categoryId: '28' },
-  { id: 'SENIOR', name: '생활/노하우', icon: 'elderly', categoryId: '26' },
-  { id: 'MUSIC', name: '음악', icon: 'music_note', categoryId: '10' }
+  { id: 'FILM', name: '영화/애니', icon: 'movie', categoryId: '1' },
+  { id: 'AUTOS', name: '자동차', icon: 'directions_car', categoryId: '2' },
+  { id: 'MUSIC', name: '음악', icon: 'music_note', categoryId: '10' },
+  { id: 'PETS', name: '동물', icon: 'pets', categoryId: '15' },
+  { id: 'SPORTS', name: '스포츠', icon: 'sports_soccer', categoryId: '17' },
+  { id: 'GAME', name: '게임', icon: 'sports_esports', categoryId: '20' },
+  { id: 'BLOG', name: '인물/블로그', icon: 'person', categoryId: '22' },
+  { id: 'COMEDY', name: '코미디', icon: 'sentiment_very_satisfied', categoryId: '23' },
+  { id: 'ENTER', name: '엔터', icon: 'theater_comedy', categoryId: '24' },
+  { id: 'NEWS', name: '뉴스·시사', icon: 'newspaper', categoryId: '25' },
+  { id: 'HOWTO', name: '노하우/스타일', icon: 'lightbulb', categoryId: '26' },
+  { id: 'TECH', name: '과학/기술', icon: 'smart_toy', categoryId: '28' }
 ];
 
 const DEFAULT_GROUPS: ChannelGroup[] = [
@@ -901,6 +996,7 @@ export default function App() {
   const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error'; showSubscribeButton?: boolean } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [detailedVideo, setDetailedVideo] = useState<VideoData | null>(null);
 
   // [Security Fix] Initialize with empty, load from user-specific storage later
   const [ytKey, setYtKey] = useState('');
@@ -932,11 +1028,13 @@ export default function App() {
   const [individualMovingChannelId, setIndividualMovingChannelId] = useState<string | null>(null);
 
   const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
+  const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
   
   const [isMyMode, setIsMyMode] = useState(true);
   const [isExplorerMode, setIsExplorerMode] = useState(false);
   const [isUsageMode, setIsUsageMode] = useState(false);
   const [isPackageMode, setIsPackageMode] = useState(false);
+  const [isRadarMode, setIsRadarMode] = useState(false);
   const [isShortsDetectorMode, setIsShortsDetectorMode] = useState(false);
   const [shortsDetectorResults, setShortsDetectorResults] = useState<AutoDetectResult[]>([]);
   const [isDetectingShorts, setIsDetectingShorts] = useState(false);
@@ -958,6 +1056,26 @@ export default function App() {
       setIsPaymentResultMode(true);
     }
   }, []);
+
+  // Comparison Mode
+  const [isComparisonMode, setIsComparisonMode] = useState(false);
+  const [isComparisonSelecting, setIsComparisonSelecting] = useState(false);
+  const [comparisonChannels, setComparisonChannels] = useState<SavedChannel[]>([]);
+
+  const toggleComparisonSelection = (channel: SavedChannel) => {
+    setComparisonChannels(prev => {
+      const isSelected = prev.some(c => c.id === channel.id);
+      if (isSelected) {
+        return prev.filter(c => c.id !== channel.id);
+      } else {
+        if (prev.length >= 3) {
+          alert("최대 3개 채널까지 비교할 수 있습니다.");
+          return prev;
+        }
+        return [...prev, channel];
+      }
+    });
+  };
 
   const [recommendedTopics, setRecommendedTopics] = useState<RecommendedPackage[]>([]);
 
@@ -984,6 +1102,9 @@ export default function App() {
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
   const [showGuestNotice, setShowGuestNotice] = useState(false);
+  
+  const [isNationalTrendMode, setIsNationalTrendMode] = useState(false);
+  const [isCategoryTrendMode, setIsCategoryTrendMode] = useState(false);
 
   const [usage, setUsage] = useState<ApiUsage>(getApiUsage());
   
@@ -1229,7 +1350,8 @@ export default function App() {
             DEFAULT_GROUPS.forEach(g => saveGroupToDb(user.uid, g));
           }
           const dbChannels = await getChannelsFromDb(user.uid);
-          setSavedChannels(dbChannels);
+          const uniqueChannels = Array.from(new Map(dbChannels.map(c => [c.id, c])).values());
+          setSavedChannels(uniqueChannels);
                     if (dbChannels.length === 0) {
             setShowOnboarding(true);
            }
@@ -1254,6 +1376,7 @@ export default function App() {
   if (!user) return <Login />;
 
   useEffect(() => {
+    // [Fix] Allow loadVideos in National/Category Trend modes (removed exclusions)
     if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isUsageMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode) {
       if (!isMyMode || !hasPendingSync) {
         loadVideos();
@@ -1261,9 +1384,32 @@ export default function App() {
         setLoading(false);
       }
     }
-  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isUsageMode, hasPendingSync, isTopicMode]);
+  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isUsageMode, hasPendingSync, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
 
-  const loadVideos = async (force: boolean = false) => {
+  const handleOpenAutoDetectDetail = (result: AutoDetectResult) => {
+    // Convert AutoDetectResult to VideoData for the modal
+    const videoData: VideoData = {
+      id: result.representativeVideo.id,
+      title: result.representativeVideo.title,
+      channelName: result.title,
+      thumbnailUrl: result.representativeVideo.thumbnail,
+      duration: "Shorts", // Fallback
+      views: formatNumber(result.representativeVideo.views),
+      avgViews: "0", // Not available in this context yet
+      subscribers: formatNumber(result.stats.subscribers),
+      viralScore: `${result.viralScore?.toFixed(1) || '0.0'}x`,
+      uploadTime: getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt),
+      category: "Shorts",
+      reachPercentage: 0,
+      tags: [],
+      channelTotalViews: formatNumber(result.stats.viewCount), // Using channel total views
+      channelJoinDate: result.stats.publishedAt,
+      channelCountry: "", // Not available in simple result
+    };
+    setDetailedVideo(videoData);
+  };
+ 
+  const loadVideos = async (force: boolean = false, channelsOverride?: SavedChannel[]) => {
     if (!ytKey || ytApiStatus !== 'valid') {
       setApiError("YouTube API 키가 유효하지 않거나 설정되지 않았습니다.");
       setLoading(false);
@@ -1278,9 +1424,15 @@ export default function App() {
     }
     
     try {
+      // Clear previous videos to prevent stale view
+      if (!isMyMode) setVideos([]); 
+
       let targetChannelIds: string[] = [];
       if (isMyMode) {
-        targetChannelIds = currentGroupChannels.map(c => c.id);
+        // Use override if available (e.g. during update), otherwise use current group
+        const sourceForIds = channelsOverride || currentGroupChannels;
+        targetChannelIds = sourceForIds.map(c => c.id);
+        
         if (targetChannelIds.length === 0) {
           setVideos([]);
           setLoading(false);
@@ -1288,15 +1440,42 @@ export default function App() {
         }
       }
       
-      const catObj = CATEGORIES.find(c => c.id === selectedCategory);
-      const categoryId = !isMyMode && catObj ? catObj.categoryId : "";
+      const catConfig = CATEGORIES.find(c => c.id === selectedCategory) as any;
+      
+      // Determine parameters based on category config
+      const targetCategoryId = !isMyMode && catConfig ? catConfig.categoryId : "";
+      
+      let query = "";
+      if (!isMyMode && catConfig && catConfig.keywords) {
+         if (typeof catConfig.keywords === 'string') {
+            query = catConfig.keywords;
+         } else {
+            // Select keywords based on current region
+            // Default to US or KR if region not found, or just empty
+            query = (catConfig.keywords as any)[region] || (catConfig.keywords as any)['US'] || "";
+         }
+      }
+
+      // FORCE DISABLE SEARCH - User requested strict 1-point official category mode
+      const useSearch = false; 
       
       // 15 seconds timeout to prevent infinite loading
       const timeoutPromise = new Promise<any>((_, reject) => 
         setTimeout(() => reject(new Error("응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.")), 15000)
       );
 
-      const fetchPromise = fetchRealVideos(ytKey, "", region, timeRange, targetChannelIds, categoryId, force);
+      // Pass query as 2nd arg (keywords), categoryId, force, useSearchApi, AND savedChannels
+      const fetchPromise = fetchRealVideos(
+          ytKey, 
+          query, 
+          region, 
+          timeRange, 
+          targetChannelIds, 
+          targetCategoryId, 
+          force, 
+          useSearch, 
+          channelsOverride || savedChannels // Critical fix: Pass DB data for Avg Views
+      );
       
       const data = await Promise.race([fetchPromise, timeoutPromise]);
       
@@ -1344,6 +1523,59 @@ export default function App() {
 
   const isReadOnly = role === 'pending';
   
+  // --- Bulk Update Channel Stats (For Avg Views) ---
+  const handleUpdateChannelStats = async () => {
+    if (!currentGroupChannels.length) return;
+    const confirm = window.confirm(`전체 ${currentGroupChannels.length}개 채널의 정보를 최신화하여 '평균 조회수'를 재계산하시겠습니까?\n(시간이 조금 소요될 수 있습니다)`);
+    if (!confirm) return;
+
+    setLoading(true);
+    let updatedCount = 0;
+    
+    try {
+      // 1. Process Update
+      const updatedChannels = [...savedChannels]; // Copy full list
+      // Filter target channels that belong to current views
+      const targetIds = currentGroupChannels.map(c => c.id);
+      
+      for (const id of targetIds) {
+          const original = updatedChannels.find(c => c.id === id);
+          if (original) {
+             try {
+                // Fetch fresh info (calculates avg)
+                const info = await getChannelInfo(ytKey, original.id);
+                if (info) {
+
+
+                   const updated = { ...original, ...info, addedAt: original.addedAt, groupId: original.groupId }; // Preserve metadata
+                   
+                   // Update in-memory list
+                   const idx = updatedChannels.findIndex(c => c.id === id);
+                   if (idx !== -1) updatedChannels[idx] = updated;
+                   updatedCount++;
+                   
+                   // Update DB immediately
+                   if (user) await saveChannelToDb(user.uid, updated);
+                }
+             } catch (e) {
+                console.warn(`Failed to update ${original.title}`, e);
+             }
+          }
+      }
+      
+      setSavedChannels(updatedChannels);
+      alert(`${updatedCount}개의 채널 정보가 최신화되었습니다.`);
+      // Refresh videos with new stats
+      await loadVideos(true);
+      
+    } catch (e: any) {
+      console.error(e);
+      alert(`업데이트 중 오류가 발생했습니다:\n${e.message || JSON.stringify(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleActionRestricted = (callback: () => void) => {
     if (isReadOnly) {
        setAlertMessage({
@@ -1400,6 +1632,7 @@ export default function App() {
 
     if (newChannels.length > 0) {
       setSavedChannels(prev => [...newChannels, ...prev]);
+      setNewlyAddedIds(prev => [...prev, ...newChannels.map(c => c.id)]); // Track new IDs
       setHasPendingSync(true);
       setIsSyncNoticeDismissed(false);
     }
@@ -1785,19 +2018,161 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
     return <PaymentResult />;
   }
 
+  if (isComparisonMode) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
+        <Sidebar 
+          ytKey={ytKey}
+          onYtKeyChange={setYtKey}
+          ytApiStatus={ytApiStatus}
+          region={region}
+          onRegionChange={setRegion}
+          selectedCategory={selectedCategory}
+          onCategoryChange={setSelectedCategory}
+          isMyMode={isMyMode}
+          onToggleMyMode={(val) => {
+             setIsComparisonMode(false);
+             setIsMyMode(val);
+             setIsExplorerMode(false);
+             setIsUsageMode(false);
+             setIsPackageMode(false);
+             setIsShortsDetectorMode(false);
+             setIsTopicMode(false);
+             setIsMembershipMode(false);
+          }}
+          isExplorerMode={isExplorerMode}
+          onToggleExplorerMode={(val) => {
+             setIsComparisonMode(false);
+             setIsExplorerMode(val);
+             setIsMyMode(false);
+             setIsUsageMode(false);
+             setIsPackageMode(false);
+             setIsShortsDetectorMode(false);
+             setIsTopicMode(false);
+             setIsMembershipMode(false);
+          }}
+          isUsageMode={isUsageMode}
+          onToggleUsageMode={(val) => {
+             setIsComparisonMode(false);
+             setIsUsageMode(val);
+          }}
+          isPackageMode={isPackageMode}
+          onTogglePackageMode={(val) => {
+             setIsComparisonMode(false);
+             setIsPackageMode(val);
+          }}
+          isShortsDetectorMode={isShortsDetectorMode}
+          onToggleShortsDetectorMode={(val) => {
+             setIsComparisonMode(false);
+             setIsShortsDetectorMode(val);
+          }}
+          isTopicMode={isTopicMode}
+          onToggleTopicMode={(val) => {
+             setIsComparisonMode(false);
+             setIsTopicMode(val);
+          }}
+          isMembershipMode={isMembershipMode}
+          onToggleMembershipMode={(val) => {
+             setIsComparisonMode(false);
+             setIsMembershipMode(val);
+          }}
+          isNationalTrendMode={isNationalTrendMode}
+          onToggleNationalTrendMode={(val) => {
+             setIsComparisonMode(false);
+             setIsNationalTrendMode(val);
+          }}
+          isCategoryTrendMode={isCategoryTrendMode}
+          onToggleCategoryTrendMode={(val) => {
+             setIsComparisonMode(false);
+             setIsCategoryTrendMode(val);
+          }}
+          isRadarMode={isRadarMode}
+          onToggleRadarMode={(val) => {
+             setIsComparisonMode(false);
+             setIsRadarMode(val);
+          }}
+          isComparisonMode={true}
+          onToggleComparisonMode={(val) => {
+             // Already in comparison mode
+          }}
+          hasPendingSync={hasPendingSync}
+          isSyncNoticeDismissed={isSyncNoticeDismissed}
+          isApiKeyMissing={isApiKeyMissing}
+          usage={usage}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          onOpenMyPage={() => setIsMyPageOpen(true)}
+        />
+        <main className="flex-1 flex flex-col overflow-hidden relative">
+          <Header 
+            onMobileMenuToggle={() => setIsMobileMenuOpen(true)} 
+            region={region} 
+            count={videos.length} 
+            theme={theme} 
+            onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+            hasPendingSync={hasPendingSync && !isSyncNoticeDismissed}
+            isApiKeyMissing={isApiKeyMissing}
+            onDismissSync={() => setIsSyncNoticeDismissed(true)}
+            onSync={() => loadVideos(true)}
+            user={user}
+            role={role}
+            expiresAt={expiresAt}
+            onLogout={logout}
+            onOpenAdmin={() => setIsAdminOpen(true)}
+            notifications={notifications}
+            onMarkRead={async (id) => {
+              if (user) {
+                await markNotificationAsRead(user.uid, id);
+                setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
+              }
+            }}
+            onDeleteNotif={async (id) => {
+              if (!user) return;
+              await deleteNotification(user.uid, id);
+              setNotifications(prev => prev.filter(n => n.id !== id));
+            }}
+            onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
+            onOpenMembership={() => { 
+                setIsComparisonMode(false);
+                setIsMembershipMode(true); 
+                setIsUsageMode(false); 
+                setIsExplorerMode(false); 
+                setIsPackageMode(false); 
+                setIsShortsDetectorMode(false); 
+                setIsTopicMode(false); 
+                setIsMyMode(false);
+            }}
+          />
+          <ComparisonView 
+            channels={comparisonChannels} 
+            allChannels={savedChannels}
+            apiKey={ytKey}
+            onClose={() => {
+              setIsComparisonMode(false);
+              setComparisonChannels([]);
+            }} 
+            onUpdateChannels={setComparisonChannels}
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
       <Sidebar 
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setVideos([]); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={setIsExplorerMode}
-        isUsageMode={isUsageMode} onToggleUsageMode={setIsUsageMode}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); } setIsTopicMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setVideos([]); setIsRadarMode(false); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) setIsRadarMode(false); setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) setIsRadarMode(false); setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsShortsDetectorMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); setIsRadarMode(false); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsTopicMode(false); setIsRadarMode(false); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsPackageMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsRadarMode(false); } setIsTopicMode(val); }}
         isMembershipMode={isMembershipMode} onToggleMembershipMode={setIsMembershipMode}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={setIsComparisonMode}
+        isRadarMode={isRadarMode} onToggleRadarMode={setIsRadarMode}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -1809,6 +2184,11 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         isMobileMenuOpen={isMobileMenuOpen}
         onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
+        
+        isNationalTrendMode={isNationalTrendMode}
+        onToggleNationalTrendMode={setIsNationalTrendMode}
+        isCategoryTrendMode={isCategoryTrendMode}
+        onToggleCategoryTrendMode={setIsCategoryTrendMode}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -1858,6 +2238,12 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
             user={user}
             usage={usage}
             notifications={notifications}
+            onMarkRead={async (id) => {
+              if (user) {
+                await markNotificationAsRead(user.uid, id);
+                setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
+              }
+            }}
             role={role}
             expiresAt={expiresAt}
             onLogout={logout}
@@ -1868,22 +2254,14 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
             onOpenUsage={() => {
               setIsMyPageOpen(false);
               setIsUsageMode(true);
-              setIsExplorerMode(false);
-              setIsPackageMode(false);
-              setIsShortsDetectorMode(false);
-              setIsTopicMode(false);
-              setIsMembershipMode(false);
-              setIsMyMode(false);
-            }}
-            onMarkRead={async (id) => {
-               if (user) {
-                 await markNotificationAsRead(user.uid, id);
-                 setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
-               }
             }}
           />
         )}
+
+
         
+
+
         {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
         {showGuestNotice && user && (
@@ -2002,34 +2380,42 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                            <div className="absolute top-1.5 left-1.5 z-10 bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-md border border-white/10">
                              #{idx + 1}
                            </div>
+                           
+                           {/* Booster Score Badge */}
+                           {result.viralScore >= 1.5 && (
+                              <div className="absolute top-1.5 right-1.5 z-10 bg-indigo-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded backdrop-blur-md shadow-lg shadow-indigo-500/50 flex items-center gap-0.5 animate-in zoom-in spin-in-3 duration-500">
+                                 <span className="material-symbols-outlined text-[10px] animate-pulse">local_fire_department</span>
+                                 {result.viralScore}x
+                              </div>
+                           )}
 
-                           <a href={`https://www.youtube.com/shorts/${result.representativeVideo.id}`} target="_blank" rel="noopener noreferrer" className="relative aspect-[9/16] bg-slate-100 dark:bg-slate-800 block cursor-pointer overflow-hidden">
-                             <img src={result.representativeVideo.thumbnail} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" loading="lazy" />
-                             {/* Overlay: Always visible with stronger gradient */}
-                             <div className="absolute inset-x-0 bottom-0 p-3 pt-8 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-20">
-                                <div className="text-[10px] font-bold text-white line-clamp-2 leading-tight mb-1 drop-shadow-md group-hover:underline decoration-white/50">{result.representativeVideo.title}</div>
-                                <div className="text-[9px] font-bold text-emerald-400 drop-shadow-md flex items-center gap-1">
-                                  <span className="material-symbols-outlined text-[10px]">visibility</span>
-                                  {formatNumber(result.representativeVideo.views)}
-                                </div>
-                             </div>
-                           </a>
+                           <div 
+                             onClick={() => handleOpenAutoDetectDetail(result)}
+                             className="block group/video cursor-pointer relative aspect-[9/16] bg-slate-100 dark:bg-slate-800 overflow-hidden"
+                           >
+                              <img src={result.representativeVideo.thumbnail} className="w-full h-full object-cover group-hover/video:scale-105 transition-transform duration-500 opacity-90 group-hover:opacity-100" alt="" />
+                              <div className="absolute inset-0 bg-black/10 group-hover/video:bg-transparent transition-colors"></div>
+                              <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                                 <span className="material-symbols-outlined text-[10px]">play_arrow</span>
+                                 {formatNumber(result.representativeVideo.views)}
+                              </div>
+                           </div>
                            
                            <div className="p-2 space-y-2">
-                             <a href={`https://www.youtube.com/channel/${result.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 group/channel hover:bg-slate-50 dark:hover:bg-slate-800/50 p-1 -ml-1 rounded transition-colors">
-                               <img src={result.thumbnail} className="size-5 rounded-full border border-slate-100 dark:border-slate-700" />
-                               <div className="flex-1 min-w-0">
-                                 <h3 className="font-bold text-[11px] text-slate-900 dark:text-white truncate group-hover/channel:text-primary transition-colors">{result.title}</h3>
-                                 <div className="flex items-center gap-1 text-[9px] text-slate-400">
-                                   <span>구독 {formatNumber(result.stats.subscribers)}</span>
-                                 </div>
-                               </div>
-                             </a>
-                             
-                             <div className="flex justify-between items-center px-1">
-                                <span className="text-[9px] text-slate-500 font-medium">조회수 {formatNumber(result.representativeVideo.views)}</span>
-                                <span className="text-[9px] text-slate-400">{getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt)}</span>
-                             </div>
+                              <a href={`https://www.youtube.com/channel/${result.id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 group/channel hover:bg-slate-50 dark:hover:bg-slate-800/50 p-1 -ml-1 rounded transition-colors">
+                                <img src={result.thumbnail} className="size-5 rounded-full border border-slate-100 dark:border-slate-700" alt="" />
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-bold text-[11px] text-slate-900 dark:text-white truncate group-hover/channel:text-primary transition-colors">{result.title}</h3>
+                                  <div className="flex items-center gap-1 text-[9px] text-slate-400">
+                                    <span>구독 {formatNumber(result.stats.subscribers)}</span>
+                                  </div>
+                                </div>
+                              </a>
+                              
+                              <div className="flex justify-between items-center px-1">
+                                 <span className="text-[9px] text-slate-500 font-medium">조회수 {formatNumber(result.representativeVideo.views)}</span>
+                                 <span className="text-[9px] text-slate-400">{getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt)}</span>
+                              </div>
 
                              <button 
                                onClick={() => handleAddDetectedChannel(result)}
@@ -2053,6 +2439,147 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                  </div>
                )}
              </div>
+          ) : isNationalTrendMode ? (
+            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+              <div className="space-y-4">
+                  <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
+                    <span className="material-symbols-outlined text-2xl md:text-3xl">public</span>
+                    실시간 국가 트렌드
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 'KR', name: '한국', icon: '🇰🇷' },
+                      { id: 'US', name: '미국', icon: '🇺🇸' },
+                      { id: 'JP', name: '일본', icon: '🇯🇵' },
+                      { id: 'GB', name: '영국', icon: '🇬🇧' },
+                    ].map(country => (
+                      <button
+                        key={country.id}
+                        onClick={() => {
+                          setRegion(country.id);
+                          setSelectedCategory(''); // Reset category
+                          // loadVideos(true); // Triggered by useEffect dependency
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                          region === country.id
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg scale-105'
+                            : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span className="text-base">{country.icon}</span>
+                        {country.name}
+                      </button>
+                    ))}
+                  </div>
+              </div>
+              
+              {/* Reuse Video List Logic */}
+              <div className="space-y-6">
+                {loading ? (
+                    <div className="py-20 flex flex-col items-center justify-center gap-5">
+                      <div className="size-10 border-2 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
+                      <p className="text-slate-400 text-xs font-black uppercase tracking-widest animate-pulse">트렌드 분석 중...</p>
+                    </div>
+                ) : videos.length > 0 ? (
+                  videos
+                    .filter((video, index, self) => self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2)
+                    .map((video) => (
+                      <VideoCard 
+                          key={video.id} 
+                          video={video} 
+                          onClick={() => setDetailedVideo(video)} 
+                      />
+                  ))
+                ) : (
+                  <div className="py-20 text-center text-slate-400 font-bold text-sm">트렌드 데이터를 불러오는 중이거나 데이터가 없습니다.</div>
+                )}
+              </div>
+            </div>
+
+          ) : isCategoryTrendMode ? (
+            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+               <div className="space-y-4">
+                  <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
+                    <span className="material-symbols-outlined text-2xl md:text-3xl">category</span>
+                    실시간 카테고리 트렌드
+                  </h2>
+                  
+                  {/* 1. Country Selection */}
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 'KR', name: '한국', icon: '🇰🇷' },
+                      { id: 'US', name: '미국', icon: '🇺🇸' },
+                      { id: 'JP', name: '일본', icon: '🇯🇵' },
+                    ].map(country => (
+                      <button
+                        key={country.id}
+                        onClick={() => {
+                          setRegion(country.id);
+                          // loadVideos(true); // Triggered effect
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                          region === country.id
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg'
+                            : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span className="text-base">{country.icon}</span>
+                        {country.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 2. Category Selection */}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={() => setSelectedCategory('')}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${
+                          selectedCategory === ''
+                            ? 'bg-slate-800 text-white border-slate-800'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-transparent hover:bg-slate-200'
+                        }`}
+                    >
+                      전체
+                    </button>
+                    {CATEGORIES.map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${
+                          selectedCategory === cat.id
+                            ? 'bg-slate-800 text-white border-slate-800'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-transparent hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+              </div>
+
+               {/* Reuse Video List Logic */}
+               <div className="space-y-6">
+                {loading ? (
+                    <div className="py-20 flex flex-col items-center justify-center gap-5">
+                      <div className="size-10 border-2 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
+                      <p className="text-slate-400 text-xs font-black uppercase tracking-widest animate-pulse">카테고리 트렌드 분석 중...</p>
+                    </div>
+                ) : videos.length > 0 ? (
+                  videos
+                    .filter((video, index, self) => self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2)
+                    .map((video) => (
+                      <VideoCard 
+                          key={video.id} 
+                          video={video} 
+                          onClick={() => setDetailedVideo(video)} 
+                      />
+                  ))
+                ) : (
+                  <div className="py-20 text-center text-slate-400 font-bold text-sm">데이터를 불러오는 중입니다.</div>
+                )}
+              </div>
+            </div>
+
           ) : isUsageMode ? (
             <div className="space-y-6 md:space-y-8 animate-in slide-in-from-right-4 duration-500">
               <div className="bg-white dark:bg-slate-card/60 border border-slate-200 dark:border-slate-800 p-6 md:p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
@@ -2564,6 +3091,23 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                         <span className="hidden md:inline">공유 제안</span>
                       </button>
 
+                      <button
+                        onClick={() => {
+                          if (selectedChannelIds.length < 2 || selectedChannelIds.length > 3) {
+                            alert("비교하려면 2개 또는 3개의 채널을 선택해주세요.");
+                            return;
+                          }
+                          const selected = savedChannels.filter(c => selectedChannelIds.includes(c.id));
+                          setComparisonChannels(selected);
+                          setIsComparisonMode(true);
+                        }}
+                        className="px-3 py-2 md:px-6 md:py-3 rounded-xl text-[10px] md:text-[11px] font-black uppercase transition-all flex items-center gap-1.5 md:gap-2 bg-indigo-600 text-white border-2 border-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 shadow-lg shadow-indigo-600/30"
+                        title="선택한 채널 비교 분석"
+                      >
+                         <span className="material-symbols-outlined text-[16px] md:text-[18px]">compare_arrows</span>
+                         VS 비교
+                      </button>
+
                       <button onClick={async () => {
                         if(window.confirm(`${selectedChannelIds.length}개 채널을 삭제하시겠습니까?`)) {
                           if (user) {
@@ -2602,7 +3146,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       <div className="flex flex-col flex-1 min-w-0 pr-6">
                         <div className="flex items-center gap-1.5 w-full">
                           <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate" title={ch.title}>{ch.title}</span>
-                          {ch.addedAt && (Date.now() - ch.addedAt < NEW_CHANNEL_THRESHOLD) && (
+                          {newlyAddedIds.includes(ch.id) && (
                             <span className="shrink-0 bg-rose-500 text-white text-[8px] font-black px-1 py-0.5 rounded leading-none animate-pulse">NEW</span>
                           )}
                         </div>
@@ -2651,7 +3195,37 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
             </div>
           )}
 
-          {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && (
+
+  
+        {isRadarMode && (
+          <div className="flex-1 overflow-hidden relative">
+            <ChannelRadar 
+              apiKey={ytKey} 
+              onClose={() => setIsRadarMode(false)} 
+              onVideoClick={(video) => {
+                setDetailedVideo({
+                  id: video.id,
+                  title: video.title,
+                  channelName: video.channelName,
+                  channelId: video.channelId,
+                  thumbnailUrl: video.thumbnailUrl,
+                  duration: video.duration,
+                  views: video.views,
+                  avgViews: video.avgViews,
+                  subscribers: video.subscribers,
+                  viralScore: typeof video.spikeScore === 'number' ? video.spikeScore.toFixed(1) + 'x' : video.viralScore || '0x',
+                  publishedAt: video.publishedAt, // Critical Fix: Pass publishedAt
+                  uploadTime: video.uploadTime,
+                  category: video.category,
+                  reachPercentage: video.performanceRatio,
+                  tags: video.tags || []
+                }); 
+              }}
+            />
+          </div>
+        )}
+
+        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && (
             <div className="relative min-h-[60vh]">
                {isMyMode && role === 'pending' && (
                   <RestrictedOverlay 
@@ -2682,7 +3256,17 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                     )}
                   </div>
                   
-                  <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5">
+                  <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5 items-center">
+                    {isMyMode && (
+                      <button
+                        onClick={handleUpdateChannelStats}
+                        className="mr-2 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-500 hover:text-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-1 shadow-sm border border-slate-200 dark:border-slate-700"
+                        title="모든 채널 정보 최신화 (평균 조회수 재계산)"
+                      >
+                         <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>sync</span>
+                         <span className="hidden md:inline">채널 갱신</span>
+                      </button>
+                    )}
                     {[3, 5, 7].map(d => (
                       <button
                         key={d}
@@ -2724,7 +3308,20 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                       </div>
                     ) : videos.length > 0 ? (
                       <div className="space-y-6">
-                        {videos.map((video) => <VideoCard key={video.id} video={video} />)}
+                        {videos
+                          .filter((video, index, self) => {
+                             // Exception: Always show "Super Viral" videos (Score >= 3.0) regardless of the limit
+                             if (parseFloat(video.viralScore) >= 3.0) return true;
+                             // Default: Limit to max 2 videos per channel
+                             return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
+                          })
+                          .map((video) => (
+                           <VideoCard 
+                              key={video.id} 
+                              video={video} 
+                              onClick={() => setDetailedVideo(video)} 
+                           />
+                        ))}
                       </div>
                     ) : (
                       <div className="py-32 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900/10 shadow-sm flex flex-col items-center gap-4">
@@ -3003,6 +3600,16 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
            </div>
         </div>
       )}
+
+      {/* Video Detail Modal */}
+      {detailedVideo && (
+        <VideoDetailModal 
+          video={detailedVideo} 
+          onClose={() => setDetailedVideo(null)} 
+        />
+      )}
+
+
     </div>
   );
 }

@@ -1,0 +1,363 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  getChannelInfo, 
+  analyzeChannelForRadar, 
+  searchChannelsByKeyword, 
+  getChannelUploadsPlaylistId, 
+  getPlaylistItems 
+} from '../../services/youtubeService';
+
+// --- Error Boundary for Crash Protection ---
+class RadarErrorBoundary extends React.Component<{ children: React.ReactNode, onClose: () => void }, { hasError: boolean, error: Error | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("ChannelRadar Critical Error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 z-[100] bg-slate-900/95 flex flex-col items-center justify-center text-white p-6 font-sans">
+          <span className="material-symbols-outlined text-6xl text-rose-500 mb-4">error_outline</span>
+          <h2 className="text-2xl font-bold mb-2">시스템 오류 발생</h2>
+          <p className="text-slate-400 mb-6 text-center max-w-md">
+            채널 레이더 실행 중 예기치 않은 문제가 발생했습니다.<br/>
+            {this.state.error?.message}
+          </p>
+          <button 
+            onClick={this.props.onClose}
+            className="px-6 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold transition-colors"
+          >
+            닫기
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- Interfaces ---
+interface RadarVideo {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  channelName: string;
+  channelId: string;
+  channelThumbnail: string;
+  
+  views: string;
+  publishedAt: string;
+  velocity: number;
+  spikeScore: number;
+  performanceRatio: number;
+  
+  duration: string;
+  subscribers: string;
+  avgViews: string;
+  viralScore: string;
+  uploadTime: string;
+  category: string;
+  reachPercentage: number;
+  tags: string[];
+}
+
+interface ChannelRadarProps {
+  apiKey: string;
+  onClose: () => void;
+}
+
+// --- Inner Component ---
+const ChannelRadarContent = ({ apiKey, onClose }: ChannelRadarProps) => {
+  const [input, setInput] = useState('');
+  const [status, setStatus] = useState<'idle' | 'analyzing' | 'searching' | 'fetching' | 'calculating' | 'done'>('idle');
+  const [progress, setProgress] = useState(0);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [results, setResults] = useState<RadarVideo[]>([]);
+
+  // Debug Mount
+  useEffect(() => {
+    // console.log("ChannelRadar Mounted");
+  }, []);
+
+  const addLog = (msg: string) => setLogs(prev => [...prev, msg]);
+
+  const runRadar = async () => {
+    if (!input.trim()) return;
+    setStatus('analyzing');
+    setResults([]);
+    setLogs([]);
+    setProgress(10);
+    setDisplayLimit(12);
+    
+    try {
+      // 1. Check Target
+      addLog(`기준 채널 분석 시작: ${input}`);
+      const channelInfo = await getChannelInfo(apiKey, input);
+      if (!channelInfo) {
+        addLog("채널을 찾을 수 없습니다. URL이나 ID를 확인해주세요.");
+        setStatus('idle');
+        return;
+      }
+
+      // 2. Analyze
+      const analysis = await analyzeChannelForRadar(apiKey, channelInfo.id);
+      const keywords = analysis?.keywords || ['Trend'];
+      addLog(`분석 완료. 키워드: ${keywords.join(', ')}`);
+      setProgress(30);
+
+      // 3. Search Similar
+      setStatus('searching');
+      const query = keywords.slice(0, 2).join(' ');
+      addLog(`유사 채널 검색: ${query}`);
+      
+      const similarChannels = await searchChannelsByKeyword(apiKey, query);
+      if (!similarChannels || similarChannels.length === 0) {
+        addLog("유사 채널을 찾지 못했습니다.");
+        setStatus('done');
+        return;
+      }
+      addLog(`${similarChannels.length}개의 유사 채널 발견.`);
+      setProgress(50);
+
+      // 4. Fetch Videos
+      setStatus('fetching');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allVideos: any[] = [];
+      
+      const channelPromises = similarChannels.map(async (ch) => {
+        try {
+          const uploadsId = await getChannelUploadsPlaylistId(apiKey, ch.id);
+          if (!uploadsId) return;
+          const rawItems = await getPlaylistItems(apiKey, uploadsId, 10); // Limit 10 for speed
+          if (Array.isArray(rawItems)) {
+             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             rawItems.forEach((item: any) => {
+               if(item?.contentDetails?.videoId) {
+                 allVideos.push({ ...item, channelTitle: ch.title, channelId: ch.id, channelThumbnail: ch.thumbnail });
+               }
+             });
+          }
+        } catch(e) {}
+      });
+
+      await Promise.all(channelPromises);
+      addLog(`총 ${allVideos.length}개 영상 분석 중...`);
+      setProgress(80);
+
+      if (allVideos.length === 0) {
+        addLog("분석할 영상이 없습니다.");
+        setStatus('done');
+        return;
+      }
+
+      // 5. Batch Details
+      setStatus('calculating');
+      const videoIds = allVideos.map(v => v.contentDetails.videoId);
+      const detailedVideos: RadarVideo[] = [];
+      
+      // Batch size 40
+      for (let i = 0; i < videoIds.length; i += 40) {
+        const chunk = videoIds.slice(i, i + 40);
+        try {
+          const vRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${chunk.join(',')}&key=${apiKey}`);
+          const vData = await vRes.json();
+          if (vData.items && Array.isArray(vData.items)) {
+             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             vData.items.forEach((v: any) => {
+               const original = allVideos.find(av => av.contentDetails.videoId === v.id);
+               const stats = v.statistics || {};
+               const snippet = v.snippet || {};
+               
+               const views = parseInt(stats.viewCount || "0");
+               const pubStr = snippet.publishedAt || new Date().toISOString();
+               const pubDate = new Date(pubStr);
+               const now = Date.now();
+               const hoursSince = Math.max(0.1, (now - pubDate.getTime()) / (1000 * 60 * 60));
+               const velocity = views / hoursSince;
+               
+               detailedVideos.push({
+                 id: v.id,
+                 title: snippet.title || 'No Title',
+                 thumbnailUrl: snippet.thumbnails?.high?.url || '',
+                 channelName: snippet.channelTitle || '',
+                 channelId: snippet.channelId || '',
+                 channelThumbnail: original?.channelThumbnail || '',
+                 views: views.toString(),
+                 publishedAt: pubStr,
+                 velocity: isFinite(velocity) ? velocity : 0,
+                 spikeScore: 0,
+                 performanceRatio: 0,
+                 duration: v.contentDetails?.duration || 'PT0M0S',
+                 subscribers: "0",
+                 avgViews: "0",
+                 viralScore: "0",
+                 uploadTime: pubDate.toLocaleDateString(),
+                 category: "Radar",
+                 reachPercentage: 0,
+                 tags: []
+               });
+             });
+          }
+        } catch (e) {
+          console.error("Batch Error", e);
+        }
+      }
+
+      // 6. Scoring
+      const channelGroups: Record<string, RadarVideo[]> = {};
+      detailedVideos.forEach(v => {
+         if(!channelGroups[v.channelId]) channelGroups[v.channelId] = [];
+         channelGroups[v.channelId].push(v);
+      });
+
+      const finalResults: RadarVideo[] = [];
+      Object.values(channelGroups).forEach(group => {
+         const totalV = group.reduce((sum, v) => sum + parseInt(v.views || '0'), 0);
+         const avgV = totalV / (group.length || 1);
+         
+         group.forEach(v => {
+            const vVal = parseInt(v.views || '0');
+            const ratio = avgV > 0 ? vVal / avgV : 1;
+            const daysOld = (Date.now() - new Date(v.publishedAt).getTime()) / (86400000);
+            
+            if (daysOld < 30) {
+               v.performanceRatio = ratio;
+               const score = Math.log10(v.velocity + 1) * ratio;
+               v.spikeScore = isFinite(score) ? score : 0;
+               if (v.spikeScore > 0.5) finalResults.push(v);
+            }
+         });
+      });
+
+      finalResults.sort((a, b) => b.spikeScore - a.spikeScore);
+      setResults(finalResults);
+      addLog(`완료! ${finalResults.length}개 발견.`);
+      setStatus('done');
+      setProgress(100);
+
+    } catch (e: any) {
+      addLog(`치명적 오류: ${e.message}`);
+      setStatus('idle');
+    }
+  };
+
+  const [displayLimit, setDisplayLimit] = useState(12);
+
+  // ... (inside runRadar) ...
+  // Reset limit when new search starts
+  setDisplayLimit(12);
+
+  const renderResults = () => {
+    if (!results || results.length === 0) {
+       if (status === 'done') return <div className="text-center text-slate-400 py-20">결과가 없습니다.</div>;
+       return null;
+    }
+
+    const visibleResults = results.slice(0, displayLimit);
+
+    return (
+      <div className="pb-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {visibleResults.map((video) => (
+            <div key={video.id} className="bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all">
+               {/* ... Card Content Same ... */}
+               <div className="aspect-video relative">
+                  <img src={video.thumbnailUrl} className="w-full h-full object-cover" onError={(e) => (e.target as HTMLImageElement).src='https://via.placeholder.com/320x180'} loading="lazy"/>
+                  <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded font-bold">
+                     {(video.spikeScore || 0).toFixed(1)}점
+                  </div>
+                  <a href={`https://www.youtube.com/watch?v=${video.id}`} target="_blank" rel="noreferrer" className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/40 transition-opacity">
+                     <span className="material-symbols-outlined text-white text-4xl">play_circle</span>
+                  </a>
+               </div>
+               <div className="p-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 mb-2">{video.title}</h3>
+                  <div className="flex justify-between items-center text-xs text-slate-500">
+                     <span>{video.channelName}</span>
+                     <span>+{Math.round(video.velocity)}/hr</span>
+                  </div>
+               </div>
+            </div>
+          ))}
+        </div>
+        
+        {results.length > displayLimit && (
+          <div className="mt-8 text-center">
+            <button 
+              onClick={() => setDisplayLimit(prev => prev + 12)}
+              className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm text-slate-600 dark:text-slate-300"
+            >
+              더 보기 ({displayLimit}/{results.length})
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-slate-50 dark:bg-slate-900 flex flex-col font-sans">
+      {/* Header */}
+      <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 bg-white dark:bg-slate-900">
+        <div className="flex items-center gap-2">
+           <span className="material-symbols-outlined text-indigo-500">radar</span>
+           <span className="font-bold text-slate-900 dark:text-white">급등 레이더</span>
+        </div>
+        <button onClick={onClose}><span className="material-symbols-outlined">close</span></button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-hidden flex flex-col max-w-7xl mx-auto w-full p-6">
+         <div className="relative mb-6">
+            <input 
+              className="w-full p-4 pl-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-lg shadow-sm"
+              placeholder="채널 URL 또는 ID 입력..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runRadar()}
+            />
+            <button 
+              onClick={runRadar}
+              disabled={status !== 'idle' && status !== 'done'}
+              className="absolute right-2 top-2 bottom-2 px-6 bg-indigo-600 text-white rounded-lg font-bold disabled:bg-slate-400"
+            >
+              {status === 'analyzing' || status === 'searching' || status === 'fetching' ? '분석 중...' : '탐지'}
+            </button>
+         </div>
+
+         {/* Logs */}
+         {logs.length > 0 && status !== 'done' && (
+            <div className="mb-6 p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-sm text-slate-500">
+               {logs[logs.length-1]}
+               <div className="h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 transition-all duration-300" style={{width: `${progress}%`}}></div>
+               </div>
+            </div>
+         )}
+
+         {/* Results */}
+         <div className="flex-1 overflow-y-auto custom-scrollbar">
+            {renderResults()}
+         </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main Wrapper ---
+export const ChannelRadar = (props: ChannelRadarProps) => {
+  return (
+    <RadarErrorBoundary onClose={props.onClose}>
+      <ChannelRadarContent {...props} />
+    </RadarErrorBoundary>
+  );
+};

@@ -80,12 +80,54 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     }
     if (!data.items?.length) return null;
     const channel = data.items[0];
+
+    // Calculate Custom Average (Recent 20 Videos)
+    let customAvg = 0;
+    try {
+      const uploadsId = channel.id.replace(/^UC/, 'UU');
+         const plRes = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet,contentDetails&playlistId=${uploadsId}&maxResults=20&key=${apiKey}`);
+         trackUsage('list', 1);
+         const plData = await plRes.json();
+         
+         let videoIds: string[] = [];
+
+         if (plData.items && plData.items.length > 0) {
+             videoIds = plData.items.map((i:any) => i.snippet.resourceId.videoId);
+         } else {
+             // Fallback: Use Search API if playlist fails (e.g. channel settings)
+             try {
+                 const sRes = await fetch(`${YOUTUBE_BASE_URL}/search?part=id&channelId=${channel.id}&order=date&type=video&maxResults=20&key=${apiKey}`);
+                 trackUsage('search', 1);
+                 const sData = await sRes.json();
+                 if (sData.items) videoIds = sData.items.map((i:any) => i.id.videoId);
+             } catch(e) {
+                 console.warn("Fallback search failed for channel info", e);
+             }
+         }
+         
+         if (videoIds.length > 0) {
+             const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=statistics&id=${videoIds.join(',')}&key=${apiKey}`);
+             trackUsage('list', 1);
+             const vData = await vRes.json();
+             
+             if (vData.items && vData.items.length > 0) {
+                // Calculate Median View Count
+                const views = vData.items.map((v: any) => parseInt(v.statistics.viewCount || "0")).sort((a: number, b: number) => a - b);
+                const mid = Math.floor(views.length / 2);
+                customAvg = views.length % 2 !== 0 ? views[mid] : Math.floor((views[mid - 1] + views[mid]) / 2);
+             }
+         }
+    } catch (err) {
+      console.warn("Failed to calc avg views for new channel", err);
+    }
+
     return {
       id: channel.id,
       title: channel.snippet.title,
       thumbnail: channel.snippet.thumbnails.default.url,
       subscriberCount: formatNumber(parseInt(channel.statistics.subscriberCount || "0")),
-      videoCount: formatNumber(parseInt(channel.statistics.videoCount || "0"))
+      videoCount: formatNumber(parseInt(channel.statistics.videoCount || "0")),
+      customAvgViews: customAvg
     };
   } catch (e) {
     return null;
@@ -118,11 +160,14 @@ export const fetchRealVideos = async (
   daysBack: number = 7,
   channelIds: string[] = [],
   categoryId: string = "",
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
+  useSearchApi: boolean = false,
+  savedChannels: SavedChannel[] = []
 ): Promise<VideoData[]> => {
   const isMyChannelsMode = channelIds.length > 0;
   const channelHash = isMyChannelsMode ? channelIds.length : 'all';
-  const cacheKey = `yt_v6_cache_${regionCode}_${query || categoryId || 'trending'}_${daysBack}_${channelHash}`;
+  // Cache Key: Explicitly separate Query and CategoryID to avoid collisions
+  const cacheKey = `yt_v7_cache_${regionCode}_q:${query}_c:${categoryId}_d:${daysBack}_h:${channelHash}_m:${useSearchApi}`;
   const cached = localStorage.getItem(cacheKey);
   
   if (!forceRefresh && cached) {
@@ -135,77 +180,249 @@ export const fetchRealVideos = async (
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
+    const channelCustomAvgMap = new Map<string, number>();
+
     if (isMyChannelsMode) {
+      // 1. Optimized Fetch: Get recent videos from playlists (Fast)
       const allVideoPromises = channelIds.map(async (cid) => {
         try {
           const uploadsPlaylistId = cid.replace(/^UC/, 'UU');
-          const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=10&key=${apiKey}`);
+          // Fetch up to 50 to ensure we get enough videos.
+          const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${apiKey}`);
           trackUsage('list', 1);
           const data = await res.json();
-          if (data.error) {
-            console.warn(`Channel skipped (${cid}): ${data.error.message}`);
-            return [];
-          }
+          if (data.error) return [];
           return data.items || [];
         } catch (e) {
-          console.warn(`Channel fetch skipped (${cid})`);
           return [];
         }
       });
+      
       const playlistResults = await Promise.all(allVideoPromises);
-      const videoIds = playlistResults.flat()
+      const allSnippetItems = playlistResults.flat();
+
+      // Filter by Date immediately
+      const validVideoIds = allSnippetItems
         .filter((item: any) => new Date(item.snippet.publishedAt) >= cutoffDate)
         .map((item: any) => item.snippet.resourceId.videoId);
-      if (videoIds.length === 0) return [];
-      const detailRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${videoIds.slice(0, MAX_RESULTS_PER_UNIT).join(',')}&key=${apiKey}`);
-      trackUsage('list', 1);
-      const detailData = await detailRes.json();
-      videoItems = detailData.items || [];
+      
+      if (validVideoIds.length === 0) return [];
+      
+      // Batch Fetch Stats for ALL candidate videos (Chunk by 50)
+      const chunks = [];
+      for (let i = 0; i < validVideoIds.length; i += 50) {
+          chunks.push(validVideoIds.slice(i, i + 50));
+      }
+
+      const detailResults = await Promise.all(chunks.map(async (chunkIds) => {
+          const res = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${chunkIds.join(',')}&key=${apiKey}`);
+          trackUsage('list', 1);
+          const data = await res.json();
+          return data.items || [];
+      }));
+
+      videoItems = detailResults.flat();
+
     } else {
-      let url = `${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&chart=mostPopular&maxResults=${MAX_RESULTS_PER_UNIT}&key=${apiKey}&regionCode=${regionCode}`;
-      if (categoryId) url += `&videoCategoryId=${categoryId}`;
-      const res = await fetch(url);
-      trackUsage('list', 1);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      videoItems = data.items || [];
+      if (useSearchApi) {
+        // Use SEARCH endpoint for specific keyword/category filtering (Cost: 100)
+        let searchUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&maxResults=${MAX_RESULTS_PER_UNIT}&order=viewCount&publishedAfter=${cutoffDate.toISOString()}&key=${apiKey}`;
+        
+        let targetLang = '';
+        if (regionCode) {
+          searchUrl += `&regionCode=${regionCode}`;
+          // 1. Add relevanceLanguage param
+          if (regionCode === 'KR') { searchUrl += `&relevanceLanguage=ko`; targetLang = 'ko'; }
+          else if (regionCode === 'US') { searchUrl += `&relevanceLanguage=en`; targetLang = 'en'; }
+          else if (regionCode === 'JP') { searchUrl += `&relevanceLanguage=ja`; targetLang = 'ja'; }
+        }
+
+        if (categoryId) searchUrl += `&videoCategoryId=${categoryId}`;
+        if (query) searchUrl += `&q=${encodeURIComponent(query)}`;
+        
+        const sRes = await fetch(searchUrl);
+        trackUsage('search', 1);
+        const sData = await sRes.json();
+        
+        if (sData.error) throw new Error(sData.error.message);
+        if (!sData.items || sData.items.length === 0) return [];
+
+        const videoIds = sData.items.map((item: any) => item.id.videoId).join(',');
+        const detailRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${apiKey}`);
+        trackUsage('list', 1);
+        const detailData = await detailRes.json();
+        const rawItems = detailData.items || [];
+
+        // 2. Post-fetch Soft Language Filter (Prioritize local content)
+        if (targetLang) {
+           const isKorean = (text: string) => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(text);
+           const isJapanese = (text: string) => /[\u3040-\u309F]|[\u30A0-\u30FF]/.test(text);
+           
+           rawItems.sort((a: any, b: any) => {
+              const textA = (a.snippet.title + a.snippet.description).toLowerCase();
+              const textB = (b.snippet.title + b.snippet.description).toLowerCase();
+              
+              let scoreA = 0;
+              let scoreB = 0;
+
+              if (targetLang === 'ko') {
+                 if (isKorean(textA)) scoreA += 10;
+                 if (isKorean(textB)) scoreB += 10;
+              } else if (targetLang === 'ja') {
+                 if (isJapanese(textA)) scoreA += 10;
+                 if (isJapanese(textB)) scoreB += 10;
+              }
+              
+              return scoreB - scoreA;
+           });
+        }
+        
+        videoItems = rawItems;
+      } else {
+        // Use VIDEOS endpoint (Most Popular) (Cost: 1)
+        let url = `${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&chart=mostPopular&maxResults=${MAX_RESULTS_PER_UNIT}&key=${apiKey}&regionCode=${regionCode}`;
+        if (categoryId) url += `&videoCategoryId=${categoryId}`;
+        const res = await fetch(url);
+        trackUsage('list', 1);
+        const data = await res.json();
+        
+        if (data.items && data.items.length > 0) {
+           videoItems = data.items;
+        } else {
+           // Fallback: If Most Popular returns empty (common for Edu/Travel in KR), try generic Search (Cost: 100)
+           console.log("Most Popular returned empty, falling back to Search...");
+           let fallbackUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&maxResults=${MAX_RESULTS_PER_UNIT}&order=viewCount&publishedAfter=${cutoffDate.toISOString()}&key=${apiKey}`;
+           if (regionCode) fallbackUrl += `&regionCode=${regionCode}`;
+           if (categoryId) fallbackUrl += `&videoCategoryId=${categoryId}`;
+
+           const fRes = await fetch(fallbackUrl);
+           trackUsage('search', 1);
+           const fData = await fRes.json();
+           
+           if (fData.items && fData.items.length > 0) {
+              const fIds = fData.items.map((item: any) => item.id.videoId).join(',');
+              const fDetail = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${fIds}&key=${apiKey}`);
+              trackUsage('list', 1);
+              const fDetailData = await fDetail.json();
+              videoItems = fDetailData.items || [];
+           }
+        }
+      }
     }
 
     if (videoItems.length === 0) return [];
 
-    const uniqueChannelIds = Array.from(new Set(videoItems.map((v: any) => v.snippet.channelId))).join(',');
-    const channelsRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=statistics&id=${uniqueChannelIds}&key=${apiKey}`);
-    trackUsage('list', 1);
-    const channelsData = await channelsRes.json();
+
+    // 1. Initialize with Saved Data (Robust Fallback)
     const channelMap = new Map();
-    channelsData.items?.forEach((c: any) => {
-      const avg = Math.floor(parseInt(c.statistics.viewCount || "0") / Math.max(parseInt(c.statistics.videoCount || "1"), 1));
-      channelMap.set(c.id, { avgViews: avg, subscribers: formatNumber(parseInt(c.statistics.subscriberCount || "0")) });
+    const dbAvgMap = new Map<string, number>();
+    
+    savedChannels.forEach(ch => {
+       if (ch.customAvgViews) dbAvgMap.set(ch.id, ch.customAvgViews);
+       
+       channelMap.set(ch.id, {
+          avgViews: ch.customAvgViews || 10000, 
+          subscribers: ch.subscriberCount,
+          totalViews: "0", 
+          joinDate: new Date().toISOString(), 
+          country: "KR"
+       });
     });
 
+    const videoItemsAny = videoItems as any[];
+    const targetChannelIds = Array.from(new Set(videoItemsAny.map((v: any) => v.snippet.channelId)));
+    
+    // Chunk Channel Lookup (Max 50 per call)
+    const channelChunks = [];
+    for (let i = 0; i < targetChannelIds.length; i += 50) {
+        channelChunks.push(targetChannelIds.slice(i, i + 50));
+    }
+
+    const channelResponses = await Promise.all(channelChunks.map(async (ids) => {
+        if (ids.length === 0) return [];
+        try {
+           const res = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${ids.join(',')}&key=${apiKey}`);
+           trackUsage('list', 1);
+           const data = await res.json();
+           return data.items || [];
+        } catch (e) { 
+           console.warn("Channel lookup failed", e);
+           return []; 
+        }
+    }));
+
+    const freshChannels = channelResponses.flat();
+
+    freshChannels.forEach((c: any) => {
+      // Use Custom Average if available (DB > Global)
+      const globalAvg = Math.floor(parseInt(c.statistics.viewCount || "0") / Math.max(parseInt(c.statistics.videoCount || "1"), 1));
+      const dbAvg = dbAvgMap.get(c.id);
+      
+      const finalAvg = dbAvg || globalAvg;
+      
+      channelMap.set(c.id, { 
+        avgViews: finalAvg, 
+        subscribers: formatNumber(parseInt(c.statistics.subscriberCount || "0")),
+        totalViews: formatNumber(parseInt(c.statistics.viewCount || "0")),
+        joinDate: c.snippet.publishedAt,
+        country: c.snippet.country
+      });
+    });
+
+
     const videos: VideoData[] = videoItems.map((item: any) => {
-      const channelInfo = channelMap.get(item.snippet.channelId) || { avgViews: 1, subscribers: "0" };
+      // Fallback if channel info is missing
+      const channelInfo = channelMap.get(item.snippet.channelId) || { 
+        avgViews: 1000, 
+        subscribers: "0", 
+        totalViews: "0",
+        joinDate: new Date().toISOString(),
+        country: ""
+      };
+
       const currentViews = parseInt(item.statistics.viewCount || "0");
-      const hoursSinceUpload = Math.max((Date.now() - new Date(item.snippet.publishedAt).getTime()) / (1000 * 60 * 60), 2);
-      const timeFactor = Math.min(hoursSinceUpload / MATURITY_HOURS, 1);
-      const velocity = currentViews / Math.max(channelInfo.avgViews * timeFactor, 1);
+      const publishedAt = new Date(item.snippet.publishedAt);
+      const now = new Date();
+      // Ensure minimum 1 hour to prevent massive fluctuation for minutes-old videos
+      const hoursSinceUpload = Math.max((now.getTime() - publishedAt.getTime()) / (1000 * 60 * 60), 1);
+      
+      // Improved Non-linear Expected Views Model
+      const maturityHours = 168; // 7 days (Time to reach "full potential")
+      
+      // Calculate Time Factor (Curve: fast start, slow maturation)
+      // FIX: Add minimum floor of 0.3 to prevent massive score inflation for very new videos (Recency Bias)
+      const timeFactor = Math.max(Math.min(Math.pow(hoursSinceUpload / maturityHours, 0.5), 1), 0.3);
+
+
+
+      const expectedViews = Math.max(channelInfo.avgViews * timeFactor, 100); // Min expectation 100 views
+      
+      // Viral Score = Actual / Expected
+      // A score of 1.0 means "Average performance". 2.0 means "2x better than usual".
+      const viralScore = currentViews / expectedViews;
 
       return {
         id: item.id,
         title: item.snippet.title,
         channelName: item.snippet.channelTitle,
-        thumbnailUrl: item.snippet.thumbnails.high.url,
+        thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
         duration: parseISO8601Duration(item.contentDetails.duration),
         views: formatNumber(currentViews),
         avgViews: formatNumber(channelInfo.avgViews),
         subscribers: channelInfo.subscribers,
-        viralScore: `${velocity.toFixed(1)}x`,
+        viralScore: viralScore.toFixed(1), // Use new score
         uploadTime: getTimeAgo(item.snippet.publishedAt),
-        category: "트렌드",
-        reachPercentage: Math.min(Math.floor(velocity * 20), 100),
-        tags: item.snippet.tags?.slice(0, 3).map((t: string) => `#${t}`) || []
+        category: getCategoryName(item.snippet.categoryId),
+        reachPercentage: Math.min(Math.round((currentViews / channelInfo.avgViews) * 100), 999), 
+        tags: item.snippet.tags || [],
+        channelTotalViews: channelInfo.totalViews,
+        channelJoinDate: channelInfo.joinDate,
+        channelCountry: channelInfo.country,
+        publishedAt: item.snippet.publishedAt, // For sorting
+        channelId: item.snippet.channelId // Critical for filtering
       };
     });
+
 
     videos.sort((a, b) => parseFloat(b.viralScore) - parseFloat(a.viralScore));
     localStorage.setItem(cacheKey, JSON.stringify({ data: videos, timestamp: Date.now() }));
@@ -251,6 +468,7 @@ export interface AutoDetectResult extends SavedChannel {
     subscribers: number;
     videoCount: number;
     publishedAt: string;
+    avgViews?: number;
   };
   representativeVideo: {
     id: string;
@@ -263,141 +481,131 @@ export interface AutoDetectResult extends SavedChannel {
 
 export const autoDetectShortsChannels = async (apiKey: string, regionCode: string = "KR"): Promise<AutoDetectResult[]> => {
   try {
-    // 1. "Random Shorts Surfing" Mode
-    // Mimic the Shorts Feed but restrict to last 7 days to avoid ancient videos.
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7); // Last 7 days (Weekly Trends)
-    const publishedAfter = oneWeekAgo.toISOString();
-    
-    // Strategy: Broad query + Relevance sort + Date window
-    // 1. Base URL
-    let searchUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&videoDuration=short&maxResults=50&publishedAfter=${publishedAfter}&q=%23shorts&key=${apiKey}`;
-    
-    // 2. Region & Language Logic
-    // IF regionCode is provided (KR, US), apply strict targeting.
-    // IF regionCode is 'GLOBAL' or empty, we force 'US' as base to avoid IP-based local bias (Korea),
-    // but we DO NOT restrict language, allowing global viral content.
+    // 1. SEARCH API (Cost: 100) - Find candidates (Focus on Recent Shorts)
+    // type=video, videoDuration=short, order=date, maxResults=50
+    const past48h = new Date();
+    past48h.setHours(past48h.getHours() - 48); // Last 48h window
+    const publishedAfter = past48h.toISOString();
+
+    let searchUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&videoDuration=short&order=viewCount&maxResults=50&publishedAfter=${publishedAfter}&q=%23shorts&key=${apiKey}`;
     
     if (regionCode && regionCode !== 'GLOBAL') {
       searchUrl += `&regionCode=${regionCode}`;
-      
-      // Strict Language Filtering
-      if (regionCode === 'KR') {
-        searchUrl += `&relevanceLanguage=ko`;
-      } else if (regionCode === 'US') {
-        searchUrl += `&relevanceLanguage=en`;
-      }
-    } 
-    // GLOBAL (else): Do NOT add regionCode or relevanceLanguage. 
-    // Let YouTube decide based on query and general popularity.
-    
-    const searchRes = await fetch(searchUrl);
-    trackUsage('search', 1); 
-    const searchData = await searchRes.json();
-    
-    if (searchData.error) {
-      if (searchData.error.code === 403 && searchData.error.errors?.[0]?.reason === 'quotaExceeded') {
-        throw new Error("QUOTA_EXCEEDED");
-      }
-      throw new Error(searchData.error.message);
+      if (regionCode === 'KR') searchUrl += `&relevanceLanguage=ko`;
+      else if (regionCode === 'US') searchUrl += `&relevanceLanguage=en`;
     }
 
-    if (!searchData.items || searchData.items.length === 0) return [];
-
-    // 2. Extract Channel IDs & Video IDs
-    const videoItems = searchData.items;
-    const channelIds = Array.from(new Set(videoItems.map((item: any) => item.snippet.channelId))) as string[];
+    const sRes = await fetch(searchUrl);
+    trackUsage('search', 1);
+    const sData = await sRes.json();
     
-    // 3. Fetch Channel Details (Batch)
-    const channelsUrl = `${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${channelIds.join(',')}&key=${apiKey}`;
-    const channelsRes = await fetch(channelsUrl);
+    if (sData.error) {
+       if (sData.error.code === 403 && sData.error.errors?.[0]?.reason === 'quotaExceeded') throw new Error("QUOTA_EXCEEDED");
+       throw new Error(sData.error.message);
+    }
+    if (!sData.items?.length) return [];
+
+    // 2. VIDEOS API (Cost: 1) - Get stats & duration
+    const videoIds = sData.items.map((item: any) => item.id.videoId).join(',');
+    const vUrl = `${YOUTUBE_BASE_URL}/videos?part=snippet,contentDetails,statistics&id=${videoIds}&key=${apiKey}`;
+    const vRes = await fetch(vUrl);
     trackUsage('list', 1);
-    const channelsData = await channelsRes.json();
+    const vData = await vRes.json();
+    if (!vData.items) return [];
 
-    if (!channelsData.items) return [];
+    // 3. CHANNELS API (Cost: 1) - Get sub count & avg views (for booster score)
+    const uniqueChannelIds = Array.from(new Set(vData.items.map((v: any) => v.snippet.channelId))) as string[];
+    const cUrl = `${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${uniqueChannelIds.join(',')}&key=${apiKey}`;
+    const cRes = await fetch(cUrl);
+    trackUsage('list', 1);
+    const cData = await cRes.json();
+    const channelsMap = new Map();
+    if (cData.items) {
+        cData.items.forEach((c: any) => channelsMap.set(c.id, c));
+    }
 
-    const candidates: AutoDetectResult[] = [];
-
-    // Filter out noisy countries (India, Brazil, Russia, Vietnam, etc.)
+    const results: AutoDetectResult[] = [];
     const BLACKLIST_COUNTRIES = ['IN', 'BR', 'RU', 'VN', 'ID', 'TH', 'PH', 'PK'];
 
-    channelsData.items.forEach((ch: any) => {
-      // 1. Country Filter
-      const country = ch.snippet.country;
-      if (country && BLACKLIST_COUNTRIES.includes(country)) {
-          return; // Skip this channel
-      }
-      const videoCount = parseInt(ch.statistics.videoCount || "0");
-      const subscriberCount = parseInt(ch.statistics.subscriberCount || "0");
-      const publishedAt = ch.snippet.publishedAt;
-      
-      // No Filtering: Accept ALL channels found in the search
-      const bestVideo = videoItems.find((v: any) => v.snippet.channelId === ch.id);
-      
-      if (bestVideo) {
-         candidates.push({
-           id: ch.id,
-           title: ch.snippet.title,
-           thumbnail: ch.snippet.thumbnails.default.url,
-           groupId: 'unassigned', // placeholder
-           viralScore: 0, // calc later
-           stats: {
-             viewCount: 0, // fill later
-             subscribers: subscriberCount,
-             videoCount: videoCount,
-             publishedAt: publishedAt
-           },
-           representativeVideo: {
-             id: bestVideo.id.videoId,
-             title: bestVideo.snippet.title,
-             views: 0, // fill later
-             thumbnail: bestVideo.snippet.thumbnails.maxres?.url || 
-                          bestVideo.snippet.thumbnails.standard?.url || 
-                          bestVideo.snippet.thumbnails.high?.url || 
-                          bestVideo.snippet.thumbnails.medium?.url || 
-                          bestVideo.snippet.thumbnails.default?.url,
-             publishedAt: bestVideo.snippet.publishedAt
-           }
-         });
-      }
-    });
+    const parseDuration = (duration: string) => {
+        const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        if (!matches) return 0;
+        const hours = parseInt(matches[1] || '0');
+        const minutes = parseInt(matches[2] || '0');
+        const seconds = parseInt(matches[3] || '0');
+        return (hours * 3600) + (minutes * 60) + seconds;
+    };
 
-    // 4. Fetch Exact View Counts (Fixing 0 views issue)
-    // We strictly need this to show accurate views.
-    if (candidates.length > 0) {
-      const candidateVideoIds = candidates.map(c => c.representativeVideo.id);
-      // Batch request for video stats
-      const vStatsUrl = `${YOUTUBE_BASE_URL}/videos?part=statistics,snippet&id=${candidateVideoIds.join(',')}&key=${apiKey}`;
-      const vStatsRes = await fetch(vStatsUrl);
-      trackUsage('list', 1); 
-      const vStatsData = await vStatsRes.json();
-      
-      if (vStatsData.items) {
-        vStatsData.items.forEach((v: any) => {
-          const cand = candidates.find(c => c.representativeVideo.id === v.id);
-          if (cand) {
-             const views = parseInt(v.statistics.viewCount || "0");
-             cand.representativeVideo.views = views;
-             cand.stats.viewCount = views;
-             cand.representativeVideo.thumbnail = v.snippet.thumbnails.maxres?.url || 
-                                                  v.snippet.thumbnails.standard?.url || 
-                                                  v.snippet.thumbnails.high?.url || 
-                                                  cand.representativeVideo.thumbnail;
-          }
+    const getVPH = (views: number, publishedAt: string) => {
+        const hours = (new Date().getTime() - new Date(publishedAt).getTime()) / (1000 * 60 * 60);
+        return hours > 0.1 ? views / hours : views; // Avoid div by zero/small num
+    };
+
+    vData.items.forEach((video: any) => {
+        const durationSec = parseDuration(video.contentDetails.duration);
+        // Filter 1: Duration <= 60s
+        if (durationSec > 60 || durationSec === 0) return;
+
+        // Filter 2: Min Views (e.g. 100) to clear noise
+        const views = parseInt(video.statistics.viewCount || '0');
+        if (views < 100) return;
+
+        const chData = channelsMap.get(video.snippet.channelId);
+        if (!chData) return;
+        
+        // Filter 3: Country (Relaxed)
+        // We already used relevanceLanguage in search, so we trust that mostly.
+        // We just filter out explicit blacklist countries.
+        // Also, if region is strict (e.g. KR), we prefer channels that are either KR or have no country set (assuming local language match).
+        const channelCountry = chData.snippet.country;
+        
+        if (channelCountry && BLACKLIST_COUNTRIES.includes(channelCountry)) return;
+
+        // Optional: strict check only if country IS set and doesn't match region (e.g. searching KR but channel is US)
+        if (regionCode && regionCode !== 'GLOBAL' && channelCountry && channelCountry !== regionCode) {
+             // Allow if country is not set, as language match handles it.
+             // But if country IS set to something else (e.g. US), and we want KR, we might skip.
+             // However, for more results, let's just allow it if not blacklisted, trusting relevanceLanguage.
+             // (User feedback: strict list was too small)
+        }
+
+        // Calc metrics
+        const chTotalViews = parseInt(chData.statistics.viewCount || '0');
+        const chVideoCount = parseInt(chData.statistics.videoCount || '0');
+        const avgViews = chVideoCount > 0 ? Math.floor(chTotalViews / chVideoCount) : 0;
+        const viralScore = avgViews > 0 ? parseFloat((views / avgViews).toFixed(1)) : 0;
+
+        results.push({
+            id: chData.id,
+            title: chData.snippet.title,
+            thumbnail: chData.snippet.thumbnails.default.url,
+            groupId: 'unassigned',
+            viralScore, // Booster Score
+            stats: {
+                viewCount: chTotalViews,
+                subscribers: parseInt(chData.statistics.subscriberCount||'0'),
+                videoCount: chVideoCount,
+                publishedAt: chData.snippet.publishedAt,
+                avgViews
+            },
+            representativeVideo: {
+                id: video.id,
+                title: video.snippet.title,
+                views,
+                thumbnail: video.snippet.thumbnails.maxres?.url || video.snippet.thumbnails.high?.url || video.snippet.thumbnails.default?.url,
+                publishedAt: video.snippet.publishedAt
+            }
         });
-      }
-    }
-
-    if (candidates.length === 0) return [];
-    // Sort by "Newest First" to show fresh trends on top
-    // Since API returns mixed dates (relevance), we sort them manually here.
-    candidates.sort((a, b) => {
-       const dateA = new Date(a.representativeVideo.publishedAt || 0).getTime();
-       const dateB = new Date(b.representativeVideo.publishedAt || 0).getTime();
-       return dateB - dateA; // Descending (Newest first)
     });
 
-    return candidates;
+    // 4. Sort by VPH (Hotness)
+    if (results.length === 0) return [];
+    results.sort((a, b) => {
+         const vphA = getVPH(a.representativeVideo.views, a.representativeVideo.publishedAt!);
+         const vphB = getVPH(b.representativeVideo.views, b.representativeVideo.publishedAt!);
+         return vphB - vphA; // Descending
+    });
+    return results;
 
   } catch (e: any) {
     console.error("Auto Detect Failed", e);
@@ -407,45 +615,50 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
 
 export const fetchChannelPopularVideos = async (apiKey: string, channelId: string): Promise<any[]> => {
   try {
-    // 1. Get Uploads Playlist ID (cheaper) - but user wants "Most Popular", so we must use 'search' with order=viewCount
-    // using search is expensive (100 units). 
-    // Alternative: List videos by channelId is NOT supported for sorting by viewCount directly in 'videos' endpoint (that's myVideos).
-    // Actually, 'search' endpoint is the way: type=video, channelId=..., order=viewCount.
+    // 1. Get Uploads Playlist ID (Cost: 1)
+    // We need 'contentDetails' to find the uploads playlist
+    const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails&id=${channelId}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const chData = await chRes.json();
     
-    // However, to save quota we can fallback to 'date' if quota is tight, but 'viewCount' is critical request.
-    const res = await fetch(`${YOUTUBE_BASE_URL}/search?part=snippet&type=video&channelId=${channelId}&order=viewCount&maxResults=5&key=${apiKey}`);
-    trackUsage('search', 1);
-    const data = await res.json();
+    if (!chData.items || chData.items.length === 0) return [];
     
-    if (data.error) return [];
-    if (!data.items) return [];
+    const uploadsPlaylistId = chData.items[0].contentDetails.relatedPlaylists.uploads;
 
-    // Search results don't have stats (view count). We need another call if we want to show view counts.
-    // User requested "Show most viewed videos". 
-    // We can show titles and thumbnails first. If view count is strictly needed, we do a second call.
-    // Let's do the second call for quality.
-    
-    const videoIds = data.items.map((i: any) => i.id.videoId).join(',');
+    // 2. Get Latest 10 Videos from Uploads Playlist (Cost: 1)
+    const plRes = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=10&key=${apiKey}`);
+    trackUsage('list', 1);
+    const plData = await plRes.json();
+
+    if (!plData.items || plData.items.length === 0) return [];
+
+    const videoIds = plData.items.map((item: any) => item.snippet.resourceId.videoId).join(',');
+
+    // 3. Get Video Stats (Cost: 1)
     const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=statistics,contentDetails,snippet&id=${videoIds}&key=${apiKey}`);
     trackUsage('list', 1);
     const vData = await vRes.json();
     
     if (!vData.items) return [];
     
-    return vData.items.map((item: any) => ({
+    const results = vData.items.map((item: any) => ({
       id: item.id,
       title: item.snippet.title,
-      thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
       views: formatNumber(parseInt(item.statistics.viewCount || "0")),
-      date: item.snippet.publishedAt,
-      duration: parseISO8601Duration(item.contentDetails.duration)
+      duration: parseISO8601Duration(item.contentDetails.duration),
+      publishedAt: item.snippet.publishedAt,
+      date: item.snippet.publishedAt // For compatibility
     }));
+    
+    return results;
 
-  } catch (e) {
-    console.error("Failed to fetch popular videos", e);
+  } catch (error) {
+    console.error("Fetch Channel Popular Videos Error:", error);
     return [];
   }
 };
+
 
 export const fetchMyChannelId = async (accessToken: string): Promise<string | null> => {
   try {
@@ -500,3 +713,326 @@ export const fetchMemberIds = async (accessToken: string): Promise<string[]> => 
     throw e;
   }
 };
+
+// --- Channel Spike Radar Helpers ---
+
+export const getChannelUploadsPlaylistId = async (apiKey: string, channelId: string): Promise<string | null> => {
+  try {
+    const res = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails&id=${channelId}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const data = await res.json();
+    if (!data.items?.length) return null;
+    return data.items[0].contentDetails.relatedPlaylists.uploads;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const getPlaylistItems = async (apiKey: string, playlistId: string, maxResults: number = 20): Promise<any[]> => {
+  try {
+    const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet,contentDetails&playlistId=${playlistId}&maxResults=${maxResults}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const data = await res.json();
+    return data.items || [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export interface ChannelAnalysis {
+  keywords: string[];
+  mainCategoryId: string;
+  avgViews: number;
+  subscriberCount: number;
+}
+
+export interface ChannelAnalysis {
+  keywords: string[];
+  mainCategoryId: string;
+  avgViews: number;
+  subscriberCount: number;
+  title: string;
+}
+
+export const analyzeChannelForRadar = async (apiKey: string, channelId: string): Promise<ChannelAnalysis | null> => {
+  try {
+    const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=statistics,contentDetails,snippet&id=${channelId}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const chData = await chRes.json();
+    if (!chData.items?.length) return null;
+    
+    const channel = chData.items[0];
+    const subscriberCount = parseInt(channel.statistics.subscriberCount || "0");
+    const uploadsId = channel.contentDetails.relatedPlaylists.uploads;
+
+    const videos = await getPlaylistItems(apiKey, uploadsId, 20);
+    if (videos.length === 0) {
+      return { keywords: [channel.snippet.title], mainCategoryId: "", avgViews: 0, subscriberCount, title: channel.snippet.title };
+    }
+
+    const categoryCounts: Record<string, number> = {};
+    const textCorpus: string[] = [];
+    const idList = videos.map((v: any) => v.contentDetails.videoId).join(',');
+    
+    const vDetailRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics&id=${idList}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const vDetailData = await vDetailRes.json();
+    const videoDetails = vDetailData.items || [];
+
+    let totalViews = 0;
+    videoDetails.forEach((v: any) => {
+      const cat = v.snippet.categoryId;
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+      textCorpus.push(v.snippet.title);
+      if (v.snippet.tags) textCorpus.push(...v.snippet.tags);
+      totalViews += parseInt(v.statistics.viewCount || "0");
+    });
+
+    const mainCategoryId = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    const avgViews = totalViews / (videoDetails.length || 1);
+
+    const stopWords = new Set(['영상', '동영상', 'youtube', 'vlog', '브이로그', 'video', 'shorts', '쇼츠', '티비', 'TV', 'tv']);
+    const wordCounts: Record<string, number> = {};
+    
+    textCorpus.join(' ').split(/[\s,]+/).forEach(word => {
+      const clean = word.replace(/[^\w가-힣]/g, '').toLowerCase();
+      if (clean.length > 1 && !stopWords.has(clean)) {
+        wordCounts[clean] = (wordCounts[clean] || 0) + 1;
+      }
+    });
+
+    const topKeywords = Object.entries(wordCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([word]) => word);
+    
+    if (topKeywords.length === 0) topKeywords.push(channel.snippet.title);
+
+    return {
+      keywords: topKeywords,
+      mainCategoryId,
+      avgViews,
+      subscriberCount,
+      title: channel.snippet.title
+    };
+
+  } catch (e) {
+    console.error("Analysis Failed", e);
+    return null;
+  }
+};
+
+export interface RadarResult {
+  video: VideoData;
+  spikeScore: number;
+  velocity: number;
+  channelAvgViews: number;
+  performanceRatio: number;
+}
+
+export const performRadarScan = async (
+  apiKey: string, 
+  targetChannelId: string, 
+  onProgress: (msg: string, progress: number) => void
+): Promise<RadarResult[]> => {
+  try {
+    // 1. Analyze Base Channel
+    onProgress("기준 채널 분석 중...", 10);
+    const baseAnalysis = await analyzeChannelForRadar(apiKey, targetChannelId);
+    if (!baseAnalysis) throw new Error("기준 채널 분석 실패");
+
+    const searchKeywords = baseAnalysis.keywords.slice(0, 3).join(' '); // Use top 3 keywords
+    onProgress(`핵심 키워드 도출: ${baseAnalysis.keywords.join(', ')}`, 20);
+
+    // 2. Search Similar Channels (Max 50)
+    // Cost: 100 units
+    onProgress("유사 채널 대규모 탐색 중...", 30);
+    const searchRes = await fetch(`${YOUTUBE_BASE_URL}/search?part=snippet&type=channel&q=${encodeURIComponent(searchKeywords)}&maxResults=50&key=${apiKey}`);
+    trackUsage('search', 1);
+    const searchData = await searchRes.json();
+    
+    if (!searchData.items?.length) return [];
+    
+    const channelIds = searchData.items.map((item: any) => item.snippet.channelId);
+    onProgress(`${channelIds.length}개 채널 발견. 정밀 스캔 시작...`, 40);
+
+    // 3. Batch Fetch Channel Details (Uploads ID & Stats)
+    // Cost: 1 unit (50 ids fit in one call)
+    const chDetailRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails,statistics,snippet&id=${channelIds.join(',')}&key=${apiKey}`);
+    trackUsage('list', 1);
+    const chDetailData = await chDetailRes.json();
+    
+    const channelMap = new Map<string, { uploadsId: string; subCount: number; avgViewsEstimate: number; title: string, thumb: string }>();
+    
+    chDetailData.items?.forEach((ch: any) => {
+      const viewCount = parseInt(ch.statistics.viewCount || "0");
+      const videoCount = parseInt(ch.statistics.videoCount || "1");
+      const avg = viewCount / (videoCount || 1);
+      
+      channelMap.set(ch.id, {
+        uploadsId: ch.contentDetails.relatedPlaylists.uploads,
+        subCount: parseInt(ch.statistics.subscriberCount || "0"),
+        avgViewsEstimate: avg,
+        title: ch.snippet.title,
+        thumb: ch.snippet.thumbnails.default.url
+      });
+    });
+
+    // 4. Fetch Recent Videos from All Channels (Parallel)
+    // "Don't artificially limit" -> Fetch max allowed by playlist API (50) for EACH channel.
+    // However, we need to be mindful of quota. 50 channels * 50 videos = 2500 videos for 'list' calls later?
+    // Cost Analysis:
+    // - PlaylistItems: 50 calls * 1 unit = 50 units.
+    // - Videos.list: 2500 videos / 50 per call = 50 calls * 1 unit = 50 units.
+    // Total Cost ~200 units. Safe.
+    
+    onProgress("전체 채널 영상 수집 중 (대량 데이터 처리)...", 50);
+    
+    const allVideoIds: string[] = [];
+    const videoChannelMap = new Map<string, string>(); // VideoID -> ChannelID
+
+    // Limit concurrency to avoid network choke? optional. Promise.all is usually fine for 50 fetches.
+    const playlistPromises = Array.from(channelMap.entries()).map(async ([chId, info]) => {
+      try {
+        const plItems = await getPlaylistItems(apiKey, info.uploadsId, 20); // Fetch top 20 recent per channel (Balance between 50 and speed)
+        return plItems.map((item: any) => {
+           const vid = item.contentDetails.videoId;
+           videoChannelMap.set(vid, chId);
+           return vid;
+        });
+      } catch (e) {
+        return [];
+      }
+    });
+
+    const playlistsResults = await Promise.all(playlistPromises);
+    playlistsResults.forEach(ids => allVideoIds.push(...ids));
+
+    onProgress(`${allVideoIds.length}개 영상 확보. 성과 지표 계산 중...`, 70);
+
+    // 5. Batch Fetch Video Statistics
+    const radarResults: RadarResult[] = [];
+    const chunkSize = 50;
+    
+    for (let i = 0; i < allVideoIds.length; i += chunkSize) {
+      const chunk = allVideoIds.slice(i, i + chunkSize);
+      const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${chunk.join(',')}&key=${apiKey}`);
+      trackUsage('list', 1);
+      const vData = await vRes.json();
+      
+      if (vData.items) {
+        vData.items.forEach((v: any) => {
+           const chId = videoChannelMap.get(v.id);
+           if (!chId) return;
+           const chInfo = channelMap.get(chId);
+           if (!chInfo) return;
+
+           const views = parseInt(v.statistics.viewCount || "0");
+           const publishedAt = v.snippet.publishedAt;
+           const now = new Date();
+           const pubDate = new Date(publishedAt);
+           const hoursSince = Math.max((now.getTime() - pubDate.getTime()) / (1000 * 60 * 60), 0.5); // Min 0.5h to avoid div/0
+           
+           // Metric 1: Velocity (Views per Hour)
+           const velocity = views / hoursSince;
+           
+           // Metric 2: Performance Ratio (vs Channel Avg)
+           // If channel avg is 0 or very low, baseline it to 100 to avoid crazy multiples
+           const baseline = Math.max(chInfo.avgViewsEstimate, 100); 
+           const ratio = views / baseline;
+
+           // Metric 3: Spike Score
+           // Weighted combination: Velocity is raw power, Ratio is relative surprise.
+           // We want "Early Detection". So high velocity on recent video is key.
+           // Score = Velocity * (Log(Ratio) + 1) * FreshnessFactor
+           
+           const freshnessBonus = hoursSince < 24 ? 2.0 : (hoursSince < 72 ? 1.5 : 1.0);
+           const spikeScore = velocity * Math.log10(ratio + 2) * freshnessBonus;
+
+           radarResults.push({
+             video: {
+               id: v.id,
+               title: v.snippet.title,
+               channelName: chInfo.title,
+               channelId: chId, // Add channelId for accurate filtering
+               thumbnailUrl: v.snippet.thumbnails.high?.url || v.snippet.thumbnails.default?.url,
+               duration: parseISO8601Duration(v.contentDetails.duration),
+               views: formatNumber(views),
+               avgViews: formatNumber(chInfo.avgViewsEstimate),
+               subscribers: formatNumber(chInfo.subCount),
+               viralScore: `${(velocity/100).toFixed(1)}p`, // Display score differently
+               uploadTime: getTimeAgo(publishedAt),
+               category: "Radar",
+               reachPercentage: Math.min(ratio * 10, 100), // Visual bar based on ratio
+               tags: v.snippet.tags || [],
+             },
+             spikeScore,
+             velocity,
+             channelAvgViews: chInfo.avgViewsEstimate,
+             performanceRatio: ratio
+           });
+        });
+      }
+    }
+
+    // 6. Sort and Return Top 50, limiting to max 2 videos per channel
+    radarResults.sort((a, b) => b.spikeScore - a.spikeScore);
+    
+    const filteredResults: RadarResult[] = [];
+    const channelCounts = new Map<string, number>();
+
+    for (const res of radarResults) {
+        const cId = res.video.channelId || res.video.channelName;
+        const count = channelCounts.get(cId) || 0;
+        if (count < 1) {
+            filteredResults.push(res);
+            channelCounts.set(cId, count + 1);
+        }
+        if (filteredResults.length >= 50) break;
+    }
+
+    return filteredResults;
+
+  } catch (e: any) {
+    console.error("Radar Scan Failed", e);
+    throw e;
+  }
+};
+
+function getCategoryName(id: string): string {
+  const categories: Record<string, string> = {
+    '1': 'Film & Animation',
+    '2': 'Autos & Vehicles',
+    '10': 'Music',
+    '15': 'Pets & Animals',
+    '17': 'Sports',
+    '18': 'Short Movies',
+    '19': 'Travel & Events',
+    '20': 'Gaming',
+    '21': 'Videoblogging',
+    '22': 'People & Blogs',
+    '23': 'Comedy',
+    '24': 'Entertainment',
+    '25': 'News & Politics',
+    '26': 'Howto & Style',
+    '27': 'Education',
+    '28': 'Science & Technology',
+    '29': 'Nonprofits & Activism',
+    '30': 'Movies',
+    '31': 'Anime/Animation',
+    '32': 'Action/Adventure',
+    '33': 'Classics',
+    '34': 'Comedy',
+    '35': 'Documentary',
+    '36': 'Drama',
+    '37': 'Family',
+    '38': 'Foreign',
+    '39': 'Horror',
+    '40': 'Sci-Fi/Fantasy',
+    '41': 'Thriller',
+    '42': 'Shorts',
+    '43': 'Shows',
+    '44': 'Trailers'
+  };
+  return categories[id] || 'General';
+}

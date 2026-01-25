@@ -13,6 +13,11 @@ export interface VideoData {
   category: string;
   reachPercentage: number;
   tags: string[];
+  channelTotalViews?: string;
+  channelJoinDate?: string;
+  channelCountry?: string;
+  publishedAt?: string;
+  channelId?: string;
 }
 
 export interface AnalysisResponse {
@@ -45,6 +50,7 @@ export interface SavedChannel {
   videoCount?: string;
   topVideos?: VideoSnippet[];
   addedAt?: number;
+  customAvgViews?: number; // Calculated average of recent 20 videos
 }
 
 export interface ViralStat {

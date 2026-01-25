@@ -9,7 +9,19 @@ export const getApiUsage = (): ApiUsage => {
   let usage: ApiUsage;
 
   if (saved) {
-    usage = JSON.parse(saved);
+    try {
+      usage = JSON.parse(saved);
+      if (!usage || typeof usage !== 'object') throw new Error("Invalid usage data");
+    } catch (e) {
+      // JSON Parse Error or Invalid Data -> Reset
+      usage = {
+        total: DAILY_QUOTA,
+        used: 0,
+        lastReset: new Date().toISOString(),
+        details: { search: 0, list: 0 },
+        logs: []
+      };
+    }
   } else {
     usage = {
       total: DAILY_QUOTA,
