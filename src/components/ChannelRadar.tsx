@@ -239,44 +239,46 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
   }, [apiKey]);
 
   const RadarDashboard = () => (
-    <div className="flex flex-col gap-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex flex-col gap-4 md:gap-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
        {/* Hero Search Section */}
-       <div className="relative mb-4">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-             <span className="material-symbols-outlined text-slate-400 text-2xl">search</span>
+       <div className="relative mb-2 md:mb-4">
+          <div className="absolute inset-y-0 left-3 md:left-4 flex items-center pointer-events-none">
+             <span className="material-symbols-outlined text-slate-400 text-xl md:text-2xl">search</span>
           </div>
           <input 
-            className="w-full py-5 pl-14 pr-36 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-lg shadow-lg shadow-indigo-500/5 focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-white font-medium"
-            placeholder="분석할 유튜브 채널 URL 또는 ID를 입력하세요..."
+            className="w-full py-3 md:py-5 pl-11 md:pl-14 pr-28 md:pr-36 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm md:text-lg shadow-lg shadow-indigo-500/5 focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-white font-medium"
+            placeholder="채널 URL 또는 ID 입력..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && runRadar()}
           />
           <button 
             onClick={runRadar}
-            className="absolute right-2 top-2 bottom-2 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-bold transition-all shadow-md flex items-center gap-2"
+            className="absolute right-1.5 md:right-2 top-1.5 md:top-2 bottom-1.5 md:bottom-2 px-3 md:px-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg md:rounded-xl font-bold transition-all shadow-md flex items-center gap-1 md:gap-2 text-xs md:text-sm"
           >
-            <span>채널 탐지 시작</span>
+            <span className="hidden md:inline">채널 탐지 시작</span>
+            <span className="md:hidden">탐지</span>
             <span className="material-symbols-outlined text-sm">rocket_launch</span>
           </button>
        </div>
 
-       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Main Content: Real-time Rising Channels */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4 md:space-y-6">
              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                   <span className="material-symbols-outlined text-indigo-500">show_chart</span>
-                   실시간 인기 채널 (KR)
+                <h3 className="text-base md:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                   <span className="material-symbols-outlined text-indigo-500 text-lg md:text-xl">show_chart</span>
+                   <span className="hidden sm:inline">실시간 인기 채널 (KR)</span>
+                   <span className="sm:hidden">인기 채널</span>
                 </h3>
                 <div className="flex gap-2">
-                   {isLoadingDashboard && <span className="text-xs text-slate-400 animate-pulse">데이터 수신 중...</span>}
+                   {isLoadingDashboard && <span className="text-[10px] md:text-xs text-slate-400 animate-pulse">수신 중...</span>}
                 </div>
              </div>
              
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 {trendingChannels.map((ch, idx) => (
-                   <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/30 transition-all cursor-pointer" 
+                   <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl p-3 md:p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/30 transition-all cursor-pointer" 
                      onClick={() => onVideoClick?.({
                         id: `dashboard_${ch.id}`,
                         title: ch.title,
@@ -300,22 +302,22 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                          tags: ch.tags
                       })}
                    >
-                      <div className="flex justify-between items-start mb-4">
-                         <div className="flex gap-3">
-                            <img src={ch.thumbnail} className="size-12 rounded-full border border-slate-100 dark:border-slate-800" />
-                            <div>
-                               <h4 className="font-bold text-slate-900 dark:text-white line-clamp-1">{ch.title}</h4>
-                               <p className="text-xs text-slate-500 mt-0.5">{ch.category} • {ch.subs}</p>
+                      <div className="flex justify-between items-start mb-3 md:mb-4">
+                         <div className="flex gap-2 md:gap-3 min-w-0">
+                            <img src={ch.thumbnail} className="size-10 md:size-12 rounded-full border border-slate-100 dark:border-slate-800 shrink-0" />
+                            <div className="min-w-0">
+                               <h4 className="font-bold text-xs md:text-sm text-slate-900 dark:text-white line-clamp-1 leading-tight">{ch.title}</h4>
+                               <p className="text-[10px] md:text-xs text-slate-500 mt-0.5 truncate">{ch.category} • {ch.subs}</p>
                             </div>
                          </div>
-                         <div className="text-right">
-                            <span className="text-emerald-500 text-sm font-black">{ch.growth}</span>
-                            <p className="text-[10px] text-slate-400">조회수 속도</p>
+                         <div className="text-right shrink-0 ml-2">
+                            <span className="text-emerald-500 text-xs md:text-sm font-black">{ch.growth}</span>
+                            <p className="text-[8px] md:text-[10px] text-slate-400 whitespace-nowrap">조회속도</p>
                          </div>
                       </div>
                       
                       {/* Mini Bar Chart CSS - Random seed based on index for variety */}
-                      <div className="flex items-end gap-1 h-12 mt-4 opacity-50 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-end gap-0.5 md:gap-1 h-8 md:h-12 mt-3 md:mt-4 opacity-50 group-hover:opacity-100 transition-opacity">
                          {Array.from({length: 8}).map((_, i) => (
                             <div key={i} style={{height: `${30 + Math.random() * 60}%`}} className={`flex-1 rounded-sm ${i === 7 ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-800'}`}></div>
                          ))}
@@ -330,24 +332,24 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                 )}
              </div>
 
-             <div className="bg-slate-900 dark:bg-slate-950 rounded-2xl p-6 text-white relative overflow-hidden">
+             <div className="bg-slate-900 dark:bg-slate-950 rounded-xl md:rounded-2xl p-4 md:p-6 text-white relative overflow-hidden">
                 <div className="relative z-10 flex justify-between items-end">
                    <div>
-                      <h4 className="font-bold text-slate-400 text-sm mb-1">카테고리별 실시간 성과</h4>
+                      <h4 className="font-bold text-slate-400 text-xs md:text-sm mb-1">카테고리별 실시간 성과</h4>
                    </div>
                 </div>
                 {/* Table */}
-                <div className="mt-4">
-                   <div className="flex justify-between text-xs text-slate-500 py-2 border-b border-white/10">
+                <div className="mt-3 md:mt-4">
+                   <div className="flex justify-between text-[10px] md:text-xs text-slate-500 py-2 border-b border-white/10">
                       <span>카테고리</span>
-                      <span className="text-right w-24">참여율(Like)</span>
-                      <span className="text-right w-24">트래픽 점수</span>
+                      <span className="text-right w-16 md:w-24">참여율</span>
+                      <span className="text-right w-16 md:w-24">점수</span>
                    </div>
                    {categoryStats.map((item, i) => (
-                      <div key={i} className="flex justify-between text-sm py-4 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors px-2 -mx-2 rounded-lg">
-                         <span className="font-medium text-slate-200">{item.cat}</span>
-                         <span className={`text-right w-24 font-bold ${parseFloat(item.engagement) > 3 ? 'text-emerald-400' : 'text-slate-400'}`}>{item.engagement}</span>
-                         <span className="text-right w-24 text-indigo-400 font-bold">{item.score.toLocaleString()}</span>
+                      <div key={i} className="flex justify-between text-xs md:text-sm py-3 md:py-4 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors px-2 -mx-2 rounded-lg">
+                         <span className="font-medium text-slate-200 truncate pr-2">{item.cat}</span>
+                         <span className={`text-right w-16 md:w-24 font-bold shrink-0 ${parseFloat(item.engagement) > 3 ? 'text-emerald-400' : 'text-slate-400'}`}>{item.engagement}</span>
+                         <span className="text-right w-16 md:w-24 text-indigo-400 font-bold shrink-0">{item.score.toLocaleString()}</span>
                       </div>
                    ))}
                    {isLoadingDashboard && categoryStats.length === 0 && (
@@ -358,23 +360,24 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-4 md:space-y-6">
              {/* Keywords Widget */}
-             <div className="bg-slate-900 dark:bg-black rounded-3xl p-6 text-white shadow-xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-20 bg-indigo-500/20 blur-3xl rounded-full translate-x-1/3 -translate-y-1/3 group-hover:bg-indigo-500/30 transition-colors"></div>
+             <div className="bg-slate-900 dark:bg-black rounded-2xl md:rounded-3xl p-4 md:p-6 text-white shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-10 md:p-20 bg-indigo-500/20 blur-3xl rounded-full translate-x-1/3 -translate-y-1/3 group-hover:bg-indigo-500/30 transition-colors"></div>
                 <div className="relative z-10">
-                   <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-indigo-400">language</span>
-                      실시간 급상승 키워드
+                   <h3 className="font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-indigo-400 text-lg md:text-xl">language</span>
+                      <span className="hidden sm:inline">실시간 급상승 키워드</span>
+                      <span className="sm:hidden">급상승 키워드</span>
                    </h3>
-                   <div className="space-y-4">
+                   <div className="space-y-3 md:space-y-4">
                       {popularKeywords.map((k, i) => (
                          <div key={i} className="flex items-center justify-between group/item cursor-pointer hover:bg-white/5 p-1 rounded transition-colors" onClick={() => setInput(k)}>
-                            <div className="flex items-center gap-3">
-                               <span className={`text-sm font-bold w-4 ${i<3 ? 'text-white' : 'text-slate-600'}`}>{i+1}</span>
-                               <span className="text-sm text-slate-300 group-hover/item:text-white transition-colors line-clamp-1">{k}</span>
+                            <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                               <span className={`text-xs md:text-sm font-bold w-4 shrink-0 ${i<3 ? 'text-white' : 'text-slate-600'}`}>{i+1}</span>
+                               <span className="text-xs md:text-sm text-slate-300 group-hover/item:text-white transition-colors line-clamp-1">{k}</span>
                             </div>
-                            {i===0 && <span className="bg-indigo-600/20 text-indigo-300 text-[10px] font-bold px-1.5 py-0.5 rounded">HOT</span>}
+                            {i===0 && <span className="bg-indigo-600/20 text-indigo-300 text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0">HOT</span>}
                          </div>
                       ))}
                       {popularKeywords.length === 0 && isLoadingDashboard && (
@@ -389,17 +392,17 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
              </div>
 
              {/* Banner */}
-             <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden cursor-pointer hover:shadow-indigo-500/25 hover:scale-[1.02] transition-all">
+             <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl md:rounded-3xl p-4 md:p-6 text-white shadow-lg relative overflow-hidden cursor-pointer hover:shadow-indigo-500/25 hover:scale-[1.02] transition-all">
                 <div className="relative z-10">
-                   <div className="text-[10px] font-bold bg-white/20 inline-block px-2 py-1 rounded mb-3 backdrop-blur-sm">PRO 분석</div>
-                   <h3 className="text-xl font-black mb-1 leading-tight">내 채널도<br/>분석해볼까요?</h3>
-                   <div className="flex gap-4 mt-6 text-xs font-medium opacity-80">
+                   <div className="text-[10px] font-bold bg-white/20 inline-block px-2 py-1 rounded mb-2 md:mb-3 backdrop-blur-sm">PRO 분석</div>
+                   <h3 className="text-lg md:text-xl font-black mb-1 leading-tight">내 채널도<br/>분석해볼까요?</h3>
+                   <div className="flex gap-3 md:gap-4 mt-4 md:mt-6 text-xs font-medium opacity-80">
                       <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">auto_awesome</span> 진단</span>
                       <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">compare_arrows</span> 비교</span>
                    </div>
                 </div>
-                <div className="absolute -bottom-10 -right-10 size-40 border-[30px] border-white/10 rounded-full"></div>
-                <div className="absolute bottom-10 -right-5 size-20 border-[15px] border-white/10 rounded-full"></div>
+                <div className="absolute -bottom-10 -right-10 size-32 md:size-40 border-[20px] md:border-[30px] border-white/10 rounded-full"></div>
+                <div className="absolute bottom-8 md:bottom-10 -right-4 md:-right-5 size-16 md:size-20 border-[10px] md:border-[15px] border-white/10 rounded-full"></div>
              </div>
           </div>
        </div>
@@ -450,8 +453,8 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                     <p className="font-bold">결과 없음</p>
                  </div>
               ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
                       {results.slice(0, displayLimit).map((video) => (
                         <div 
                           key={video.id} 

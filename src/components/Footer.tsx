@@ -4,7 +4,7 @@ export const Footer = () => {
   const [modalType, setModalType] = useState<'none' | 'terms' | 'privacy'>('none');
 
   return (
-    <footer className="w-full py-6 px-6 mt-auto transition-colors">
+    <footer className="w-full py-8 px-6 mt-auto border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-background-dark relative z-10">
       <div className="max-w-screen-2xl mx-auto flex flex-col items-center gap-3 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
         
         {/* Row 1: Terms, Privacy, Copyright */}

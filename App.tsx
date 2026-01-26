@@ -349,17 +349,7 @@ const Sidebar = ({
           <>
             <button 
               onClick={() => {
-                onToggleUsageMode(false); 
-                onToggleExplorerMode(false); 
-                onTogglePackageMode(false); 
-                onToggleMyMode(true); 
-                onToggleShortsDetectorMode(false); 
-                onToggleShortsDetectorMode(false); 
-                onToggleTopicMode(false);
-                onToggleTopicMode(false);
-                onToggleTopicMode(false);
-                onToggleMembershipMode(false);
-                if (onToggleComparisonMode) onToggleComparisonMode(false);
+                onToggleMyMode(true);
                 if (onCloseMobileMenu) onCloseMobileMenu();
               }}
               className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity group"
@@ -716,7 +706,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
         </button>
       </div>
     )}
-    <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 bg-white/80 dark:bg-background-dark/50 backdrop-blur-md transition-colors duration-300">
+    <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 bg-white/80 dark:bg-background-dark/50 backdrop-blur-md transition-colors duration-300 relative z-50">
     <div className="flex items-center gap-4">
       {/* Mobile Menu Toggle */}
       <button 
@@ -2132,6 +2122,8 @@ export default function App() {
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           onOpenMyPage={() => setIsMyPageOpen(true)}
+          isMobileMenuOpen={isMobileMenuOpen}
+          onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
         />
         <main className="flex-1 flex flex-col overflow-hidden relative">
           <Header 
@@ -3257,7 +3249,7 @@ export default function App() {
         )}
 
         {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && (
-            <div className="relative min-h-[60vh]">
+            <div className="relative min-h-[60vh] flex-1">
                {isMyMode && role === 'pending' && (
                   <RestrictedOverlay 
                      onCheckStatus={() => { setMyPageInitialTab('dashboard'); setIsMyPageOpen(true); }}
@@ -3387,9 +3379,10 @@ export default function App() {
                 )}
               </section>
                </div>
+                <Footer />
             </div>
           )}
-          <Footer />
+          {(isExplorerMode || isUsageMode || isPackageMode || isShortsDetectorMode || isTopicMode || isNationalTrendMode || isCategoryTrendMode || isRadarMode) && <Footer />}
         </div>
         )}
       </main>

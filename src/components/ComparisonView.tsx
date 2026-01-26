@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
 import { SavedChannel } from '../../types';
+import { Footer } from './Footer';
 
 const formatNumber = (num: number) => {
   if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
@@ -219,9 +220,9 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
     const selectionCount = tempSelectedIds.length;
     
     return (
-      <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500 flex flex-col">
          <div className="w-full max-w-[1800px] mx-auto h-full flex flex-col">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 sticky top-0 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm z-20 py-4 border-b border-transparent">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 sticky top-0 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm z-10 py-4 border-b border-transparent">
                <div>
                   <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
                      비교할 채널 선택 <span className="text-indigo-500">PICK</span>
@@ -304,26 +305,27 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                 </div>
             )}
          </div>
+         <Footer />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500 relative">
+    <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-3 md:p-8 animate-in slide-in-from-bottom-4 duration-500 flex flex-col">
 
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="bg-indigo-600 p-3 rounded-2xl shadow-lg shadow-indigo-600/20">
-            <span className="material-symbols-outlined text-white text-2xl">compare_arrows</span>
+      <div className="max-w-7xl mx-auto mb-6 md:mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="bg-indigo-600 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-lg shadow-indigo-600/20">
+            <span className="material-symbols-outlined text-white text-xl md:text-2xl">compare_arrows</span>
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
+            <h1 className="text-lg md:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2 md:gap-3">
               채널 비교 분석 <span className="text-indigo-500">VS</span>
-              {loading && <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse">데이터 최신화 중...</span>}
+              {loading && <span className="text-[10px] md:text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse">최신화 중...</span>}
             </h1>
-            <p className="text-slate-500 font-bold text-sm mt-1">
-              선택한 {channels.length}개 채널의 핵심 지표 1:1 비교
+            <p className="text-slate-500 font-bold text-xs md:text-sm mt-1">
+              선택한 {channels.length}개 채널의 핵심 지표 비교
             </p>
           </div>
         </div>
@@ -335,35 +337,35 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
               if (onUpdateChannels) onUpdateChannels([]);
               setTempSelectedIds([]); // Reset local selection too
            }}
-           className="px-5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-600 dark:text-slate-400"
+           className="px-4 md:px-5 py-2 md:py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 text-sm md:text-base"
         >
-           <span className="material-symbols-outlined">restart_alt</span>
+           <span className="material-symbols-outlined text-lg md:text-xl">restart_alt</span>
            <span>다시 선택</span>
         </button>
       </div>
 
-      <div className="max-w-7xl mx-auto space-y-8 pb-20">
+      <div className="max-w-7xl mx-auto space-y-6 md:space-y-8 pb-20">
         
         {/* Section 1: Compact Comparison Table */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
              
            {/* Table Header (Profiles + Basic Stats) */}
-           <div className="grid grid-cols-[100px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              <div className="p-3 flex items-center justify-center font-bold text-slate-400 text-xs uppercase tracking-tighter">Metric</div>
+           <div className="grid grid-cols-[80px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="p-2 md:p-3 flex items-center justify-center font-bold text-slate-400 text-[10px] md:text-xs uppercase tracking-tighter">지표</div>
               {displayChannels.map((ch, idx) => (
-                  <div key={ch.id} className="p-4 flex flex-col items-center gap-2 relative group">
+                  <div key={ch.id} className="p-2 md:p-4 flex flex-col items-center gap-1.5 md:gap-2 relative group">
                       {idx === 0 && <div className="absolute top-0 w-full h-0.5 bg-indigo-500"></div>}
                       {idx === 1 && <div className="absolute top-0 w-full h-0.5 bg-pink-500"></div>}
                       {idx === 2 && <div className="absolute top-0 w-full h-0.5 bg-emerald-500"></div>}
                       
-                      <img src={ch.thumbnail} alt="" className="size-12 rounded-full border-2 border-white dark:border-slate-700 shadow-sm group-hover:scale-105 transition-transform" />
+                      <img src={ch.thumbnail} alt="" className="size-8 md:size-12 rounded-full border-2 border-white dark:border-slate-700 shadow-sm group-hover:scale-105 transition-transform" />
                       <div className="text-center w-full">
-                          <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate px-1">{ch.title}</h3>
-                          <div className="flex flex-col items-center justify-center gap-0.5 mt-1">
-                             <span className="text-[10px] text-slate-500 font-medium bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                구독자 {ch.subscriberCount}
+                          <h3 className="font-bold text-[10px] md:text-sm text-slate-900 dark:text-white truncate px-0.5 md:px-1">{ch.title}</h3>
+                          <div className="flex flex-col items-center justify-center gap-0.5 mt-0.5 md:mt-1">
+                             <span className="text-[8px] md:text-[10px] text-slate-500 font-medium bg-slate-100 dark:bg-slate-800 px-1 md:px-1.5 py-0.5 rounded">
+                                {ch.subscriberCount}
                              </span>
-                             <span className="text-[10px] text-slate-400">
+                             <span className="text-[8px] md:text-[10px] text-slate-400 hidden md:block">
                                 영상 {ch.videoCount}개
                              </span>
                           </div>
@@ -385,24 +387,24 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
               const maxVal = Math.max(...values);
               
               return (
-                <div key={metric.key} className="grid grid-cols-[100px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors last:border-0">
-                   <div className="p-3 md:p-4 flex items-center justify-center md:justify-start gap-2 text-slate-500 font-bold text-xs">
-                      <span className="material-symbols-outlined text-base opacity-50 hidden md:block">{metric.icon}</span>
-                      <span className="text-center md:text-left">{metric.label}</span>
+                <div key={metric.key} className="grid grid-cols-[80px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors last:border-0">
+                   <div className="p-2 md:p-4 flex items-center justify-center md:justify-start gap-1.5 md:gap-2 text-slate-500 font-bold text-[10px] md:text-xs">
+                      <span className="material-symbols-outlined text-sm md:text-base opacity-50 hidden md:block">{metric.icon}</span>
+                      <span className="text-center md:text-left leading-tight">{metric.label}</span>
                    </div>
                    {displayChannels.map((_, idx) => {
                       const val = chartData[idx][metric.key as keyof typeof chartData[0]] as number;
                       const isWinner = val === maxVal && val > 0;
                       
                       return (
-                         <div key={idx} className={`p-3 md:p-4 flex items-center justify-center relative ${isWinner ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}>
-                            <span className={`text-sm md:text-base font-bold ${isWinner ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400'} tabular-nums`}>
+                         <div key={idx} className={`p-2 md:p-4 flex items-center justify-center relative ${isWinner ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}>
+                            <span className={`text-xs md:text-base font-bold ${isWinner ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400'} tabular-nums`}>
                                {metric.format ? formatNumber(val) : val}
-                               {metric.suffix && <span className="text-xs text-slate-400 ml-0.5 font-normal">{metric.suffix}</span>}
+                               {metric.suffix && <span className="text-[10px] md:text-xs text-slate-400 ml-0.5 font-normal">{metric.suffix}</span>}
                             </span>
                             {isWinner && (
-                               <div className="absolute top-1 right-1 md:top-3 md:right-3 opacity-80">
-                                  <span className="text-sm">👑</span>
+                               <div className="absolute top-0.5 right-0.5 md:top-3 md:right-3 opacity-80">
+                                  <span className="text-xs md:text-sm">👑</span>
                                </div>
                             )}
                          </div>
@@ -415,19 +417,19 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         </div>
 
         {/* Section 2: Charts (Merged) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
-             <div className="mb-6 flex items-center gap-3">
-               <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600">
-                  <span className="material-symbols-outlined">bar_chart</span>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+             <div className="mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
+               <div className="p-1.5 md:p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg md:rounded-xl text-indigo-600">
+                  <span className="material-symbols-outlined text-lg md:text-xl">bar_chart</span>
                </div>
-               <h3 className="text-lg font-black text-slate-900 dark:text-white">평균 조회수 비교</h3>
+               <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">평균 조회수 비교</h3>
              </div>
-             <div className="h-64">
+             <div className="h-48 md:h-64">
                <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barSize={40}>
+                 <BarChart data={chartData} margin={{ top: 10, right: 5, left: -10, bottom: 0 }} barSize={window.innerWidth < 768 ? 30 : 40}>
                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
-                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 'bold', fill:'#94a3b8'}} dy={10} />
+                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: window.innerWidth < 768 ? 10 : 12, fontWeight: 'bold', fill:'#94a3b8'}} dy={10} />
                    <Tooltip content={<CustomViewTooltip />} cursor={{fill: '#f1f5f9', radius: 12}} />
                    <Bar dataKey="avgViews" radius={[8, 8, 8, 8]}>
                      {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
@@ -437,18 +439,18 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
              </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
-             <div className="mb-6 flex items-center gap-3">
-               <div className="p-2 bg-pink-100 dark:bg-pink-900/30 rounded-xl text-pink-500">
-                  <span className="material-symbols-outlined">bolt</span>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+             <div className="mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
+               <div className="p-1.5 md:p-2 bg-pink-100 dark:bg-pink-900/30 rounded-lg md:rounded-xl text-pink-500">
+                  <span className="material-symbols-outlined text-lg md:text-xl">bolt</span>
                </div>
-               <h3 className="text-lg font-black text-slate-900 dark:text-white">바이럴(전파력) 점수</h3>
+               <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">바이럴(전파력) 점수</h3>
              </div>
-             <div className="h-64">
+             <div className="h-48 md:h-64">
                <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barSize={40}>
+                 <BarChart data={chartData} margin={{ top: 10, right: 5, left: -10, bottom: 0 }} barSize={window.innerWidth < 768 ? 30 : 40}>
                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
-                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 'bold', fill:'#94a3b8'}} dy={10} />
+                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: window.innerWidth < 768 ? 10 : 12, fontWeight: 'bold', fill:'#94a3b8'}} dy={10} />
                    <Tooltip content={<CustomViralTooltip />} cursor={{fill: '#f1f5f9', radius: 12}} />
                    <Bar dataKey="viralScore" radius={[8, 8, 8, 8]}>
                      {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />)}
@@ -460,18 +462,18 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         </div>
 
         {/* Section 3: Top Video Battle */}
-        <div className="bg-slate-900 dark:bg-black rounded-[2.5rem] p-8 md:p-10 text-white shadow-2xl relative overflow-hidden border border-slate-800">
+        <div className="bg-slate-900 dark:bg-black rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 lg:p-10 text-white shadow-2xl relative overflow-hidden border border-slate-800">
            {/* Decor */}
-           <div className="absolute top-0 right-0 p-10 opacity-5">
-              <span className="material-symbols-outlined text-9xl">emoji_events</span>
+           <div className="absolute top-0 right-0 p-6 md:p-10 opacity-5">
+              <span className="material-symbols-outlined text-6xl md:text-9xl">emoji_events</span>
            </div>
 
-           <h3 className="text-xl font-black mb-8 relative z-10 flex items-center gap-3">
-             <span className="bg-white/10 p-2 rounded-lg">🔥</span> 
-             최고 조회수 영상 (Best Video)
+           <h3 className="text-base md:text-xl font-black mb-4 md:mb-8 relative z-10 flex items-center gap-2 md:gap-3">
+             <span className="bg-white/10 p-1.5 md:p-2 rounded-lg text-lg md:text-xl">🔥</span> 
+             <span>최고 조회수 영상</span>
            </h3>
 
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 relative z-10">
              {displayChannels.map((ch, idx) => {
                const topVideo = ch.topVideos?.[0];
                
@@ -517,6 +519,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         </div>
 
       </div>
+      <Footer />
     </div>
   );
 };
