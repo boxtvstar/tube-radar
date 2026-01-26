@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'; 
 import { MOCK_VIDEOS, MOCK_STATS, NETWORK_VELOCITY_DATA } from './constants';
-import { getApiUsage } from './services/usageService';
+import { getApiUsage, resetQuota } from './services/usageService';
 import { db } from './src/lib/firebase';
 import { useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
@@ -43,6 +43,7 @@ import { ComparisonView } from './src/components/ComparisonView';
 import { VideoDetailModal } from './src/components/VideoDetailModal';
 import { ChannelRadar } from './src/components/ChannelRadar';
 import { Footer } from './src/components/Footer';
+import { MaterialsExplorer } from './src/components/MaterialsExplorer';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -153,7 +154,14 @@ const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video
         </div>
       </div>
       
+
       <div className="flex-1 p-5 md:p-6 flex flex-col justify-between overflow-hidden relative">
+        {/* NEW Badge */}
+        {(video as any).isNew && (
+           <div className="absolute top-0 right-0 p-2">
+             <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm animate-pulse">NEW</span>
+           </div>
+        )}
         <div className="space-y-3">
           <div className="flex justify-between items-start gap-4">
             <div className="flex-1 min-w-0">
@@ -274,7 +282,9 @@ const Sidebar = ({
   isCategoryTrendMode,
   onToggleCategoryTrendMode,
   isRadarMode,
-  onToggleRadarMode
+  onToggleRadarMode,
+  isMaterialsExplorerMode,
+  onToggleMaterialsExplorerMode
 }: { 
   ytKey: string,
   onYtKeyChange: (val: string) => void,
@@ -315,6 +325,8 @@ const Sidebar = ({
   onToggleCategoryTrendMode: (val: boolean) => void;
   isRadarMode: boolean;
   onToggleRadarMode: (val: boolean) => void;
+  isMaterialsExplorerMode: boolean;
+  onToggleMaterialsExplorerMode: (val: boolean) => void;
 }) => {
   if (!usage) return null;
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
@@ -377,7 +389,7 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -386,11 +398,11 @@ const Sidebar = ({
             <span className="material-symbols-outlined text-[18px]">list_alt</span>
             {!isCollapsed && (
               <>
-                내 모니터링 리스트
-                {hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-2 bg-accent-hot rounded-full animate-pulse shadow-[0_0_8px_#ff0055]"></span>}
+                <span className="flex-1 text-left">내 모니터링 리스트</span>
+                {hasPendingSync && <span className="relative flex h-2 w-2 mr-1"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span></span>}
               </>
             )}
-            {isCollapsed && hasPendingSync && !isSyncNoticeDismissed && <span className="absolute top-2 right-2 size-1.5 bg-accent-hot rounded-full animate-pulse"></span>}
+            {isCollapsed && hasPendingSync && <span className="absolute top-2 right-2 flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span></span>}
           </button>
 
         </div>
@@ -398,6 +410,17 @@ const Sidebar = ({
         {/* 2. 채널 탐색 */}
         {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">채널 탐색</div>}
         <div className="px-2 space-y-1">
+          <SidebarItem 
+             icon="travel_explore" 
+             label="키워드 소재 탐색" 
+             active={isMaterialsExplorerMode} 
+             onClick={() => {
+                onToggleMaterialsExplorerMode(true);
+                if (onCloseMobileMenu) onCloseMobileMenu();
+             }}
+             className={`${isMaterialsExplorerMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+             isCollapsed={isCollapsed}
+          />
           <SidebarItem 
             icon="search" 
             label="키워드 채널 찾기" 
@@ -623,11 +646,12 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onDeleteNotif,
   onOpenMyPage,
   onOpenMembership,
-  onMobileMenuToggle
-}: { 
-  region: string, 
-  count: number, 
-  theme: 'dark' | 'light', 
+  onMobileMenuToggle,
+  ytKey
+}: {
+  region: string,
+  count: number,
+  theme: 'dark' | 'light',
   onToggleTheme: () => void,
   hasPendingSync: boolean,
   isApiKeyMissing: boolean,
@@ -635,15 +659,16 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onSync: () => void,
   user?: any,
   role?: string,
-  expiresAt?: string,
-  onLogout?: () => void,
-  onOpenAdmin?: () => void,
+  expiresAt?: string | null,
+  onLogout: () => void,
   notifications: AppNotification[],
-  onMarkRead: (id: string) => void,
   onDeleteNotif: (id: string) => void,
+  onOpenAdmin: () => void,
   onOpenMyPage: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage') => void,
   onOpenMembership: () => void,
-  onMobileMenuToggle: () => void
+  onMarkRead?: (id: string) => void,
+  onMobileMenuToggle: () => void,
+  ytKey: string
 }) => {
   // D-Day calculation
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
@@ -686,6 +711,30 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   useEffect(() => {
     setIsNoticeDismissed(false);
   }, [notice?.content]);
+
+  // Expose quota debugging functions to window for console access
+  useEffect(() => {
+    if (!ytKey) return;
+
+    (window as any).resetQuota = () => {
+      const result = resetQuota(ytKey);
+      console.log('✅ 쿼터가 리셋되었습니다:', result);
+      return result;
+    };
+    (window as any).checkQuota = () => {
+      const usage = getApiUsage(ytKey);
+      console.log('📊 현재 쿼터 상태:');
+      console.log('- 총 할당량:', usage.total);
+      console.log('- 사용량:', usage.used);
+      console.log('- 남은 할당량:', usage.total - usage.used);
+      console.log('- 사용률:', ((usage.used / usage.total) * 100).toFixed(1) + '%');
+      console.log('- 마지막 리셋:', usage.lastReset);
+      return usage;
+    };
+    console.log('💡 쿼터 관리 함수가 로드되었습니다. 사용 방법:');
+    console.log('  - checkQuota() : 현재 쿼터 상태 확인');
+    console.log('  - resetQuota() : 쿼터 수동 리셋');
+  }, [ytKey]);
 
   return (
   <header className="flex flex-col sticky top-0 z-40">
@@ -950,6 +999,7 @@ export default function App() {
   const [isUsageMode, setIsUsageMode] = useState(false);
   const [isPackageMode, setIsPackageMode] = useState(false);
   const [isRadarMode, setIsRadarMode] = useState(false);
+  const [isMaterialsExplorerMode, setIsMaterialsExplorerMode] = useState(false);
   const [isShortsDetectorMode, setIsShortsDetectorMode] = useState(false);
   const [shortsDetectorResults, setShortsDetectorResults] = useState<AutoDetectResult[]>([]);
   const [isDetectingShorts, setIsDetectingShorts] = useState(false);
@@ -1023,11 +1073,36 @@ export default function App() {
   const [isCategoryTrendMode, setIsCategoryTrendMode] = useState(false);
 
   // Removed isUsageMode state (integrated into MyPage)
-  // const [isUsageMode, setIsUsageMode] = useState(false); 
+  // const [isUsageMode, setIsUsageMode] = useState(false);
 
-  const [usage, setUsage] = useState<ApiUsage>(getApiUsage());
-  
+  const [usage, setUsage] = useState<ApiUsage>({
+    total: 10000,
+    used: 0,
+    lastReset: new Date().toISOString(),
+    details: { search: 0, list: 0 },
+    logs: []
+  });
+
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Update usage when API key changes
+  useEffect(() => {
+    if (ytKey) {
+      setUsage(getApiUsage(ytKey));
+    }
+  }, [ytKey]);
+
+  // Listen to quota usage updates
+  useEffect(() => {
+    const handleUsageUpdate = (event: Event) => {
+      if (ytKey) {
+        const customEvent = event as CustomEvent;
+        setUsage(customEvent.detail);
+      }
+    };
+    window.addEventListener('yt-api-usage-updated', handleUsageUpdate);
+    return () => window.removeEventListener('yt-api-usage-updated', handleUsageUpdate);
+  }, [ytKey]);
 
   const handleOpenMyPage = (tab: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage' = 'dashboard') => {
     setMyPageInitialTab(tab);
@@ -1388,42 +1463,82 @@ export default function App() {
     setDetailedVideo(videoData);
   };
  
+  const handleSaveMaterials = async (videos: VideoData[], groupId: string) => {
+    if (!user) { alert("로그인이 필요합니다."); return; }
+    
+    const channelsToSave: SavedChannel[] = videos.map(v => ({
+      id: v.channelId || '',
+      title: v.channelName,
+      thumbnail: v.channelThumbnail || '',
+      customAvgViews: parseInt(v.avgViews.replace(/,/g, '') || '0'),
+      addedAt: Date.now(),
+      groupId: groupId
+    }));
+    
+    const uniqueChannels = Array.from(new Map(channelsToSave.map(item => [item.id, item])).values());
+    
+    try {
+      await batchSaveChannels(user.uid, uniqueChannels);
+      
+      // Update local state
+      setSavedChannels(prev => {
+        const existing = prev.filter(ch => !uniqueChannels.find(uc => uc.id === ch.id));
+        return [...existing, ...uniqueChannels];
+      });
+      
+      // Reload videos to reflect changes
+      await loadVideos(true);
+      
+      // Close MaterialsExplorer and switch to My Mode
+      setIsMaterialsExplorerMode(false);
+      setIsMyMode(true);
+      
+      alert(`${uniqueChannels.length}개의 채널을 저장했습니다.`);
+    } catch (e) {
+      console.error(e);
+      alert("저장 중 오류가 발생했습니다.");
+    }
+  };
+
   const loadVideos = async (force: boolean = false, channelsOverride?: SavedChannel[]) => {
     if (!ytKey || ytApiStatus !== 'valid') {
       setApiError("YouTube API 키가 유효하지 않거나 설정되지 않았습니다.");
       setLoading(false);
       return;
     }
-    
+
     setLoading(true);
     setApiError(null);
     if (force) {
       setHasPendingSync(false);
       setIsSyncNoticeDismissed(false);
     }
-    
+
+    // Track start time for minimum loading duration
+    const startTime = Date.now();
+
     try {
       // Clear previous videos to prevent stale view
-      if (!isMyMode) setVideos([]); 
+      if (!isMyMode) setVideos([]);
 
       let targetChannelIds: string[] = [];
       if (isMyMode) {
         // Use override if available (e.g. during update), otherwise use current group
         const sourceForIds = channelsOverride || currentGroupChannels;
         targetChannelIds = sourceForIds.map(c => c.id);
-        
+
         if (targetChannelIds.length === 0) {
           setVideos([]);
           setLoading(false);
           return;
         }
       }
-      
+
       const catConfig = CATEGORIES.find(c => c.id === selectedCategory) as any;
-      
+
       // Determine parameters based on category config
       const targetCategoryId = !isMyMode && catConfig ? catConfig.categoryId : "";
-      
+
       let query = "";
       if (!isMyMode && catConfig && catConfig.keywords) {
          if (typeof catConfig.keywords === 'string') {
@@ -1436,36 +1551,116 @@ export default function App() {
       }
 
       // FORCE DISABLE SEARCH - User requested strict 1-point official category mode
-      const useSearch = false; 
-      
+      const useSearch = false;
+
       // 15 seconds timeout to prevent infinite loading
-      const timeoutPromise = new Promise<any>((_, reject) => 
-        setTimeout(() => reject(new Error("응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.")), 15000)
-      );
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 60000));
 
       // Pass query as 2nd arg (keywords), categoryId, force, useSearchApi, AND savedChannels
       const fetchPromise = fetchRealVideos(
-          ytKey, 
-          query, 
-          region, 
-          timeRange, 
-          targetChannelIds, 
-          targetCategoryId, 
-          force, 
-          useSearch, 
+          ytKey,
+          query,
+          region,
+          timeRange,
+          targetChannelIds,
+          targetCategoryId,
+          force,
+          useSearch,
           channelsOverride || savedChannels // Critical fix: Pass DB data for Avg Views
       );
-      
+
       const data = await Promise.race([fetchPromise, timeoutPromise]);
-      
+
+      // Ensure minimum loading time for better UX feedback (400ms)
+      const elapsed = Date.now() - startTime;
+      const minLoadingTime = 400;
+      if (elapsed < minLoadingTime) {
+        await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsed));
+      }
+
+      // ✅ 빈 배열 체크: API는 성공했지만 데이터가 없는 경우 캐시 사용
+      if (!data || data.length === 0) {
+        console.warn('API 응답이 빈 배열입니다. 캐시 확인 중...');
+        
+        // 모든 캐시 검색 (채널 해시 무시 - 너무 엄격함)
+        const allCacheKeys = Object.keys(localStorage)
+          .filter(k => k.startsWith('yt_v7_cache'))
+          .filter(k => isMyMode ? k.includes('_m:false') : true); // 내 모드 캐시만
+        
+        console.log('전체 캐시 개수:', allCacheKeys.length);
+        
+        let cachedData = null;
+        let newestTimestamp = 0;
+        
+        // 가장 최근 캐시 찾기
+        for (const key of allCacheKeys) {
+          try {
+            const cache = JSON.parse(localStorage.getItem(key) || '{}');
+            if (cache.data && Array.isArray(cache.data) && cache.data.length > 0) {
+              const cacheAge = Date.now() - (cache.timestamp || 0);
+              
+              // 7일 이내의 가장 최근 캐시 사용
+              if (cacheAge < 7 * 24 * 60 * 60 * 1000 && cache.timestamp > newestTimestamp) {
+                cachedData = cache.data;
+                newestTimestamp = cache.timestamp;
+              }
+            }
+          } catch {}
+        }
+        
+        if (cachedData && cachedData.length > 0) {
+          console.log('✅ 최근 캐시 사용:', cachedData.length, '개 (타임스탬프:', new Date(newestTimestamp).toLocaleString(), ')');
+          setVideos(cachedData);
+          setVisibleVideoCount(20);
+          setHasPendingSync(false);
+          setIsSyncNoticeDismissed(false);
+          return;
+        } else {
+          console.warn('사용 가능한 캐시 없음');
+        }
+      }
+
       setVideos(data);
       setVisibleVideoCount(20); // Reset pagination when new data loads
       setHasPendingSync(false); // Mark sync as complete
       setIsSyncNoticeDismissed(false);
     } catch (e: any) {
-      // Don't show alert for timeout, just stop loading and maybe show toast
-      if (e.message !== "TIMEOUT") {
-         setApiError(e.message || "영상 로딩 중 오류가 발생했습니다.");
+      // ✅ 에러 발생 시 캐시 사용 시도
+      console.warn('API 에러 발생, 캐시 확인 중...', e.message);
+      
+      // 캐시에서 데이터 찾기
+      const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('yt_v7_cache'));
+      let cachedData = null;
+      
+      for (const key of cacheKeys) {
+        try {
+          const cache = JSON.parse(localStorage.getItem(key) || '{}');
+          if (cache.data && Array.isArray(cache.data) && cache.data.length > 0) {
+            // 최근 7일 이내 캐시만 사용
+            const cacheAge = Date.now() - (cache.timestamp || 0);
+            if (cacheAge < 7 * 24 * 60 * 60 * 1000) {
+              cachedData = cache.data;
+              console.log('✅ 캐시 데이터 사용:', cachedData.length, '개');
+              break;
+            }
+          }
+        } catch {}
+      }
+      
+      if (cachedData && cachedData.length > 0) {
+        // 캐시 데이터 표시
+        setVideos(cachedData);
+        setVisibleVideoCount(20);
+      } else {
+        // 캐시도 없으면 에러 처리
+        if (e.message && e.message.startsWith("QUOTA_INSUFFICIENT")) {
+          console.warn('Quota check suggests using cache');
+        } else if (e.message !== "TIMEOUT" && e.message !== "QUOTA_EXCEEDED") {
+          let displayError = e.message || "Unknown Error";
+          if (!displayError.toLowerCase().includes("quota")) {
+             setApiError(displayError);
+          }
+        }
       }
     } finally {
       setLoading(false);
@@ -1642,6 +1837,16 @@ export default function App() {
         setBatchStatus(null);
         setProgress(null);
         return;
+      } else if (e.message && e.message.startsWith("QUOTA_INSUFFICIENT")) {
+        setAlertMessage({
+          title: "API 할당량 부족",
+          message: e.message.replace("QUOTA_INSUFFICIENT: ", "") + "\n\n일부 채널만 추가하시거나 내일 오후 5시(KST) 후에 다시 시도해주세요.",
+          type: 'info'
+        });
+        setLoading(false);
+        setBatchStatus(null);
+        setProgress(null);
+        return;
       }
     }
     
@@ -1676,8 +1881,26 @@ export default function App() {
         });
       }
     } else {
-      setBatchResult({ added: newChannels.length, duplicates });
+      // Success Case - Show Alert instead of auto-refreshing & Prepend to Video List
+      setAlertMessage({
+        title: "채널 추가 완료",
+        message: `${newChannels.length}개의 채널이 성공적으로 추가되었습니다.\n(리스트 최상단에 추가됨)`,
+        type: 'info'
+      });
+
+      // Optimistically add to video list for immediate feedback (Fake Video Object for UI)
+      // Show message about manual refresh
+      setTimeout(() => {
+         setAlertMessage({
+            title: "추가 완료", 
+            message: "채널이 리스트에 추가되었습니다.\n최신 데이터를 보려면 '분석 시작' 버튼을 눌러 새로고침해주세요.",
+            type: 'info'
+         });
+      }, 500);
     }
+    
+    setChannelInput('');
+    setBatchStatus(null);
   };
 
   const handleExplorerSearch = async () => {
@@ -1743,6 +1966,11 @@ export default function App() {
                setIsShortsDetectorMode(false);
                setIsTopicMode(false);
                setIsMyMode(false);
+               setIsRadarMode(false);
+               setIsNationalTrendMode(false);
+               setIsCategoryTrendMode(false);
+               setIsComparisonMode(false);
+               setIsMaterialsExplorerMode(false);
             }}
          />
          <div className="blur-sm pointer-events-none select-none opacity-40 transition-all duration-500">
@@ -2052,6 +2280,7 @@ export default function App() {
           isMyMode={isMyMode}
           onToggleMyMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsMyMode(val);
              setIsExplorerMode(false);
              setIsUsageMode(false);
@@ -2063,6 +2292,7 @@ export default function App() {
           isExplorerMode={isExplorerMode}
           onToggleExplorerMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsExplorerMode(val);
              setIsMyMode(false);
              setIsUsageMode(false);
@@ -2079,36 +2309,58 @@ export default function App() {
           isPackageMode={isPackageMode}
           onTogglePackageMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsPackageMode(val);
+          }}
+          isMaterialsExplorerMode={isMaterialsExplorerMode}
+          onToggleMaterialsExplorerMode={(val) => {
+             setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(val);
+             setIsMyMode(false);
+             setIsExplorerMode(false);
+             setIsUsageMode(false);
+             setIsPackageMode(false);
+             setIsShortsDetectorMode(false);
+             setIsTopicMode(false);
+             setIsMembershipMode(false);
+             setIsNationalTrendMode(false);
+             setIsCategoryTrendMode(false);
+             setIsRadarMode(false);
           }}
           isShortsDetectorMode={isShortsDetectorMode}
           onToggleShortsDetectorMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsShortsDetectorMode(val);
           }}
           isTopicMode={isTopicMode}
           onToggleTopicMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsTopicMode(val);
           }}
           isMembershipMode={isMembershipMode}
           onToggleMembershipMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsMembershipMode(val);
           }}
           isNationalTrendMode={isNationalTrendMode}
           onToggleNationalTrendMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsNationalTrendMode(val);
           }}
           isCategoryTrendMode={isCategoryTrendMode}
           onToggleCategoryTrendMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsCategoryTrendMode(val);
           }}
           isRadarMode={isRadarMode}
           onToggleRadarMode={(val) => {
              setIsComparisonMode(false);
+             setIsMaterialsExplorerMode(false);
              setIsRadarMode(val);
           }}
           isComparisonMode={true}
@@ -2126,11 +2378,11 @@ export default function App() {
           onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
         />
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          <Header 
-            onMobileMenuToggle={() => setIsMobileMenuOpen(true)} 
-            region={region} 
-            count={videos.length} 
-            theme={theme} 
+          <Header
+            onMobileMenuToggle={() => setIsMobileMenuOpen(true)}
+            region={region}
+            count={videos.length}
+            theme={theme}
             onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
             hasPendingSync={hasPendingSync && !isSyncNoticeDismissed}
             isApiKeyMissing={isApiKeyMissing}
@@ -2142,6 +2394,7 @@ export default function App() {
             onLogout={logout}
             onOpenAdmin={() => setIsAdminOpen(true)}
             notifications={notifications}
+            ytKey={ytKey}
             onMarkRead={async (id) => {
               if (user) {
                 await markNotificationAsRead(user.uid, id);
@@ -2163,6 +2416,10 @@ export default function App() {
                 setIsShortsDetectorMode(false); 
                 setIsTopicMode(false); 
                 setIsMyMode(false);
+                setIsRadarMode(false);
+                setIsNationalTrendMode(false);
+                setIsCategoryTrendMode(false);
+                setIsMaterialsExplorerMode(false);
             }}
           />
           <ComparisonView 
@@ -2186,15 +2443,15 @@ export default function App() {
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -2208,19 +2465,21 @@ export default function App() {
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); } setIsCategoryTrendMode(val); }}
+        isMaterialsExplorerMode={isMaterialsExplorerMode}
+        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMaterialsExplorerMode(val); }}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        <Header 
-          onMobileMenuToggle={() => setIsMobileMenuOpen(true)} 
-          region={region} 
-          count={videos.length} 
-          theme={theme} 
+        <Header
+          onMobileMenuToggle={() => setIsMobileMenuOpen(true)}
+          region={region}
+          count={videos.length}
+          theme={theme}
           onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-          hasPendingSync={hasPendingSync && !isSyncNoticeDismissed}
+          hasPendingSync={hasPendingSync}
           isApiKeyMissing={isApiKeyMissing}
           onDismissSync={() => setIsSyncNoticeDismissed(true)}
           onSync={() => loadVideos(true)}
@@ -2230,6 +2489,7 @@ export default function App() {
           onLogout={logout}
           onOpenAdmin={() => setIsAdminOpen(true)}
           notifications={notifications}
+          ytKey={ytKey}
            onMarkRead={async (id) => {
              if (user) {
                await markNotificationAsRead(user.uid, id);
@@ -2250,6 +2510,11 @@ export default function App() {
             setIsShortsDetectorMode(false); 
             setIsTopicMode(false); 
             setIsMyMode(false);
+            setIsComparisonMode(false);
+            setIsRadarMode(false);
+            setIsNationalTrendMode(false);
+            setIsCategoryTrendMode(false);
+            setIsMaterialsExplorerMode(false);
           }}
         />
         
@@ -2299,12 +2564,24 @@ export default function App() {
               setIsShortsDetectorMode(false);
               setIsTopicMode(false);
               setIsMyMode(false);
+              setIsComparisonMode(false);
+              setIsRadarMode(false);
+              setIsNationalTrendMode(false);
+              setIsCategoryTrendMode(false);
+              setIsMaterialsExplorerMode(false);
             }}
           />
         )}
         
         {isMembershipMode ? (
           <MembershipPage />
+        ) : isMaterialsExplorerMode ? (
+            <MaterialsExplorer 
+              apiKey={ytKey} 
+              groups={groups} 
+              onSave={handleSaveMaterials}
+              onClose={() => setIsMaterialsExplorerMode(false)}
+            />
         ) : (
         <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar scroll-smooth flex flex-col relative w-full h-full">
           {isPackageMode || isTopicMode ? renderRestricted(
@@ -3220,6 +3497,7 @@ export default function App() {
 
 
   
+  
         {isRadarMode && (
           <div className="flex-1 overflow-hidden relative">
             <ChannelRadar 
@@ -3248,7 +3526,7 @@ export default function App() {
           </div>
         )}
 
-        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && (
+        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && (
             <div className="relative min-h-[60vh] flex-1">
                {isMyMode && role === 'pending' && (
                   <RestrictedOverlay 
@@ -3325,7 +3603,20 @@ export default function App() {
                     {loading && !batchStatus ? (
                       <div className="py-32 flex flex-col items-center justify-center gap-5 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900/5 shadow-sm">
                         <div className="size-12 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                        <p className="text-slate-400 dark:text-slate-600 text-xs font-black uppercase tracking-widest animate-pulse">Scanning Network for Signals...</p>
+                        {progress ? (
+                          <>
+                            <p className="text-slate-700 dark:text-slate-300 text-sm font-bold">{progress.message}</p>
+                            <div className="w-64 h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
+                                style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-slate-400 text-xs font-medium">{progress.current} / {progress.total}</p>
+                          </>
+                        ) : (
+                          <p className="text-slate-400 dark:text-slate-600 text-xs font-black uppercase tracking-widest animate-pulse">데이터 로딩 중...</p>
+                        )}
                       </div>
                     ) : videos.length > 0 ? (
                       <>

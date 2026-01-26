@@ -18,6 +18,9 @@ export interface VideoData {
   channelCountry?: string;
   publishedAt?: string;
   channelId?: string;
+  durationSec?: number;
+  velocity?: number;
+  channelThumbnail?: string;
 }
 
 export interface AnalysisResponse {

@@ -1,6 +1,6 @@
 
 import { VideoData, SavedChannel } from "../types";
-import { trackUsage } from "./usageService";
+import { trackUsage, checkQuotaAvailable, getRemainingQuota, markQuotaExceeded } from "./usageService";
 
 const YOUTUBE_BASE_URL = "https://www.googleapis.com/youtube/v3";
 const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4시간 캐시
@@ -70,7 +70,7 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     let channelIdToLookup = '';
     if (identifier.type === 'video') {
       const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet&id=${identifier.value}&key=${apiKey}`);
-      trackUsage('list', 1);
+      trackUsage(apiKey, 'list', 1);
       const vData = await vRes.json();
       if (vData.items?.length > 0) channelIdToLookup = vData.items[0].snippet.channelId;
       else return null;
@@ -85,12 +85,21 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     } else return null;
 
     const res = await fetch(url);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const data = await res.json();
     
     if (data.error) {
-      if (data.error.code === 403 && data.error.errors?.[0]?.reason === 'quotaExceeded') {
-        throw new Error("QUOTA_EXCEEDED");
+      const reason = data.error.errors?.[0]?.reason;
+      // Rate Limit은 무시 (자동으로 해결됨)
+      if (data.error.code === 403) {
+        if (reason === 'quotaExceeded') {
+          markQuotaExceeded(apiKey);
+          throw new Error("QUOTA_EXCEEDED");
+        } else if (reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded') {
+          console.warn('⚠️ Rate Limit - 잠시 대기 중...');
+          await new Promise(r => setTimeout(r, 2000)); // 2초 대기 후 무시
+          return null;
+        }
       }
       return null;
     }
@@ -102,7 +111,7 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     try {
       const uploadsId = channel.id.replace(/^UC/, 'UU');
          const plRes = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet,contentDetails&playlistId=${uploadsId}&maxResults=20&key=${apiKey}`);
-         trackUsage('list', 1);
+         trackUsage(apiKey, 'list', 1);
          const plData = await plRes.json();
          
          let videoIds: string[] = [];
@@ -113,7 +122,7 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
              // Fallback: Use Search API if playlist fails (e.g. channel settings)
              try {
                  const sRes = await fetch(`${YOUTUBE_BASE_URL}/search?part=id&channelId=${channel.id}&order=date&type=video&maxResults=20&key=${apiKey}`);
-                 trackUsage('search', 1);
+                 trackUsage(apiKey, 'search', 1);
                  const sData = await sRes.json();
                  if (sData.items) videoIds = sData.items.map((i:any) => i.id.videoId);
              } catch(e) {
@@ -123,7 +132,7 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
          
          if (videoIds.length > 0) {
              const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=statistics&id=${videoIds.join(',')}&key=${apiKey}`);
-             trackUsage('list', 1);
+             trackUsage(apiKey, 'list', 1);
              const vData = await vRes.json();
              
              if (vData.items && vData.items.length > 0) {
@@ -149,16 +158,39 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
       country: channel.snippet.country,
       lastUpdated: Date.now()
     };
-  } catch (e) {
+  } catch (e: any) {
+    if (e.message === "QUOTA_EXCEEDED" || (e.result && e.result.error && e.result.error.code === 403)) {
+       console.warn("Quota exceeded during channel lookup, using fallback.");
+       // Fallback: If we have an ID at least, return a minimal object so the UI doesn't crash
+       // We try to extract ID from query if possible
+       const identifier = extractIdentifier(query);
+       if (identifier && identifier.type === 'id') {
+           return {
+               id: identifier.value,
+               title: identifier.value, // Placeholder
+               thumbnail: '',
+               subscriberCount: '0',
+               videoCount: '0',
+               customAvgViews: 0,
+               totalViews: '0',
+               joinDate: new Date().toISOString(),
+               country: '',
+               lastUpdated: Date.now()
+           };
+       }
+       throw new Error("QUOTA_EXCEEDED");
+    }
     return null;
   }
 };
+
+
 
 export const searchChannelsByKeyword = async (apiKey: string, query: string): Promise<SavedChannel[]> => {
   if (!query.trim()) return [];
   try {
     const res = await fetch(`${YOUTUBE_BASE_URL}/search?part=snippet&type=channel&maxResults=${MAX_RESULTS_PER_UNIT}&q=${encodeURIComponent(query)}&key=${apiKey}`);
-    trackUsage('search');
+    trackUsage(apiKey, 'search');
     const data = await res.json();
     if (data.error || !data.items) return [];
     
@@ -174,8 +206,8 @@ export const searchChannelsByKeyword = async (apiKey: string, query: string): Pr
 };
 
 export const fetchRealVideos = async (
-  apiKey: string, 
-  query: string = "", 
+  apiKey: string,
+  query: string = "",
   regionCode: string = "KR",
   daysBack: number = 7,
   channelIds: string[] = [],
@@ -185,16 +217,93 @@ export const fetchRealVideos = async (
   savedChannels: SavedChannel[] = []
 ): Promise<VideoData[]> => {
   const isMyChannelsMode = channelIds.length > 0;
-  const channelHash = isMyChannelsMode ? channelIds.length : 'all';
+
+  // Create unique hash for channel IDs to differentiate groups with same count
+  let channelHash: string;
+  if (isMyChannelsMode) {
+    // Sort and create hash from channel IDs
+    const sortedIds = [...channelIds].sort();
+    // Use simple hash: first ID + count + last ID
+    channelHash = `${sortedIds[0].slice(-4)}_${sortedIds.length}_${sortedIds[sortedIds.length - 1].slice(-4)}`;
+  } else {
+    channelHash = 'all';
+  }
+
   // Cache Key: Explicitly separate Query and CategoryID to avoid collisions
   const cacheKey = `yt_v7_cache_${regionCode}_q:${query}_c:${categoryId}_d:${daysBack}_h:${channelHash}_m:${useSearchApi}`;
+
   const cached = localStorage.getItem(cacheKey);
-  
+
   if (!forceRefresh && cached) {
     const { data, timestamp } = JSON.parse(cached);
     if (Date.now() - timestamp < CACHE_DURATION) return data;
   }
 
+  // Quota Check: Estimate cost before making API calls
+  // MyChannels Mode Cost:
+  // - Playlist fetch: 1 per channel (Capped at 50 by safety limit)
+  // - Video details: ceil(channels * 50 videos / 50 per request)
+  // - Channel info: ceil(channels / 50)
+  
+  const activeCount = isMyChannelsMode ? Math.min(channelIds.length, 50) : 0;
+  
+  const estimatedCost = isMyChannelsMode
+    ? activeCount + Math.ceil(activeCount * 50 / 50) + Math.ceil(activeCount / 50)
+    : useSearchApi ? 102 : 1;
+
+  // ⚠️ 쿼터 사전 체크 비활성화 - 거짓 경고가 너무 많이 발생함
+  // 실제 API 에러만 처리하도록 변경
+  /*
+  if (!checkQuotaAvailable(apiKey, estimatedCost)) {
+    // If quota is insufficient, try to use cached data even if forceRefresh is true
+    let fallbackCache = cached;
+    let fallbackCacheKey = cacheKey;
+
+    if (!fallbackCache && isMyChannelsMode) {
+      // Try to find cache for the same channel group (same channelHash)
+      // but allow different region/date/query to be more flexible
+      const allKeys = Object.keys(localStorage);
+      const sameGroupCacheKeys = allKeys.filter(k =>
+        k.startsWith('yt_v7_cache_') &&
+        k.includes(`_h:${channelHash}_`)
+      );
+
+      for (const key of sameGroupCacheKeys) {
+        try {
+          const cacheData = localStorage.getItem(key);
+          if (cacheData) {
+            const parsed = JSON.parse(cacheData);
+            const cacheAge = Date.now() - parsed.timestamp;
+            const isValid = cacheAge < CACHE_DURATION;
+
+            if (isValid && parsed.data && parsed.data.length > 0) {
+              fallbackCache = cacheData;
+              fallbackCacheKey = key;
+              break;
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
+
+    if (fallbackCache) {
+      const { data, timestamp } = JSON.parse(fallbackCache);
+      const cacheAge = Date.now() - timestamp;
+      const isValid = cacheAge < CACHE_DURATION;
+
+      if (isValid) {
+        return data;
+      }
+    }
+
+    const remaining = getRemainingQuota(apiKey);
+    throw new Error(`QUOTA_INSUFFICIENT: 남은 할당량(${remaining})이 필요한 양(약 ${estimatedCost})보다 적습니다.`);
+  }
+  */
+
+  // ===== 실제 API 호출 시작 =====
   try {
     let videoItems = [];
     const cutoffDate = new Date();
@@ -204,21 +313,67 @@ export const fetchRealVideos = async (
 
     if (isMyChannelsMode) {
       // 1. Optimized Fetch: Get recent videos from playlists (Fast)
-      const allVideoPromises = channelIds.map(async (cid) => {
-        try {
-          const uploadsPlaylistId = cid.replace(/^UC/, 'UU');
-          // Fetch up to 50 to ensure we get enough videos.
-          const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${apiKey}`);
-          trackUsage('list', 1);
-          const data = await res.json();
-          if (data.error) return [];
-          return data.items || [];
-        } catch (e) {
-          return [];
-        }
-      });
+      // 1. Optimized Fetch: Get recent videos from playlists (Fast)
+      // FIX: Batch these requests to avoid hitting QPS (Queries Per Second) limits which trigger 403
+      // Balanced batch size for speed + safety
+      const BATCH_SIZE = 3;
       
-      const playlistResults = await Promise.all(allVideoPromises);
+      // FIX: Hard limit to prevent massive quota burn for 'Unassigned' or 'All' groups with too many channels
+      let activeChannelIds = channelIds;
+      if (channelIds.length > 50) {
+          console.warn(`[Quota Protection] Channel count ${channelIds.length} exceeds safety limit. Processing top 50 only.`);
+          activeChannelIds = channelIds.slice(0, 50);
+      }
+      
+      // ✅ 핵심 최적화: 기간에 따라 가져올 영상 개수 동적 조정
+      // 7일 × 50개 채널 = 너무 많은 영상 → API 호출 폭발!
+      let maxResultsPerChannel = 10; // 기본값
+      if (daysBack <= 3) maxResultsPerChannel = 10;      // 3일 이하
+      else if (daysBack <= 7) maxResultsPerChannel = 15; // 7일 이하
+      else if (daysBack <= 15) maxResultsPerChannel = 20; // 15일 이하
+      else maxResultsPerChannel = 30; // 30일
+      
+      const playlistResults = [];
+      
+      for (let i = 0; i < activeChannelIds.length; i += BATCH_SIZE) {
+        const chunk = activeChannelIds.slice(i, i + BATCH_SIZE);
+        const chunkPromises = chunk.map(async (cid) => {
+          try {
+            const uploadsPlaylistId = cid.replace(/^UC/, 'UU');
+            const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=${maxResultsPerChannel}&key=${apiKey}`);
+            trackUsage(apiKey, 'list', 1);
+            const data = await res.json();
+            
+            // ⚠️ 모든 에러를 조용히 무시 - 일부 실패해도 나머지 계속 진행
+            if (data.error) {
+               const reason = data.error.errors?.[0]?.reason;
+               const code = data.error.code;
+               
+               // 실제 quotaExceeded만 로그에 기록 (throw하지 않음)
+               if (code === 403 && reason === 'quotaExceeded') {
+                 console.warn(`⚠️ API Quota 초과 감지: ${cid}`);
+                 markQuotaExceeded(apiKey);
+                 // throw 하지 않고 빈 배열 반환
+                 return [];
+               }
+               
+               // Rate Limit, 404, 기타 모든 에러는 조용히 스킵
+               return [];
+            }
+            return data.items || [];
+          } catch (e) {
+            // 네트워크 에러 등 모든 예외도 조용히 처리
+            return [];
+          }
+        });
+        
+        // Wait for this batch to finish before starting next
+        const chunkResults = await Promise.all(chunkPromises);
+        playlistResults.push(...chunkResults);
+        
+        // Balanced delay between batches (300ms)
+        await new Promise(r => setTimeout(r, 300));
+      }
       const allSnippetItems = playlistResults.flat();
 
       // Filter by Date immediately
@@ -234,12 +389,32 @@ export const fetchRealVideos = async (
           chunks.push(validVideoIds.slice(i, i + 50));
       }
 
-      const detailResults = await Promise.all(chunks.map(async (chunkIds) => {
-          const res = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${chunkIds.join(',')}&key=${apiKey}`);
-          trackUsage('list', 1);
-          const data = await res.json();
-          return data.items || [];
-      }));
+      const detailResults = [];
+      for (const chunkIds of chunks) {
+          try {
+             // 50 IDs per request (Cost: 1)
+             const res = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${chunkIds.join(',')}&key=${apiKey}`);
+             trackUsage(apiKey, 'list', 1);
+             const data = await res.json();
+                          if (data.error) {
+                  const reason = data.error.errors?.[0]?.reason;
+                  
+                  // Quota 초과는 로그만 남기고 계속 (throw 하지 않음)
+                  if (data.error.code === 403 && reason === 'quotaExceeded') {
+                    console.warn('⚠️ API Quota 초과 - 일부 비디오 스킵');
+                    markQuotaExceeded(apiKey);
+                    // throw 하지 않고 계속
+                  }
+                  // 모든 에러는 조용히 무시하고 계속
+              } else {
+                 if (data.items) detailResults.push(...data.items);
+             }
+          } catch(e) {
+             // 네트워크 에러도 조용히 처리
+          }
+          // Small delay to be safe
+          await new Promise(r => setTimeout(r, 50));
+      }
 
       videoItems = detailResults.flat();
 
@@ -261,15 +436,21 @@ export const fetchRealVideos = async (
         if (query) searchUrl += `&q=${encodeURIComponent(query)}`;
         
         const sRes = await fetch(searchUrl);
-        trackUsage('search', 1);
+        trackUsage(apiKey, 'search', 1);
         const sData = await sRes.json();
-        
-        if (sData.error) throw new Error(sData.error.message);
+
+        if (sData.error) {
+          if (sData.error.code === 403 && sData.error.errors?.[0]?.reason === 'quotaExceeded') {
+            markQuotaExceeded(apiKey);
+            throw new Error("QUOTA_EXCEEDED");
+          }
+          throw new Error(sData.error.message);
+        }
         if (!sData.items || sData.items.length === 0) return [];
 
         const videoIds = sData.items.map((item: any) => item.id.videoId).join(',');
         const detailRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${apiKey}`);
-        trackUsage('list', 1);
+        trackUsage(apiKey, 'list', 1);
         const detailData = await detailRes.json();
         const rawItems = detailData.items || [];
 
@@ -303,7 +484,7 @@ export const fetchRealVideos = async (
         let url = `${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&chart=mostPopular&maxResults=${MAX_RESULTS_PER_UNIT}&key=${apiKey}&regionCode=${regionCode}`;
         if (categoryId) url += `&videoCategoryId=${categoryId}`;
         const res = await fetch(url);
-        trackUsage('list', 1);
+        trackUsage(apiKey, 'list', 1);
         const data = await res.json();
         
         if (data.items && data.items.length > 0) {
@@ -316,13 +497,13 @@ export const fetchRealVideos = async (
            if (categoryId) fallbackUrl += `&videoCategoryId=${categoryId}`;
 
            const fRes = await fetch(fallbackUrl);
-           trackUsage('search', 1);
+           trackUsage(apiKey, 'search', 1);
            const fData = await fRes.json();
            
            if (fData.items && fData.items.length > 0) {
               const fIds = fData.items.map((item: any) => item.id.videoId).join(',');
               const fDetail = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${fIds}&key=${apiKey}`);
-              trackUsage('list', 1);
+              trackUsage(apiKey, 'list', 1);
               const fDetailData = await fDetail.json();
               videoItems = fDetailData.items || [];
            }
@@ -369,18 +550,34 @@ export const fetchRealVideos = async (
         channelChunks.push(targetChannelIds.slice(i, i + 50));
     }
 
-    const channelResponses = await Promise.all(channelChunks.map(async (ids) => {
-        if (ids.length === 0) return [];
+    const channelResponses = [];
+    for (const ids of channelChunks) {
+        if (ids.length === 0) continue;
         try {
            const res = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${ids.join(',')}&key=${apiKey}`);
-           trackUsage('list', 1);
+           trackUsage(apiKey, 'list', 1);
            const data = await res.json();
-           return data.items || [];
+           
+           if (data.error) {
+               const reason = data.error.errors?.[0]?.reason;
+               if (data.error.code === 403) {
+                 if (reason === 'quotaExceeded') {
+                   markQuotaExceeded(apiKey);
+                   throw new Error("QUOTA_EXCEEDED");
+                 }
+                 // Rate Limit은 무시하고 계속
+                 console.warn('Rate Limit - 스킵');
+               } else {
+                 console.warn("Error fetching channel details chunk:", data.error);
+               }
+            } else {
+               if (data.items) channelResponses.push(...data.items);
+           }
         } catch (e) { 
            console.warn("Channel lookup failed", e);
-           return []; 
         }
-    }));
+        await new Promise(r => setTimeout(r, 50));
+    }
 
     const freshChannels = channelResponses.flat();
 
@@ -533,7 +730,7 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   const promises = TARGET_CATEGORY_IDS.map(async (catId) => {
     try {
       const res = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode=${regionCode}&videoCategoryId=${catId}&maxResults=50&key=${apiKey}`);
-      trackUsage('list', 1);
+      trackUsage(apiKey, 'list', 1);
       const data = await res.json();
       if (data.error) return [];
       return data.items || [];
@@ -602,7 +799,7 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   const channelIds = candidates.map(c => c.id);
   
   const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${channelIds.join(',')}&key=${apiKey}`);
-  trackUsage('list', 1);
+  trackUsage(apiKey, 'list', 1);
   const chData = await chRes.json();
   
   if (!chData.items) return [];
@@ -680,7 +877,7 @@ export const fetchChannelPopularVideos = async (apiKey: string, channelId: strin
     // 1. Get Uploads Playlist ID (Cost: 1)
     // We need 'contentDetails' to find the uploads playlist
     const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails&id=${channelId}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const chData = await chRes.json();
     
     if (!chData.items || chData.items.length === 0) return [];
@@ -689,7 +886,7 @@ export const fetchChannelPopularVideos = async (apiKey: string, channelId: strin
 
     // 2. Get Latest 10 Videos from Uploads Playlist (Cost: 1)
     const plRes = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=10&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const plData = await plRes.json();
 
     if (!plData.items || plData.items.length === 0) return [];
@@ -698,7 +895,7 @@ export const fetchChannelPopularVideos = async (apiKey: string, channelId: strin
 
     // 3. Get Video Stats (Cost: 1)
     const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=statistics,contentDetails,snippet&id=${videoIds}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const vData = await vRes.json();
     
     if (!vData.items) return [];
@@ -781,7 +978,7 @@ export const fetchMemberIds = async (accessToken: string): Promise<string[]> => 
 export const getChannelUploadsPlaylistId = async (apiKey: string, channelId: string): Promise<string | null> => {
   try {
     const res = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails&id=${channelId}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const data = await res.json();
     if (!data.items?.length) return null;
     return data.items[0].contentDetails.relatedPlaylists.uploads;
@@ -793,7 +990,7 @@ export const getChannelUploadsPlaylistId = async (apiKey: string, channelId: str
 export const getPlaylistItems = async (apiKey: string, playlistId: string, maxResults: number = 20): Promise<any[]> => {
   try {
     const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet,contentDetails&playlistId=${playlistId}&maxResults=${maxResults}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const data = await res.json();
     return data.items || [];
   } catch (e) {
@@ -819,7 +1016,7 @@ export interface ChannelAnalysis {
 export const analyzeChannelForRadar = async (apiKey: string, channelId: string): Promise<ChannelAnalysis | null> => {
   try {
     const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=statistics,contentDetails,snippet&id=${channelId}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const chData = await chRes.json();
     if (!chData.items?.length) return null;
     
@@ -837,7 +1034,7 @@ export const analyzeChannelForRadar = async (apiKey: string, channelId: string):
     const idList = videos.map((v: any) => v.contentDetails.videoId).join(',');
     
     const vDetailRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics&id=${idList}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const vDetailData = await vDetailRes.json();
     const videoDetails = vDetailData.items || [];
 
@@ -910,7 +1107,7 @@ export const performRadarScan = async (
     // Cost: 100 units
     onProgress("유사 채널 대규모 탐색 중...", 30);
     const searchRes = await fetch(`${YOUTUBE_BASE_URL}/search?part=snippet&type=channel&q=${encodeURIComponent(searchKeywords)}&maxResults=50&key=${apiKey}`);
-    trackUsage('search', 1);
+    trackUsage(apiKey, 'search', 1);
     const searchData = await searchRes.json();
     
     if (!searchData.items?.length) return [];
@@ -921,7 +1118,7 @@ export const performRadarScan = async (
     // 3. Batch Fetch Channel Details (Uploads ID & Stats)
     // Cost: 1 unit (50 ids fit in one call)
     const chDetailRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails,statistics,snippet&id=${channelIds.join(',')}&key=${apiKey}`);
-    trackUsage('list', 1);
+    trackUsage(apiKey, 'list', 1);
     const chDetailData = await chDetailRes.json();
     
     const channelMap = new Map<string, { uploadsId: string; subCount: number; avgViewsEstimate: number; title: string, thumb: string }>();
@@ -979,7 +1176,7 @@ export const performRadarScan = async (
     for (let i = 0; i < allVideoIds.length; i += chunkSize) {
       const chunk = allVideoIds.slice(i, i + chunkSize);
       const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics,contentDetails&id=${chunk.join(',')}&key=${apiKey}`);
-      trackUsage('list', 1);
+      trackUsage(apiKey, 'list', 1);
       const vData = await vRes.json();
       
       if (vData.items) {
@@ -1098,3 +1295,128 @@ function getCategoryName(id: string): string {
   };
   return categories[id] || 'General';
 }
+
+export function parseISO8601DurationToSeconds(duration: string): number {
+  const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!matches) return 0;
+  const hours = parseInt(matches[1] || '0');
+  const minutes = parseInt(matches[2] || '0');
+  const seconds = parseInt(matches[3] || '0');
+  return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+// Helper duplication to ensure availability in this scope
+function _localGetTimeAgo(date: string) {
+  const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
+  let interval = seconds / 31536000;
+  if (interval > 1) return Math.floor(interval) + "년 전";
+  interval = seconds / 2592000;
+  if (interval > 1) return Math.floor(interval) + "달 전";
+  interval = seconds / 86400;
+  if (interval > 1) return Math.floor(interval) + "일 전";
+  interval = seconds / 3600;
+  if (interval > 1) return Math.floor(interval) + "시간 전";
+  return "방금 전";
+}
+
+
+
+export const searchVideosForMaterials = async (
+  apiKey: string,
+  query: string,
+  daysBack: number,
+  order: 'viewCount' | 'date' = 'date'
+): Promise<VideoData[]> => {
+  if (!query.trim()) return [];
+  
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+
+    // 1. Search API
+    const searchRes = await fetch(`${YOUTUBE_BASE_URL}/search?part=snippet&type=video&maxResults=50&q=${encodeURIComponent(query)}&publishedAfter=${cutoffDate.toISOString()}&order=${order}&key=${apiKey}`);
+    trackUsage(apiKey, 'search', 1);
+    const searchData = await searchRes.json();
+    
+    // Safety check for empty or invalid response
+    if (!searchData.items || !Array.isArray(searchData.items) || searchData.items.length === 0) return [];
+
+    const videoIds = searchData.items.map((i: any) => i.id?.videoId).filter(Boolean).join(',');
+    if (!videoIds) return [];
+
+    // 2. Video Details
+    const videoRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,contentDetails,statistics&id=${videoIds}&key=${apiKey}`);
+    trackUsage(apiKey, 'list', 1);
+    const videoData = await videoRes.json();
+    if (!videoData.items || !Array.isArray(videoData.items)) return [];
+
+    // 3. Channel Details
+    const channelIds = Array.from(new Set(videoData.items.map((v: any) => v.snippet?.channelId).filter(Boolean))).join(',');
+    
+    let channelMap = new Map();
+    if (channelIds) {
+        try {
+            const channelRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${channelIds}&key=${apiKey}`);
+            trackUsage(apiKey, 'list', 1);
+            const channelData = await channelRes.json();
+            
+            if (channelData.items && Array.isArray(channelData.items)) {
+               channelData.items.forEach((c: any) => {
+                  const viewCount = parseInt(c.statistics?.viewCount || '0');
+                  const videoCount = Math.max(parseInt(c.statistics?.videoCount || '1'), 1);
+                  channelMap.set(c.id, {
+                     subs: formatNumber(parseInt(c.statistics?.subscriberCount || '0')),
+                     totalViews: formatNumber(viewCount),
+                     avgViews: Math.round(viewCount / videoCount),
+                     thumbnail: c.snippet?.thumbnails?.default?.url || ''
+                  });
+               });
+            }
+        } catch (e) {
+            console.warn("Channel fetch failed in materials search", e);
+            // Continue without channel details
+        }
+    }
+
+    return videoData.items.map((v: any) => {
+       if (!v.snippet) return null;
+       
+       const chId = v.snippet.channelId;
+       const ch = channelMap.get(chId) || { subs: '0', avgViews: 0, thumbnail: '' };
+       
+       const duration = v.contentDetails?.duration || 'PT0S';
+       const durationSec = parseISO8601DurationToSeconds(duration);
+       
+       const currentViews = parseInt(v.statistics?.viewCount || '0');
+       
+       const publishedAt = new Date(v.snippet.publishedAt);
+       const hoursSince = Math.max((new Date().getTime() - publishedAt.getTime()) / (3600 * 1000), 0.1);
+       const velocity = Math.round(currentViews / hoursSince);
+
+       return {
+          id: v.id,
+          title: v.snippet.title || 'No Title',
+          channelName: v.snippet.channelTitle || 'Unknown',
+          channelId: chId,
+          thumbnailUrl: v.snippet.thumbnails?.high?.url || v.snippet.thumbnails?.medium?.url || '',
+          duration: parseISO8601Duration(duration),
+          durationSec: durationSec,
+          velocity: velocity,
+          views: formatNumber(currentViews),
+          avgViews: formatNumber(ch.avgViews),
+          subscribers: ch.subs,
+          channelThumbnail: ch.thumbnail,
+          viralScore: (currentViews / Math.max(ch.avgViews, 1)).toFixed(1),
+          publishedAt: v.snippet.publishedAt,
+          uploadTime: getTimeAgo(v.snippet.publishedAt),
+          category: v.snippet.categoryId || '',
+          reachPercentage: 0,
+          tags: v.snippet.tags || []
+       } as VideoData;
+    }).filter(Boolean) as VideoData[];
+
+  } catch (e) {
+    console.error("Material search failed", e);
+    return [];
+  }
+};
