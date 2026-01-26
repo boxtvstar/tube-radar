@@ -42,6 +42,7 @@ import { PaymentResult } from './src/components/PaymentResult';
 import { ComparisonView } from './src/components/ComparisonView';
 import { VideoDetailModal } from './src/components/VideoDetailModal';
 import { ChannelRadar } from './src/components/ChannelRadar';
+import { Footer } from './src/components/Footer';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -305,7 +306,7 @@ const Sidebar = ({
   onToggleCollapse: () => void;
   isMobileMenuOpen?: boolean;
   onCloseMobileMenu?: () => void;
-  onOpenMyPage?: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support') => void;
+  onOpenMyPage?: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage') => void;
   isComparisonMode?: boolean;
   onToggleComparisonMode?: (val: boolean) => void;
   isNationalTrendMode: boolean;
@@ -371,15 +372,7 @@ const Sidebar = ({
                 <p className="text-slate-400 dark:text-slate-500 text-[9px] font-bold uppercase tracking-widest">By 디스이즈머니</p>
               </div>
             </button>
-            <button 
-              onClick={onToggleCollapse}
-              className="size-8 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-slate-400 dark:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors">
-                <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2" />
-                <path d="M9 3V21" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            </button>
+
           </>
         )}
       </div>
@@ -517,7 +510,9 @@ const Sidebar = ({
           />
         </div>
 
-        <div className={`mt-auto pb-8 ${isCollapsed ? 'px-0' : 'px-4 pt-4'}`}>
+      </nav>
+
+      <div className={`shrink-0 pb-8 border-t border-slate-200 dark:border-slate-800 ${isCollapsed ? 'px-0 pt-4' : 'px-4 pt-4'}`}>
           <button 
             onClick={() => {
               onOpenMyPage?.('usage');
@@ -542,8 +537,7 @@ const Sidebar = ({
             </div>
             {!isCollapsed && <span className="material-symbols-outlined text-slate-400 text-[16px]">chevron_right</span>}
           </button>
-        </div>
-      </nav>
+      </div>
     </aside>
     </>
   );
@@ -657,7 +651,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   notifications: AppNotification[],
   onMarkRead: (id: string) => void,
   onDeleteNotif: (id: string) => void,
-  onOpenMyPage: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support') => void,
+  onOpenMyPage: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage') => void,
   onOpenMembership: () => void,
   onMobileMenuToggle: () => void
 }) => {
@@ -923,6 +917,7 @@ export default function App() {
   const role = (user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole;
 
   const [videos, setVideos] = useState<VideoData[]>([]);
+  const [visibleVideoCount, setVisibleVideoCount] = useState(20); // Pagination: Show 20 videos initially
   const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error'; showSubscribeButton?: boolean } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -1474,6 +1469,7 @@ export default function App() {
       const data = await Promise.race([fetchPromise, timeoutPromise]);
       
       setVideos(data);
+      setVisibleVideoCount(20); // Reset pagination when new data loads
       setHasPendingSync(false); // Mark sync as complete
       setIsSyncNoticeDismissed(false);
     } catch (e: any) {
@@ -1769,20 +1765,19 @@ export default function App() {
   // Shorts Detector Features
 
 
-const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
-
+  const [detectRegion, setDetectRegion] = useState<'KR'|'US'|'JP'>('KR');
 
   const handleAutoDetectShorts = async () => {
     if (isReadOnly) return handleActionRestricted(() => {});
     if (!ytKey) return;
     setIsDetectingShorts(true);
-    const regionLabel = detectRegion === 'GLOBAL' ? '전세계' : (detectRegion === 'KR' ? '한국' : '미국');
-    setDetectorStatus(`최근 7일 ${regionLabel} 트렌드 스캔 중...`);
+    const regionLabel = detectRegion === 'KR' ? '한국' : (detectRegion === 'US' ? '미국' : '일본');
+    setDetectorStatus(`최근 실시간 ${regionLabel} 인기 급상승 Shorts 스캔 중...`);
     // Clear previous results immediately for better UX
     setShortsDetectorResults([]);
     
     try {
-      const results = await autoDetectShortsChannels(ytKey, detectRegion === 'GLOBAL' ? undefined : detectRegion);
+      const results = await autoDetectShortsChannels(ytKey, detectRegion);
       
       setShortsDetectorResults(results);
       
@@ -1813,20 +1808,11 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
 // ... inside return JSX
                    {/* Region Toggle */}
+                   {/* Region Toggle */}
                    <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5 whitespace-nowrap overflow-x-auto custom-scrollbar-none">
                      <button 
-                       onClick={() => setDetectRegion('GLOBAL')}
-                       className={`flex-1 px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all ${
-                         detectRegion === 'GLOBAL' 
-                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
-                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                       }`}
-                     >
-                       🌏 전세계
-                     </button>
-                     <button 
                        onClick={() => setDetectRegion('KR')}
-                       className={`flex-1 px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all ${
+                       className={`flex-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'KR' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -1836,13 +1822,23 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      </button>
                      <button 
                        onClick={() => setDetectRegion('US')}
-                       className={`flex-1 px-2 py-1 md:px-3 md:py-1.5 rounded-md text-[10px] md:text-xs font-bold transition-all ${
+                       className={`flex-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'US' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                        }`}
                      >
                        🇺🇸 미국
+                     </button>
+                     <button 
+                       onClick={() => setDetectRegion('JP')}
+                       className={`flex-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'JP' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🇯🇵 일본
                      </button>
                    </div>
 
@@ -2198,31 +2194,31 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
 
         usage={usage}
         isReadOnly={role === 'pending'}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
+        isCollapsed={false}
+        onToggleCollapse={() => {}}
         isMobileMenuOpen={isMobileMenuOpen}
         onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); } setIsCategoryTrendMode(val); }}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -2318,10 +2314,9 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
         {isMembershipMode ? (
           <MembershipPage />
         ) : (
-        <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar scroll-smooth">
-          
+        <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar scroll-smooth flex flex-col relative w-full h-full">
           {isPackageMode || isTopicMode ? renderRestricted(
-             <RecommendedPackageList 
+             <RecommendedPackageList
                 packages={isPackageMode ? recommendedPackages : recommendedTopics}
                 onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
                 isAdding={false} 
@@ -2346,17 +2341,8 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
 
                  <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
                    {/* Region Toggle Buttons (GLOBAL / KR / US) */}
+                   {/* Region Toggle Buttons (KR / US / JP) */}
                    <div className="flex w-full md:w-auto bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
-                     <button 
-                       onClick={() => setDetectRegion('GLOBAL')}
-                       className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                         detectRegion === 'GLOBAL' 
-                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
-                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                       }`}
-                     >
-                       🌏 전세계
-                     </button>
                      <button 
                        onClick={() => setDetectRegion('KR')}
                        className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
@@ -2377,7 +2363,18 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      >
                        🇺🇸 미국
                      </button>
-                   </div>
+                     <button 
+                       onClick={() => setDetectRegion('JP')}
+                       className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                         detectRegion === 'JP' 
+                         ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
+                         : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                       }`}
+                     >
+                       🇯🇵 일본
+                     </button>
+                   </div> 
+
 
                      <button 
                      onClick={handleAutoDetectShorts} 
@@ -2735,7 +2732,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
             </div>
 
           ) : isExplorerMode ? (
-            <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+            <div className="flex-1 flex flex-col justify-start min-h-[70vh] space-y-8 animate-in slide-in-from-right-4 duration-500">
               <div className="space-y-6">
                 <div className="space-y-2">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-emerald-500 uppercase flex items-center gap-3">
@@ -3275,8 +3272,8 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                      }}
                   />
                )}
-               <div className={isMyMode && role === 'pending' ? 'blur-sm pointer-events-none select-none opacity-40 transition-all duration-500' : ''}>
-              <div className="flex flex-col gap-3">
+               <div className={`mt-10 ${isMyMode && role === 'pending' ? 'blur-sm pointer-events-none select-none opacity-40 transition-all duration-500' : ''}`}>
+              <div className="flex flex-col gap-8">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                   <div className="flex flex-col gap-1">
                     <h2 className="text-xl md:text-2xl font-black tracking-tighter uppercase italic dark:text-white text-slate-900 flex items-center gap-3">
@@ -3339,22 +3336,47 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                         <p className="text-slate-400 dark:text-slate-600 text-xs font-black uppercase tracking-widest animate-pulse">Scanning Network for Signals...</p>
                       </div>
                     ) : videos.length > 0 ? (
-                      <div className="space-y-6">
-                        {videos
-                          .filter((video, index, self) => {
-                             // Exception: Always show "Super Viral" videos (Score >= 3.0) regardless of the limit
-                             if (parseFloat(video.viralScore) >= 3.0) return true;
-                             // Default: Limit to max 2 videos per channel
-                             return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
-                          })
-                          .map((video) => (
-                           <VideoCard 
-                              key={video.id} 
-                              video={video} 
-                              onClick={() => setDetailedVideo(video)} 
-                           />
-                        ))}
-                      </div>
+                      <>
+                        <div className="space-y-6 pb-24">
+                          {videos
+                            .filter((video, index, self) => {
+                               // Exception: Always show "Super Viral" videos (Score >= 3.0) regardless of the limit
+                               if (parseFloat(video.viralScore) >= 3.0) return true;
+                               // Default: Limit to max 2 videos per channel
+                               return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
+                            })
+                            .slice(0, visibleVideoCount)
+                            .map((video) => (
+                             <VideoCard 
+                                key={video.id} 
+                                video={video} 
+                                onClick={() => setDetailedVideo(video)} 
+                             />
+                          ))}
+                        </div>
+                        
+                        {/* Load More Button */}
+                        {videos.filter((video, index, self) => {
+                          if (parseFloat(video.viralScore) >= 3.0) return true;
+                          return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
+                        }).length > visibleVideoCount && (
+                          <div className="flex justify-center pt-8 pb-4">
+                            <button
+                              onClick={() => setVisibleVideoCount(prev => prev + 20)}
+                              className="group px-8 py-4 bg-gradient-to-r from-primary to-indigo-600 hover:from-indigo-600 hover:to-primary text-white rounded-2xl font-black text-sm uppercase tracking-wider shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 flex items-center gap-3"
+                            >
+                              <span className="material-symbols-outlined text-xl group-hover:animate-bounce">expand_more</span>
+                              <span>더보기 (20개 더 로드)</span>
+                              <span className="text-xs font-medium opacity-80">
+                                ({visibleVideoCount} / {videos.filter((video, index, self) => {
+                                  if (parseFloat(video.viralScore) >= 3.0) return true;
+                                  return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
+                                }).length})
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="py-32 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900/10 shadow-sm flex flex-col items-center gap-4">
                         <span className="material-symbols-outlined text-slate-200 dark:text-slate-800 text-6xl">analytics</span>
@@ -3367,6 +3389,7 @@ const [detectRegion, setDetectRegion] = useState<'GLOBAL'|'KR'|'US'>('GLOBAL');
                </div>
             </div>
           )}
+          <Footer />
         </div>
         )}
       </main>

@@ -214,26 +214,50 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
     return null;
   };
 
-  // Mode 1: Selection View (When < 2 channels)
-  // If we don't have enough channels, we show the picker.
   if (channels.length < 2) {
     const safeAllChannels = allChannels || [];
+    const selectionCount = tempSelectedIds.length;
     
     return (
       <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500">
-         <div className="max-w-5xl mx-auto h-full flex flex-col">
-            <div className="flex items-center justify-between mb-8">
+         <div className="w-full max-w-[1800px] mx-auto h-full flex flex-col">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 sticky top-0 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm z-20 py-4 border-b border-transparent">
                <div>
-                  <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
+                  <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
                      비교할 채널 선택 <span className="text-indigo-500">PICK</span>
                   </h1>
-                  <p className="text-slate-500 font-bold text-sm mt-2">
-                     내 리스트에서 비교할 채널을 2개 또는 3개 선택해주세요.
+                  <p className="text-slate-500 font-bold text-sm mt-1">
+                     비교할 대상을 2~3개 선택해주세요. <span className="text-indigo-500">({selectionCount}/3)</span>
                   </p>
                </div>
-               <button onClick={onClose} className="px-6 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                  닫기
-               </button>
+               
+               <div className="flex items-center gap-3">
+                  <div className="relative group min-w-[240px]">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">search</span>
+                      <input 
+                          type="text" 
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          placeholder="채널 검색..." 
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-11 pr-4 font-bold outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                      />
+                  </div>
+                  <button
+                      disabled={selectionCount < 2 || !onUpdateChannels}
+                      onClick={() => {
+                         const selected = (allChannels || []).filter(c => tempSelectedIds.includes(c.id));
+                         if (onUpdateChannels) onUpdateChannels(selected);
+                      }}
+                      className={`px-6 py-3 rounded-xl font-black flex items-center gap-2 transition-all shadow-lg ${
+                         selectionCount >= 2 
+                         ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105' 
+                         : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                      }`}
+                  >
+                      <span>분석 시작</span>
+                      <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                  </button>
+               </div>
             </div>
 
             {safeAllChannels.length === 0 ? (
@@ -242,68 +266,42 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                   <p className="font-bold">저장된 채널이 없습니다. 먼저 채널을 추가해주세요.</p>
                </div>
             ) : (
-               <>
-                <div className="relative mb-6">
-                   <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">search</span>
-                   <input 
-                      type="text" 
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="채널 검색..." 
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-4 pl-12 pr-4 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                   />
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto min-h-0 p-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 overflow-y-auto min-h-0 p-2 pb-20">
                    {filteredChannels.map(ch => {
                       const isSelected = tempSelectedIds.includes(ch.id);
                       return (
                          <button 
                             key={ch.id} 
                             onClick={() => toggleSelection(ch.id)}
-                            className={`relative group flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all ${
+                            className={`relative group flex flex-col items-center gap-3 p-4 rounded-3xl border transition-all duration-300 ${
                                isSelected 
-                               ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 ring-2 ring-indigo-500/20' 
-                               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'
+                               ? 'bg-white dark:bg-slate-900 border-indigo-500 ring-2 ring-indigo-500 shadow-xl scale-[1.02] z-10' 
+                               : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md'
                             }`}
                          >
                             <div className="relative">
-                               <img src={ch.thumbnail} alt="" className={`size-16 rounded-full object-cover border transition-all ${isSelected ? 'border-indigo-500 scale-110' : 'border-slate-200 dark:border-slate-700 group-hover:scale-105'}`} />
+                               <img src={ch.thumbnail} alt="" className={`size-16 rounded-full object-cover border-2 transition-all ${isSelected ? 'border-indigo-500' : 'border-slate-100 dark:border-slate-800'}`} />
                                {isSelected && (
-                                  <div className="absolute -top-1 -right-1 size-6 bg-indigo-500 rounded-full flex items-center justify-center text-white ring-2 ring-white dark:ring-slate-900">
-                                     <span className="material-symbols-outlined text-sm font-black">check</span>
+                                  <div className="absolute -top-1 -right-1 size-7 bg-indigo-500 rounded-full flex items-center justify-center text-white ring-2 ring-white dark:ring-slate-900 animate-in zoom-in">
+                                     <span className="material-symbols-outlined text-base font-black">check</span>
                                   </div>
                                )}
                             </div>
                             <div className="text-center w-full">
-                               <p className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>{ch.title}</p>
-                               <p className="text-[10px] text-slate-400 uppercase font-black mt-0.5">
-                                  {ch.groupId === 'unassigned' ? '미분류' : '구독중'}
-                               </p>
+                               <p className={`font-bold text-sm truncate px-2 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-900 dark:text-slate-200'}`}>{ch.title}</p>
+                               <div className="flex flex-col gap-0.5 mt-1.5">
+                                  <span className="text-[10px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full mx-auto">
+                                     구독자 {ch.subscriberCount}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                     영상 {ch.videoCount}개
+                                  </span>
+                               </div>
                             </div>
                          </button>
                       );
                    })}
                 </div>
-
-                <div className="mt-8 flex justify-end">
-                   <button
-                      disabled={tempSelectedIds.length < 2 || !onUpdateChannels}
-                      onClick={() => {
-                         const selected = (allChannels || []).filter(c => tempSelectedIds.includes(c.id));
-                         if (onUpdateChannels) onUpdateChannels(selected);
-                      }}
-                      className={`px-8 py-4 rounded-2xl font-black text-lg flex items-center gap-2 transition-all ${
-                         tempSelectedIds.length >= 2 
-                         ? 'bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 hover:scale-105' 
-                         : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                      }`}
-                   >
-                      <span>비교 분석 시작하기</span>
-                      <span className="material-symbols-outlined">arrow_forward</span>
-                   </button>
-                </div>
-               </>
             )}
          </div>
       </div>
@@ -314,188 +312,203 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
     <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500 relative">
 
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-10 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto mb-8 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="bg-indigo-600 p-3 rounded-2xl shadow-lg shadow-indigo-600/20">
             <span className="material-symbols-outlined text-white text-2xl">compare_arrows</span>
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
+            <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
               채널 비교 분석 <span className="text-indigo-500">VS</span>
               {loading && <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse">데이터 최신화 중...</span>}
             </h1>
             <p className="text-slate-500 font-bold text-sm mt-1">
-              선택한 {channels.length}개 채널의 퍼포먼스를 1:1로 비교합니다.
+              선택한 {channels.length}개 채널의 핵심 지표 1:1 비교
             </p>
           </div>
         </div>
+        
+        {/* 다시 선택 버튼 */}
         <button 
-          onClick={onClose}
-          className="px-6 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+           onClick={() => {
+              // Reset selection and keep logic
+              if (onUpdateChannels) onUpdateChannels([]);
+              setTempSelectedIds([]); // Reset local selection too
+           }}
+           className="px-5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-600 dark:text-slate-400"
         >
-          닫기
+           <span className="material-symbols-outlined">restart_alt</span>
+           <span>다시 선택</span>
         </button>
       </div>
 
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-8 pb-20">
         
-        {/* Round 1: Head-to-Head Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {displayChannels.map((ch, idx) => {
-            const stats = chartData[idx];
-            const isSubKing = stats.subscribers === maxSubs && maxSubs > 0;
-            const isViewKing = stats.avgViews === maxViews && maxViews > 0;
-
-            return (
-              <div key={ch.id} className="relative bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
-                {/* Background Decor */}
-                <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-${['indigo','pink','emerald'][idx % 3]}-500/10 to-transparent rounded-bl-full pointer-events-none`}></div>
-                
-                <div className="flex items-center gap-4 mb-6 relative z-10">
-                  <img src={ch.thumbnail} alt={ch.title} className="size-16 rounded-full border-4 border-slate-100 dark:border-slate-800 shadow-sm" />
-                  <div className="min-w-0">
-                    <h3 className="font-black text-lg truncate pr-2 text-slate-900 dark:text-white">{ch.title}</h3>
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                      <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">
-                        Player {idx + 1}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 relative z-10">
-                  <div className={`p-4 rounded-2xl border ${isSubKing ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700/30' : 'bg-slate-50 dark:bg-slate-800 border-transparent'}`}>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] uppercase font-black text-slate-400">구독자 수</span>
-                      {isSubKing && <span className="text-lg">👑</span>}
-                    </div>
-                    <div className={`text-2xl font-black ${isSubKing ? 'text-amber-500' : 'text-slate-700 dark:text-slate-300'} tabular-nums`}>
-                      {formatNumber(stats.subscribers)}
-                    </div>
-                  </div>
-
-                  <div className={`p-4 rounded-2xl border ${isViewKing ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-700/30' : 'bg-slate-50 dark:bg-slate-800 border-transparent'}`}>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] uppercase font-black text-slate-400">평균 조회수 (최근 5개)</span>
-                      {isViewKing && <span className="material-symbols-outlined text-indigo-500 text-lg">trending_up</span>}
-                    </div>
-                    <div className={`text-2xl font-black ${isViewKing ? 'text-indigo-500' : 'text-slate-700 dark:text-slate-300'} tabular-nums`}>
-                      {formatNumber(stats.avgViews)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Round 2: Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Performance Chart */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <span className="material-symbols-outlined text-slate-400">bar_chart</span>
-              최근 퍼포먼스 비교
-            </h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" opacity={0.3} />
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={80} tick={{fontSize: 12, fontWeight: 'bold', fill:'#94a3b8'}} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomViewTooltip />} cursor={{fill: 'transparent'}} />
-                  <Bar dataKey="avgViews" radius={[0, 10, 10, 0]} barSize={40}>
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-xs text-center text-slate-400 mt-4 font-bold">최근 업로드 영상 5개의 평균 조회수</p>
-          </div>
-
-          {/* Viral Score Chart */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <span className="material-symbols-outlined text-slate-400">bolt</span>
-              바이럴 지수 (조회수/구독자)
-            </h3>
-             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.3} />
-                  <XAxis dataKey="name" tick={{fontSize: 11, fontWeight: 'bold', fill:'#94a3b8'}} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip content={<CustomViralTooltip />} cursor={{fill: '#f1f5f9', radius: 8}} />
-                  <Bar dataKey="viralScore" radius={[8, 8, 8, 8]} barSize={50}>
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-xs text-center text-slate-400 mt-4 font-bold">구독자 수 대비 조회수 비율 (%)</p>
-          </div>
-        </div>
-
-        {/* Round 3: Top Video Battle */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl relative overflow-hidden">
+        {/* Section 1: Compact Comparison Table */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
              
+           {/* Table Header (Profiles + Basic Stats) */}
+           <div className="grid grid-cols-[100px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="p-3 flex items-center justify-center font-bold text-slate-400 text-xs uppercase tracking-tighter">Metric</div>
+              {displayChannels.map((ch, idx) => (
+                  <div key={ch.id} className="p-4 flex flex-col items-center gap-2 relative group">
+                      {idx === 0 && <div className="absolute top-0 w-full h-0.5 bg-indigo-500"></div>}
+                      {idx === 1 && <div className="absolute top-0 w-full h-0.5 bg-pink-500"></div>}
+                      {idx === 2 && <div className="absolute top-0 w-full h-0.5 bg-emerald-500"></div>}
+                      
+                      <img src={ch.thumbnail} alt="" className="size-12 rounded-full border-2 border-white dark:border-slate-700 shadow-sm group-hover:scale-105 transition-transform" />
+                      <div className="text-center w-full">
+                          <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate px-1">{ch.title}</h3>
+                          <div className="flex flex-col items-center justify-center gap-0.5 mt-1">
+                             <span className="text-[10px] text-slate-500 font-medium bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                구독자 {ch.subscriberCount}
+                             </span>
+                             <span className="text-[10px] text-slate-400">
+                                영상 {ch.videoCount}개
+                             </span>
+                          </div>
+                      </div>
+                  </div>
+              ))}
+              {Array.from({ length: 3 - displayChannels.length }).map((_, i) => (
+                 <div key={i} className="hidden md:block bg-slate-50/30 dark:bg-slate-800/30"></div>
+              ))}
+           </div>
+
+           {/* Metrics Rows */}
+           {[
+             { label: "구독자", key: "subscribers", format: true, icon: "group" }, // Renamed logic only, key matches
+             { label: "평균 조회수", key: "avgViews", format: true, icon: "analytics" },
+             { label: "바이럴 지수", key: "viralScore", format: false, suffix: "x", icon: "bolt" },
+           ].map((metric) => {
+              const values = chartData.map(d => d[metric.key as keyof typeof d] as number);
+              const maxVal = Math.max(...values);
+              
+              return (
+                <div key={metric.key} className="grid grid-cols-[100px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors last:border-0">
+                   <div className="p-3 md:p-4 flex items-center justify-center md:justify-start gap-2 text-slate-500 font-bold text-xs">
+                      <span className="material-symbols-outlined text-base opacity-50 hidden md:block">{metric.icon}</span>
+                      <span className="text-center md:text-left">{metric.label}</span>
+                   </div>
+                   {displayChannels.map((_, idx) => {
+                      const val = chartData[idx][metric.key as keyof typeof chartData[0]] as number;
+                      const isWinner = val === maxVal && val > 0;
+                      
+                      return (
+                         <div key={idx} className={`p-3 md:p-4 flex items-center justify-center relative ${isWinner ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}>
+                            <span className={`text-sm md:text-base font-bold ${isWinner ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400'} tabular-nums`}>
+                               {metric.format ? formatNumber(val) : val}
+                               {metric.suffix && <span className="text-xs text-slate-400 ml-0.5 font-normal">{metric.suffix}</span>}
+                            </span>
+                            {isWinner && (
+                               <div className="absolute top-1 right-1 md:top-3 md:right-3 opacity-80">
+                                  <span className="text-sm">👑</span>
+                               </div>
+                            )}
+                         </div>
+                      );
+                   })}
+                   {Array.from({ length: 3 - displayChannels.length }).map((_, i) => <div key={i} className="hidden md:block"></div>)}
+                </div>
+              );
+           })}
+        </div>
+
+        {/* Section 2: Charts (Merged) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+             <div className="mb-6 flex items-center gap-3">
+               <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600">
+                  <span className="material-symbols-outlined">bar_chart</span>
+               </div>
+               <h3 className="text-lg font-black text-slate-900 dark:text-white">평균 조회수 비교</h3>
+             </div>
+             <div className="h-64">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barSize={40}>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
+                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 'bold', fill:'#94a3b8'}} dy={10} />
+                   <Tooltip content={<CustomViewTooltip />} cursor={{fill: '#f1f5f9', radius: 12}} />
+                   <Bar dataKey="avgViews" radius={[8, 8, 8, 8]}>
+                     {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+             </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+             <div className="mb-6 flex items-center gap-3">
+               <div className="p-2 bg-pink-100 dark:bg-pink-900/30 rounded-xl text-pink-500">
+                  <span className="material-symbols-outlined">bolt</span>
+               </div>
+               <h3 className="text-lg font-black text-slate-900 dark:text-white">바이럴(전파력) 점수</h3>
+             </div>
+             <div className="h-64">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barSize={40}>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
+                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 'bold', fill:'#94a3b8'}} dy={10} />
+                   <Tooltip content={<CustomViralTooltip />} cursor={{fill: '#f1f5f9', radius: 12}} />
+                   <Bar dataKey="viralScore" radius={[8, 8, 8, 8]}>
+                     {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />)}
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+             </div>
+          </div>
+        </div>
+
+        {/* Section 3: Top Video Battle */}
+        <div className="bg-slate-900 dark:bg-black rounded-[2.5rem] p-8 md:p-10 text-white shadow-2xl relative overflow-hidden border border-slate-800">
            {/* Decor */}
-           <div className="absolute top-0 right-0 p-10 opacity-10">
+           <div className="absolute top-0 right-0 p-10 opacity-5">
               <span className="material-symbols-outlined text-9xl">emoji_events</span>
            </div>
 
-           <h3 className="text-2xl font-black mb-10 relative z-10 flex items-center gap-3">
+           <h3 className="text-xl font-black mb-8 relative z-10 flex items-center gap-3">
              <span className="bg-white/10 p-2 rounded-lg">🔥</span> 
-             최고 조회수 영상 배틀
+             최고 조회수 영상 (Best Video)
            </h3>
 
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
              {displayChannels.map((ch, idx) => {
-               const topVideo = ch.topVideos?.[0]; // Assuming sorted by views or we assume first is representative
+               const topVideo = ch.topVideos?.[0];
                
                if (!topVideo) return (
-                 <div key={ch.id} className="bg-white/5 rounded-2xl h-full min-h-[200px] flex flex-col items-center justify-center text-white/30 font-bold gap-2">
+                 <div key={ch.id} className="bg-white/5 rounded-3xl h-full min-h-[240px] flex flex-col items-center justify-center text-white/30 font-bold gap-2">
                     <span className="material-symbols-outlined text-4xl">videocam_off</span>
                     <span>No Data</span>
                  </div>
                );
                
                const videoUrl = `https://www.youtube.com/watch?v=${topVideo.id}`;
-               const channelUrl = `https://www.youtube.com/channel/${ch.id}`;
 
                return (
-                 <div key={ch.id} className="group flex flex-col h-full bg-slate-800/50 p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all">
-                    {/* Thumbnail Link */}
-                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="block relative aspect-video rounded-xl overflow-hidden mb-4 shadow-lg ring-1 ring-white/10 group-hover:scale-105 transition-transform duration-300">
-                      <img src={topVideo.thumbnail} alt={topVideo.title} className="w-full h-full object-cover" />
-                      <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[10px] font-bold">
-                        {topVideo.duration || 'Shorts'}
-                      </div>
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <span className="material-symbols-outlined text-white text-4xl drop-shadow-lg scale-75 group-hover:scale-100 transition-transform">play_circle</span>
+                 <div key={ch.id} className="group flex flex-col h-full bg-slate-800/50 hover:bg-slate-800 p-4 rounded-3xl border border-white/5 hover:border-indigo-500/30 transition-all duration-300">
+                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="block relative aspect-video rounded-2xl overflow-hidden mb-4 shadow-lg ring-1 ring-white/10 group-hover:ring-indigo-500/50">
+                      <img src={topVideo.thumbnail} alt={topVideo.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <div className="size-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center group-hover:scale-110 transition-transform">
+                             <span className="material-symbols-outlined text-white text-3xl drop-shadow-lg pl-1">play_arrow</span>
+                        </div>
                       </div>
                     </a>
                     
-                    {/* Title Link */}
-                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="block mb-2 grow group/title">
-                      <h4 className="font-bold text-sm line-clamp-2 leading-relaxed text-slate-200 group-hover/title:text-white transition-colors">
+                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="block mb-3 grow">
+                      <h4 className="font-bold text-sm line-clamp-2 leading-relaxed text-slate-200 group-hover:text-white transition-colors">
                         {topVideo.title}
                       </h4>
                     </a>
 
-                    {/* Stats & Channel Link */}
-                    <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between gap-2">
-                       <a href={channelUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-indigo-400 transition-colors min-w-0">
-                         <img src={ch.thumbnail} className="size-5 rounded-full border border-white/10" alt="" />
-                         <span className="truncate">{ch.title}</span>
-                       </a>
-                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 shrink-0 border border-emerald-500/20 tabular-nums">
+                    <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-3">
+                       <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <img src={ch.thumbnail} className="size-6 rounded-full border border-white/10 shrink-0" alt="" />
+                          <span className="text-xs font-bold text-slate-400 truncate">{ch.title}</span>
+                       </div>
+                       <div className="text-xs font-black text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-lg shrink-0">
                          {((topVideo as any).viewCountRaw ? (topVideo as any).viewCountRaw.toLocaleString() : parseCount(topVideo.views).toLocaleString())}회
-                       </span>
+                       </div>
                     </div>
                  </div>
                );
