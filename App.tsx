@@ -1476,12 +1476,12 @@ export default function App() {
   }, [isMyMode, activeGroupId]);
 
   useEffect(() => {
-    // Auto-load only for National/Category Trend modes
-    // My Mode requires manual refresh to prevent unnecessary API calls
-    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode && !isMyMode) {
+    // Auto-load for all modes
+    // Always fetch 30 days of data, timeRange filtering happens client-side
+    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode) {
       loadVideos();
     }
-  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
+  }, [ytKey, region, selectedCategory, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
 
   const handleOpenAutoDetectDetail = (result: AutoDetectResult) => {
     // Convert AutoDetectResult to VideoData for the modal
@@ -1605,7 +1605,7 @@ export default function App() {
           ytKey,
           query,
           region,
-          timeRange,
+          30, // Always fetch max 30 days, filter client-side with timeRange
           targetChannelIds,
           targetCategoryId,
           force,
@@ -3341,7 +3341,7 @@ export default function App() {
                   <div className="space-y-2">
                     <h2 className="text-2xl font-black italic tracking-tighter text-slate-900 dark:text-white uppercase flex items-center gap-3">
                       <span className="material-symbols-outlined text-accent-hot">hub</span>
-                      모니터링 허브
+                      내 모니터링 리스트
                     </h2>
                     <p className="text-slate-500 text-[11px] font-medium leading-relaxed">
                       모니터링할 유튜브 채널을 추가하세요. <br />
@@ -3776,6 +3776,13 @@ export default function App() {
                       <>
                         <div className="space-y-6 pb-24">
                           {videos
+                            .filter((video) => {
+                              // Filter by timeRange (published within selected days)
+                              const publishedDate = new Date(video.publishedAt || video.uploadTime);
+                              const now = new Date();
+                              const daysDiff = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
+                              return daysDiff <= timeRange;
+                            })
                             .filter((video, index, self) => {
                                // Exception: Always show "Super Viral" videos (Score >= 3.0) regardless of the limit
                                if (parseFloat(video.viralScore) >= 3.0) return true;
@@ -3793,7 +3800,12 @@ export default function App() {
                         </div>
                         
                         {/* Load More Button */}
-                        {videos.filter((video, index, self) => {
+                        {videos.filter((video) => {
+                          const publishedDate = new Date(video.publishedAt || video.uploadTime);
+                          const now = new Date();
+                          const daysDiff = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
+                          return daysDiff <= timeRange;
+                        }).filter((video, index, self) => {
                           if (parseFloat(video.viralScore) >= 3.0) return true;
                           return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
                         }).length > visibleVideoCount && (
@@ -3805,7 +3817,12 @@ export default function App() {
                               <span className="material-symbols-outlined text-xl group-hover:animate-bounce">expand_more</span>
                               <span>더보기 (20개 더 로드)</span>
                               <span className="text-xs font-medium opacity-80">
-                                ({visibleVideoCount} / {videos.filter((video, index, self) => {
+                                ({visibleVideoCount} / {videos.filter((video) => {
+                                  const publishedDate = new Date(video.publishedAt || video.uploadTime);
+                                  const now = new Date();
+                                  const daysDiff = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
+                                  return daysDiff <= timeRange;
+                                }).filter((video, index, self) => {
                                   if (parseFloat(video.viralScore) >= 3.0) return true;
                                   return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
                                 }).length})

@@ -313,15 +313,15 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   }
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-3 md:p-8 animate-in slide-in-from-bottom-4 duration-500 flex flex-col">
-
+    <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-6 md:p-10 flex flex-col">
+       <div className="w-full max-w-[1800px] mx-auto h-full flex flex-col">
 
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-6 md:mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
         <div className="space-y-2 flex-1">
           <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
             <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
-            채널 비교 분석 <span className="text-indigo-500">VS</span>
+            채널 비교 분석 <span className="text-indigo-500">PICK</span>
             {loading && <span className="text-[10px] md:text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse normal-case not-italic font-bold tracking-normal">최신화 중...</span>}
           </h2>
           <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
@@ -337,14 +337,14 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
               if (onUpdateChannels) onUpdateChannels([]);
               setTempSelectedIds([]); // Reset local selection too
            }}
-           className="px-4 md:px-5 py-2 md:py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 text-sm md:text-base shrink-0"
+           className="px-4 md:px-5 py-2 md:py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 text-sm md:text-base shrink-0 mt-1"
         >
            <span className="material-symbols-outlined text-lg md:text-xl">restart_alt</span>
            <span>다시 선택</span>
         </button>
       </div>
 
-      <div className="max-w-7xl mx-auto space-y-6 md:space-y-8 pb-20">
+      <div className="space-y-6 md:space-y-8 pb-20">
         
         {/* Section 1: Compact Comparison Table */}
         <div className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
@@ -518,6 +518,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
            </div>
         </div>
 
+      </div>
       </div>
       <Footer />
     </div>
