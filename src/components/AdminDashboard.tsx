@@ -1307,26 +1307,6 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                 </div>
               </>
             )}
-            
-            {/* Packages/Topics Tab Controls - Show ONLY here */}
-            {((activeTab === 'packages' || activeTab === 'topics')) && (
-               <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full">
-                 <div className="flex-1">
-                    <button 
-                      onClick={() => { resetPkgForm(); setIsPackageModalOpen(true); }}
-                      className="flex items-center justify-center gap-2 bg-primary text-white px-6 py-3 md:py-2 rounded-xl text-sm md:text-sm font-black uppercase hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 w-full"
-                    >
-                        <span className="material-symbols-outlined text-base md:text-lg">add_box</span>
-                        <span>{activeTab === 'packages' ? '새 추천 팩 만들기' : '새 추천 소재 만들기'}</span>
-                    </button>
-                    {!adminYtKey && (
-                      <p className="text-[10px] text-rose-500 font-bold mt-1 text-center animate-pulse">
-                        ※ API Key가 감지되지 않았습니다. 메인 설정에서 키를 등록해주세요.
-                      </p>
-                    )}
-                 </div>
-              </div>
-            )}
            </div>
         </div>
         
@@ -1875,7 +1855,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
           ) : (
             <div className="flex flex-col gap-6">
                 {/* Package Filters */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2">
+                   <div className="flex items-center gap-2">
                    {['all', 'approved', 'pending'].map(f => (
                      <button 
                        key={f}
@@ -1894,6 +1875,16 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                        </span>
                      </button>
                    ))}
+                   </div>
+                   
+                   {/* Create Button */}
+                   <button 
+                     onClick={() => { resetPkgForm(); setIsPackageModalOpen(true); }}
+                     className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-md"
+                   >
+                     <span className="material-symbols-outlined text-sm">add</span>
+                     <span>{activeTab === 'packages' ? '새 추천 팩' : '새 추천 소재'}</span>
+                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

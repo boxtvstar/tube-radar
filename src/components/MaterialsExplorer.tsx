@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Footer } from './Footer';
 import { VideoDetailModal } from './VideoDetailModal';
 import { searchVideosForMaterials } from '../../services/youtubeService';
 import { VideoData, ChannelGroup } from '../../types';
@@ -7,7 +6,7 @@ import { VideoData, ChannelGroup } from '../../types';
 interface MaterialsExplorerProps {
   apiKey: string;
   groups: ChannelGroup[];
-  onSave: (videos: VideoData[], groupId: string) => Promise<void>;
+  onSave: (videos: VideoData[], groupId: string, newGroupName?: string) => Promise<void>;
   onClose: () => void;
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
 }
@@ -66,13 +65,10 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
   // Modals
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [targetGroupId, setTargetGroupId] = useState<string>('');
-  const [isCreatingGroup, setIsCreatingGroup] = useState(false); // If we want to support creation inline, but user requirements imply selection.
-  // Actually requirement says: "New Group Creation" OR "Existing Group Selection".
-  // Assuming App passed simple group list, we might need a callback to create group?
-  // For simplicity, let's stick to existing groups first or just text input for new group if API supports it.
-  // The prop onSave takes groupId. If we want new group, we need standard way.
-  // Let's assume user selects existing or we might handle 'new' string differently?
-  // Let's use existing groups for now as per `groups` prop.
+  const [isCreatingNewGroup, setIsCreatingNewGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // --- Effects ---
   useEffect(() => {
@@ -165,10 +161,10 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
   // --- Render ---
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-black text-slate-900 dark:text-white relative overflow-y-auto">
-      
+    <div className="bg-slate-50 dark:bg-black text-slate-900 dark:text-white p-6 md:p-10 space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
+
       {/* (A) Top Area - Search */}
-      <div className="p-6 md:p-10">
+      <div>
         <div className="max-w-7xl mx-auto space-y-6">
             <div className="space-y-2">
               <h1 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
@@ -273,7 +269,7 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
       </div>
 
       {/* (C) Main List */}
-      <div className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
+      <div className="max-w-7xl mx-auto w-full">
          <div className="flex items-center justify-between mb-4">
              <h2 className="text-sm font-bold text-slate-500">
                 검색 결과 <span className="text-slate-900 dark:text-white ml-1">{filteredVideos.length}개</span>
@@ -352,8 +348,6 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
          )}
       </div>
 
-      <Footer />
-
       {/* (5) Bottom Action Bar */}
       {selectedCount > 0 && (
          <div className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-4 shadow-[0_-5px_30px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom-full">
@@ -372,33 +366,126 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
 
       {/* Group Selection Modal */}
       {isSaveModalOpen && (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95">
-               <h3 className="text-lg font-black text-slate-900 dark:text-white mb-4">저장할 그룹 선택</h3>
-               <div className="space-y-2 max-h-[300px] overflow-y-auto mb-6 custom-scrollbar">
-                  {groups.map(g => (
-                     <button 
-                        key={g.id}
-                        onClick={() => setTargetGroupId(g.id)}
-                        className={`w-full p-4 rounded-xl border flex items-center justify-between ${targetGroupId === g.id ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                     >
-                        <span className="font-bold text-sm text-slate-700 dark:text-slate-300">{g.name}</span>
-                        {targetGroupId === g.id && <span className="material-symbols-outlined text-indigo-600">check_circle</span>}
-                     </button>
-                  ))}
+         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+               {/* Header */}
+               <div className="p-6 md:p-8 pb-6 border-b border-slate-100 dark:border-slate-800">
+                  <h3 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white">내 채널 리스트에 담기</h3>
+                  <p className="text-slate-500 text-sm mt-2">영상 채널을 그룹에 저장하세요</p>
                </div>
-               <div className="flex justify-end gap-3">
-                  <button onClick={() => setIsSaveModalOpen(false)} className="px-5 py-2.5 text-slate-500 font-bold hover:text-slate-700">취소</button>
+
+               {/* Content */}
+               <div className="p-6 md:p-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                  {/* Tab Toggle */}
+                  <div className="flex gap-2 mb-6 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                     <button
+                        onClick={() => {
+                           setIsCreatingNewGroup(false);
+                           setNewGroupName('');
+                        }}
+                        className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-all ${
+                           !isCreatingNewGroup
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                     >
+                        기존 그룹 선택
+                     </button>
+                     <button
+                        onClick={() => {
+                           setIsCreatingNewGroup(true);
+                           setTargetGroupId('');
+                        }}
+                        className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-sm transition-all ${
+                           isCreatingNewGroup
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                     >
+                        새 그룹 생성
+                     </button>
+                  </div>
+
+                  {!isCreatingNewGroup ? (
+                     // Existing Groups
+                     <div className="space-y-2">
+                        {groups.map(g => (
+                           <button 
+                              key={g.id}
+                              onClick={() => setTargetGroupId(g.id)}
+                              className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-all ${
+                                 targetGroupId === g.id 
+                                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 shadow-sm' 
+                                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                              }`}
+                           >
+                              <span className="font-bold text-sm text-slate-900 dark:text-white">{g.name}</span>
+                              {targetGroupId === g.id && (
+                                 <span className="material-symbols-outlined text-indigo-600 dark:text-indigo-400">check_circle</span>
+                              )}
+                           </button>
+                        ))}
+                        {groups.length === 0 && (
+                           <div className="text-center py-8 text-slate-400">
+                              <span className="material-symbols-outlined text-4xl mb-2 opacity-50">folder_off</span>
+                              <p className="text-sm">생성된 그룹이 없습니다</p>
+                           </div>
+                        )}
+                     </div>
+                  ) : (
+                     // New Group Input
+                     <div>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                           새 그룹 이름
+                        </label>
+                        <input
+                           type="text"
+                           value={newGroupName}
+                           onChange={(e) => setNewGroupName(e.target.value)}
+                           placeholder="예: 요리 채널, 게임 채널"
+                           className="w-full px-4 py-3.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium placeholder:text-slate-400 outline-none focus:border-indigo-500 dark:focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                           autoFocus
+                        />
+                     </div>
+                  )}
+               </div>
+
+               {/* Footer */}
+               <div className="p-6 md:p-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-900/50">
                   <button 
-                     disabled={!targetGroupId}
+                     onClick={() => {
+                        setIsSaveModalOpen(false);
+                        setIsCreatingNewGroup(false);
+                        setNewGroupName('');
+                        setTargetGroupId('');
+                     }} 
+                     className="px-6 py-2.5 text-slate-600 dark:text-slate-400 font-bold hover:text-slate-900 dark:hover:text-white transition-colors rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                     취소
+                  </button>
+                  <button 
+                     disabled={!isCreatingNewGroup && !targetGroupId || isCreatingNewGroup && !newGroupName.trim()}
                      onClick={async () => {
                         const selectedVideos = filteredVideos.filter(v => selectedIds.has(v.id));
-                        await onSave(selectedVideos, targetGroupId);
+                        
+                        if (isCreatingNewGroup) {
+                           const newGroupId = `new_${Date.now()}`;
+                           await onSave(selectedVideos, newGroupId, newGroupName);
+                           setSuccessMessage(`"${newGroupName}" 그룹에 ${selectedVideos.length}개의 영상을 저장했습니다.`);
+                        } else {
+                           await onSave(selectedVideos, targetGroupId);
+                           const groupName = groups.find(g => g.id === targetGroupId)?.name;
+                           setSuccessMessage(`"${groupName}" 그룹에 ${selectedVideos.length}개의 영상을 저장했습니다.`);
+                        }
+                        
                         setIsSaveModalOpen(false);
-                        setSelectedIds(new Set()); // Reset after save
-                        alert(`${selectedVideos.length}개의 영상을 저장했습니다.`);
+                        setShowSuccessModal(true);
+                        setIsCreatingNewGroup(false);
+                        setNewGroupName('');
+                        setTargetGroupId('');
+                        setSelectedIds(new Set());
                      }}
-                     className="px-6 py-2.5 bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors"
+                     className="px-7 py-2.5 bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 disabled:hover:bg-indigo-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:-translate-y-0.5"
                   >
                      저장하기
                   </button>
@@ -406,6 +493,37 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
             </div>
          </div>
       )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+            <div className="p-8 md:p-10 flex flex-col items-center text-center">
+              {/* Success Icon */}
+              <div className="size-16 md:size-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                <span className="material-symbols-outlined text-4xl md:text-5xl text-emerald-500 animate-bounce">check_circle</span>
+              </div>
+              
+              {/* Title */}
+              <h3 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white mb-3">저장 완료!</h3>
+              
+              {/* Message */}
+              <p className="text-slate-600 dark:text-slate-400 font-medium leading-relaxed mb-8">
+                {successMessage}
+              </p>
+              
+              {/* Button */}
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:-translate-y-0.5"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Video Detail Modal */}
       {detailedVideo && (
@@ -416,7 +534,6 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
           onAddChannel={onAddChannel}
         />
       )}
-
     </div>
   );
 };

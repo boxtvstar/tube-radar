@@ -4,13 +4,27 @@ import { VideoData, AnalysisResponse } from "../types";
 
 // 로컬 캐시 키 정의
 const CACHE_KEY_PREFIX = "viral_analysis_cache_";
+const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7일
 
 export const analyzeVideoVirality = async (video: VideoData, apiKey: string): Promise<AnalysisResponse> => {
   // 1. 캐시 확인 (API 사용 최소화)
   const cachedData = localStorage.getItem(CACHE_KEY_PREFIX + video.id);
   if (cachedData) {
-    console.log("캐시된 분석 결과를 반환합니다.");
-    return JSON.parse(cachedData);
+    try {
+      const parsed = JSON.parse(cachedData);
+      const cacheAge = Date.now() - (parsed.timestamp || 0);
+      
+      // 7일 이내 캐시만 사용
+      if (cacheAge < CACHE_DURATION) {
+        console.log("캐시된 분석 결과를 반환합니다.");
+        return parsed.data;
+      } else {
+        console.log("캐시가 만료되어 새로 분석합니다.");
+        localStorage.removeItem(CACHE_KEY_PREFIX + video.id);
+      }
+    } catch (e) {
+      localStorage.removeItem(CACHE_KEY_PREFIX + video.id);
+    }
   }
 
   // 2. 새로운 인스턴스 생성
@@ -50,7 +64,10 @@ export const analyzeVideoVirality = async (video: VideoData, apiKey: string): Pr
     const result = JSON.parse(response.text || '{}') as AnalysisResponse;
     
     // 3. 결과 캐싱 (다음 호출 방지)
-    localStorage.setItem(CACHE_KEY_PREFIX + video.id, JSON.stringify(result));
+    localStorage.setItem(CACHE_KEY_PREFIX + video.id, JSON.stringify({
+      data: result,
+      timestamp: Date.now()
+    }));
     
     return result;
   } catch (error: any) {

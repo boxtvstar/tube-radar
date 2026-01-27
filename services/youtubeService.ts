@@ -3,7 +3,7 @@ import { VideoData, SavedChannel } from "../types";
 import { trackUsage, checkQuotaAvailable, getRemainingQuota, markQuotaExceeded } from "./usageService";
 
 const YOUTUBE_BASE_URL = "https://www.googleapis.com/youtube/v3";
-const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4시간 캐시
+const CACHE_DURATION = 6 * 60 * 60 * 1000; // 6시간 캐시
 const MAX_RESULTS_PER_UNIT = 50;
 const MATURITY_HOURS = 720; // 영상이 평균 성과에 도달하는 성숙 기간 (30일)
 
@@ -13,6 +13,43 @@ const CATEGORY_NAMES: Record<string, string> = {
   '18': '단편영화', '19': '여행', '20': '게임', '22': '브이로그/인물', '23': '코미디',
   '24': '엔터테인먼트', '25': '뉴스/정치', '26': '노하우/스타일', '27': '교육',
   '28': '과학/기술', '29': '비영리/사회'
+};
+
+// 오래된 캐시 자동 정리 (7일 이상)
+export const cleanupOldCaches = () => {
+  try {
+    const MAX_CACHE_AGE = 7 * 24 * 60 * 60 * 1000; // 7일
+    const now = Date.now();
+    let removedCount = 0;
+    
+    // YouTube 캐시 정리
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('yt_v7_cache') || key.startsWith('yt_shorts_autodetect') || key.startsWith('viral_analysis_cache_')) {
+        try {
+          const cached = localStorage.getItem(key);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            const cacheAge = now - (parsed.timestamp || 0);
+            
+            if (cacheAge > MAX_CACHE_AGE) {
+              localStorage.removeItem(key);
+              removedCount++;
+            }
+          }
+        } catch (e) {
+          // 파싱 오류가 있는 캐시는 삭제
+          localStorage.removeItem(key);
+          removedCount++;
+        }
+      }
+    });
+    
+    if (removedCount > 0) {
+      console.log(`✅ 오래된 캐시 ${removedCount}개 정리 완료`);
+    }
+  } catch (error) {
+    console.error('캐시 정리 중 오류:', error);
+  }
 };
 
 const extractIdentifier = (input: string) => {

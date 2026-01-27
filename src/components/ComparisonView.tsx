@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
 import { SavedChannel } from '../../types';
-import { Footer } from './Footer';
 
 const formatNumber = (num: number) => {
   if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
@@ -218,11 +217,12 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   if (channels.length < 2) {
     const safeAllChannels = allChannels || [];
     const selectionCount = tempSelectedIds.length;
-    
+
     return (
-      <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500 flex flex-col">
-         <div className="w-full max-w-[1800px] mx-auto h-full flex flex-col">
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 sticky top-0 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm z-10 py-4 border-b border-transparent">
+      <div className="bg-slate-50 dark:bg-black p-6 md:p-10 space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
+         <div className="w-full max-w-[1800px] mx-auto space-y-6">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 py-4 border-b border-slate-200 dark:border-slate-800">
                <div className="space-y-2">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
                      <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
@@ -269,7 +269,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                   <p className="font-bold">저장된 채널이 없습니다. 먼저 채널을 추가해주세요.</p>
                </div>
             ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 overflow-y-auto min-h-0 p-2 pb-20">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 overflow-y-auto min-h-0 p-2">
                    {filteredChannels.map(ch => {
                       const isSelected = tempSelectedIds.includes(ch.id);
                       return (
@@ -305,19 +305,18 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                       );
                    })}
                 </div>
-            )}
+             )}
          </div>
-         <Footer />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-6 md:p-10 flex flex-col">
-       <div className="w-full max-w-[1800px] mx-auto h-full flex flex-col">
+    <div className="bg-slate-50 dark:bg-black p-6 md:p-10 space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
+       <div className="w-full max-w-[1800px] mx-auto space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 py-4 border-b border-slate-200 dark:border-slate-800">
         <div className="space-y-2 flex-1">
           <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
             <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
@@ -344,8 +343,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         </button>
       </div>
 
-      <div className="space-y-6 md:space-y-8 pb-20">
-        
+      <div className="space-y-6 md:space-y-8">
+
         {/* Section 1: Compact Comparison Table */}
         <div className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
              
@@ -520,7 +519,6 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
 
       </div>
       </div>
-      <Footer />
     </div>
   );
 };

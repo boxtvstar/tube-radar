@@ -15,7 +15,8 @@ import {
   getChannelInfo, 
   fetchRealVideos,
   searchChannelsByKeyword,
-  autoDetectShortsChannels
+  autoDetectShortsChannels,
+  cleanupOldCaches
 } from './services/youtubeService';
 import { analyzeVideoVirality } from './services/geminiService';
 import { MembershipPage } from './src/components/MembershipPage';
@@ -379,7 +380,7 @@ const Sidebar = ({
         )}
       </div>
       
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
+        <nav className="flex-1 px-4 pb-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
         {/* 1. 채널 관리 */}
         {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-2 animate-in fade-in">채널 관리</div>}
         <div className={`px-2 space-y-1 ${isCollapsed ? 'mt-4' : ''}`}>
@@ -525,31 +526,29 @@ const Sidebar = ({
 
       </nav>
 
-      <div className={`shrink-0 pb-8 border-t border-slate-200 dark:border-slate-800 ${isCollapsed ? 'px-0 pt-4' : 'px-4 pt-4'}`}>
-          <button 
-            onClick={() => {
-              onOpenMyPage?.('usage');
-              if (onCloseMobileMenu) onCloseMobileMenu();
-            }}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0 py-3 bg-transparent hover:bg-slate-100 dark:hover:bg-white/5 border-transparent' : 'justify-between p-3 gap-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border-slate-200 dark:border-white/5'} rounded-xl transition-all group border`}
-            title={isCollapsed ? "API 및 포인트 관리" : undefined}
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative shrink-0">
-                <span className="material-symbols-outlined text-slate-500 dark:text-slate-400">settings_input_antenna</span>
-                <span className={`absolute -top-0.5 -right-0.5 size-2 border-2 border-slate-100 dark:border-slate-900 rounded-full ${ytApiStatus === 'valid' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-              </div>
-              {!isCollapsed && (
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">API & 포인트</span>
-                  <span className={`text-[10px] font-black ${isCritical ? 'text-accent-hot' : isWarning ? 'text-orange-500' : 'text-emerald-500'}`}>
-                    사용량 {percent.toFixed(0)}%
-                  </span>
-                </div>
-              )}
+      {/* API & 포인트 - Bottom Section */}
+      <div className="shrink-0 p-3 bg-slate-100 dark:bg-slate-800/50">
+        <button
+          onClick={() => {
+            onOpenMyPage?.('usage');
+            if (onCloseMobileMenu) onCloseMobileMenu();
+          }}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 border border-transparent`}
+          title={isCollapsed ? "API 및 포인트 관리" : undefined}
+        >
+          <div className="relative">
+            <span className="material-symbols-outlined text-[18px]">settings_input_antenna</span>
+            <span className={`absolute -top-0.5 -right-0.5 size-2 border-2 border-slate-100 dark:border-slate-800 rounded-full ${ytApiStatus === 'valid' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+          </div>
+          {!isCollapsed && (
+            <div className="flex-1 flex items-center justify-between">
+              <span>API & 포인트</span>
+              <span className={`text-[10px] font-black ${isCritical ? 'text-rose-500' : isWarning ? 'text-orange-500' : 'text-emerald-500'}`}>
+                {percent.toFixed(0)}%
+              </span>
             </div>
-            {!isCollapsed && <span className="material-symbols-outlined text-slate-400 text-[16px]">chevron_right</span>}
-          </button>
+          )}
+        </button>
       </div>
     </aside>
     </>
@@ -1022,6 +1021,9 @@ export default function App() {
   // Payment Result Routing
   const [isPaymentResultMode, setIsPaymentResultMode] = useState(false);
   useEffect(() => {
+    // 앱 시작 시 오래된 캐시 정리
+    cleanupOldCaches();
+    
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'payment_result' || window.location.pathname === '/payment/result') {
       setIsPaymentResultMode(true);
@@ -1507,8 +1509,33 @@ export default function App() {
     setDetailedVideo(videoData);
   };
  
-  const handleSaveMaterials = async (videos: VideoData[], groupId: string) => {
+  const handleSaveMaterials = async (videos: VideoData[], groupId: string, newGroupName?: string) => {
     if (!user) { alert("로그인이 필요합니다."); return; }
+    
+    let finalGroupId = groupId;
+    
+    // Check if creating new group
+    if (groupId.startsWith('new_') && newGroupName) {
+      // Create new group
+      const newGroup: ChannelGroup = {
+        id: groupId,
+        name: newGroupName
+      };
+      
+      try {
+        // Save new group to Firebase
+        await saveGroupToDb(user.uid, newGroup);
+        
+        // Update local state
+        setGroups(prev => [...prev, newGroup]);
+        
+        finalGroupId = groupId;
+      } catch (e) {
+        console.error("Failed to create new group:", e);
+        alert("새 그룹 생성에 실패했습니다.");
+        return;
+      }
+    }
     
     const channelsToSave: SavedChannel[] = videos.map(v => ({
       id: v.channelId || '',
@@ -1516,7 +1543,7 @@ export default function App() {
       thumbnail: v.channelThumbnail || '',
       customAvgViews: parseInt(v.avgViews.replace(/,/g, '') || '0'),
       addedAt: Date.now(),
-      groupId: groupId
+      groupId: finalGroupId
     }));
     
     const uniqueChannels = Array.from(new Map(channelsToSave.map(item => [item.id, item])).values());
@@ -2434,177 +2461,6 @@ export default function App() {
     return <PaymentResult />;
   }
 
-  if (isComparisonMode) {
-    return (
-      <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
-        <Sidebar 
-          ytKey={ytKey}
-          onYtKeyChange={setYtKey}
-          ytApiStatus={ytApiStatus}
-          region={region}
-          onRegionChange={setRegion}
-          selectedCategory={selectedCategory}
-          onCategoryChange={setSelectedCategory}
-          isMyMode={isMyMode}
-          onToggleMyMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsMyMode(val);
-             setIsExplorerMode(false);
-             setIsUsageMode(false);
-             setIsPackageMode(false);
-             setIsShortsDetectorMode(false);
-             setIsTopicMode(false);
-             setIsMembershipMode(false);
-          }}
-          isExplorerMode={isExplorerMode}
-          onToggleExplorerMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsExplorerMode(val);
-             setIsMyMode(false);
-             setIsUsageMode(false);
-             setIsPackageMode(false);
-             setIsShortsDetectorMode(false);
-             setIsTopicMode(false);
-             setIsMembershipMode(false);
-          }}
-          isUsageMode={isUsageMode}
-          onToggleUsageMode={(val) => {
-             setIsComparisonMode(false);
-             setIsUsageMode(val);
-          }}
-          isPackageMode={isPackageMode}
-          onTogglePackageMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsPackageMode(val);
-          }}
-          isMaterialsExplorerMode={isMaterialsExplorerMode}
-          onToggleMaterialsExplorerMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(val);
-             setIsMyMode(false);
-             setIsExplorerMode(false);
-             setIsUsageMode(false);
-             setIsPackageMode(false);
-             setIsShortsDetectorMode(false);
-             setIsTopicMode(false);
-             setIsMembershipMode(false);
-             setIsNationalTrendMode(false);
-             setIsCategoryTrendMode(false);
-             setIsRadarMode(false);
-          }}
-          isShortsDetectorMode={isShortsDetectorMode}
-          onToggleShortsDetectorMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsShortsDetectorMode(val);
-          }}
-          isTopicMode={isTopicMode}
-          onToggleTopicMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsTopicMode(val);
-          }}
-          isMembershipMode={isMembershipMode}
-          onToggleMembershipMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsMembershipMode(val);
-          }}
-          isNationalTrendMode={isNationalTrendMode}
-          onToggleNationalTrendMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsNationalTrendMode(val);
-          }}
-          isCategoryTrendMode={isCategoryTrendMode}
-          onToggleCategoryTrendMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsCategoryTrendMode(val);
-          }}
-          isRadarMode={isRadarMode}
-          onToggleRadarMode={(val) => {
-             setIsComparisonMode(false);
-             setIsMaterialsExplorerMode(false);
-             setIsRadarMode(val);
-          }}
-          isComparisonMode={true}
-          onToggleComparisonMode={(val) => {
-             // Already in comparison mode
-          }}
-          hasPendingSync={hasPendingSync}
-          isSyncNoticeDismissed={isSyncNoticeDismissed}
-          isApiKeyMissing={isApiKeyMissing}
-          usage={usage}
-          isCollapsed={isSidebarCollapsed}
-          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          onOpenMyPage={() => setIsMyPageOpen(true)}
-          isMobileMenuOpen={isMobileMenuOpen}
-          onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
-        />
-        <main className="flex-1 flex flex-col overflow-hidden relative">
-          <Header
-            onMobileMenuToggle={() => setIsMobileMenuOpen(true)}
-            region={region}
-            count={videos.length}
-            theme={theme}
-            onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-            hasPendingSync={hasPendingSync && !isSyncNoticeDismissed}
-            isApiKeyMissing={isApiKeyMissing}
-            onDismissSync={() => setIsSyncNoticeDismissed(true)}
-            onSync={() => loadVideos(true)}
-            user={user}
-            role={role}
-            expiresAt={expiresAt}
-            onLogout={logout}
-            onOpenAdmin={() => setIsAdminOpen(true)}
-            notifications={notifications}
-            ytKey={ytKey}
-            onMarkRead={async (id) => {
-              if (user) {
-                await markNotificationAsRead(user.uid, id);
-                setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
-              }
-            }}
-            onDeleteNotif={async (id) => {
-              if (!user) return;
-              await deleteNotification(user.uid, id);
-              setNotifications(prev => prev.filter(n => n.id !== id));
-            }}
-            onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
-            onOpenMembership={() => { 
-                setIsComparisonMode(false);
-                setIsMembershipMode(true); 
-                setIsUsageMode(false); 
-                setIsExplorerMode(false); 
-                setIsPackageMode(false); 
-                setIsShortsDetectorMode(false); 
-                setIsTopicMode(false); 
-                setIsMyMode(false);
-                setIsRadarMode(false);
-                setIsNationalTrendMode(false);
-                setIsCategoryTrendMode(false);
-                setIsMaterialsExplorerMode(false);
-            }}
-          />
-          <ComparisonView 
-            channels={comparisonChannels} 
-            allChannels={savedChannels}
-            apiKey={ytKey}
-            onClose={() => {
-              setIsComparisonMode(false);
-              setComparisonChannels([]);
-            }} 
-            onUpdateChannels={setComparisonChannels}
-          />
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
       <Sidebar 
@@ -2740,19 +2596,35 @@ export default function App() {
             }}
           />
         )}
-        
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
         {isMembershipMode ? (
           <MembershipPage />
         ) : isMaterialsExplorerMode ? (
-            <MaterialsExplorer
-              apiKey={ytKey}
-              groups={groups}
-              onSave={handleSaveMaterials}
-              onClose={() => setIsMaterialsExplorerMode(false)}
-              onAddChannel={handleAddChannelFromVideo}
-            />
+            <div className="w-full">
+              <MaterialsExplorer
+                apiKey={ytKey}
+                groups={groups}
+                onSave={handleSaveMaterials}
+                onClose={() => setIsMaterialsExplorerMode(false)}
+                onAddChannel={handleAddChannelFromVideo}
+              />
+            </div>
+        ) : isComparisonMode ? (
+            <div className="w-full">
+              <ComparisonView
+                channels={comparisonChannels}
+                allChannels={savedChannels}
+                apiKey={ytKey}
+                onClose={() => {
+                  setIsComparisonMode(false);
+                  setComparisonChannels([]);
+                }}
+                onUpdateChannels={setComparisonChannels}
+              />
+            </div>
         ) : (
-        <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar scroll-smooth flex flex-col relative w-full h-full">
+        <div className="w-full p-6 md:p-10 flex flex-col relative">
           {isPackageMode || isTopicMode ? renderRestricted(
              <RecommendedPackageList
                 packages={isPackageMode ? recommendedPackages : recommendedTopics}
@@ -2764,7 +2636,7 @@ export default function App() {
                 savedChannels={savedChannels}
              />
           ) : isShortsDetectorMode ? (
-             <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+             <div className="space-y-8 pb-20 animate-in slide-in-from-right-4 duration-500">
                <div className="space-y-6">
                  <div className="space-y-2">
                    <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-rose-500 uppercase flex items-center gap-3">
@@ -2909,7 +2781,7 @@ export default function App() {
                )}
              </div>
           ) : isNationalTrendMode ? (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+            <div className="space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
               <div className="space-y-4">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
                     <span className="material-symbols-outlined text-2xl md:text-3xl">public</span>
@@ -2966,7 +2838,7 @@ export default function App() {
             </div>
 
           ) : isCategoryTrendMode ? (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+            <div className="space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
                <div className="space-y-4">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
                     <span className="material-symbols-outlined text-2xl md:text-3xl">category</span>
@@ -3040,7 +2912,7 @@ export default function App() {
             </div>
 
           ) : isRadarMode ? (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+            <div className="space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
               <ChannelRadar
                 apiKey={ytKey}
                 onClose={() => setIsRadarMode(false)}
@@ -3067,7 +2939,7 @@ export default function App() {
             </div>
 
           ) : isUsageMode ? (
-            <div className="space-y-6 md:space-y-8 animate-in slide-in-from-right-4 duration-500">
+            <div className="space-y-6 md:space-y-8 pb-20 animate-in slide-in-from-right-4 duration-500">
               <div className="bg-white dark:bg-slate-card/60 border border-slate-200 dark:border-slate-800 p-6 md:p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-6 md:p-10 opacity-5 pointer-events-none">
                   <span className="material-symbols-outlined text-[80px] md:text-[150px] text-primary">analytics</span>
@@ -3187,7 +3059,7 @@ export default function App() {
             </div>
 
           ) : isExplorerMode ? (
-            <div className="flex-1 flex flex-col justify-start min-h-[70vh] space-y-8 animate-in slide-in-from-right-4 duration-500">
+            <div className="flex-1 flex flex-col justify-start min-h-[70vh] space-y-8 pb-20 animate-in slide-in-from-right-4 duration-500">
               <div className="space-y-6">
                 <div className="space-y-2">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-emerald-500 uppercase flex items-center gap-3">
@@ -3326,7 +3198,7 @@ export default function App() {
               </div>
             </div>
           ) : isMyMode && (
-            <div className="animate-in slide-in-from-top-4 duration-500">
+            <div className="space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
               <style>{`
                 @keyframes neon-blink {
                   0%, 100% { box-shadow: 0 0 10px rgba(19, 55, 236, 0.4), 0 0 20px rgba(19, 55, 236, 0.2); border-color: rgba(19, 55, 236, 0.6); }
@@ -3681,7 +3553,7 @@ export default function App() {
             </div>
           )}
         {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && (
-            <div className="relative min-h-[60vh] flex-1">
+            <div className="space-y-6 pb-20">
                {isMyMode && role === 'pending' && (
                   <RestrictedOverlay 
                      onCheckStatus={() => { setMyPageInitialTab('dashboard'); setIsMyPageOpen(true); }}
@@ -3840,13 +3712,13 @@ export default function App() {
                   </>
                 )}
               </section>
-               </div>
-                <Footer />
+                </div>
             </div>
           )}
-          {(isExplorerMode || isUsageMode || isPackageMode || isShortsDetectorMode || isTopicMode || isNationalTrendMode || isCategoryTrendMode || isRadarMode) && <Footer />}
         </div>
         )}
+        <Footer />
+        </div>
       </main>
 
       {/* Package Suggestion Modal */}
