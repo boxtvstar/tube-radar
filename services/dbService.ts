@@ -1,10 +1,10 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDocs, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDocs,
   getDoc, // Added Import
-  deleteDoc, 
+  deleteDoc,
   writeBatch,
   query,
   where,
@@ -14,8 +14,22 @@ import {
 import { db } from "../src/lib/firebase";
 import { SavedChannel, ChannelGroup, RecommendedPackage, Notification } from "../types";
 
+// Helper function to remove undefined fields from objects
+// Firestore doesn't allow undefined values, so we need to filter them out
+const removeUndefinedFields = <T extends Record<string, any>>(obj: T): Partial<T> => {
+  const cleaned: any = {};
+  Object.keys(obj).forEach(key => {
+    const value = obj[key];
+    if (value !== undefined) {
+      cleaned[key] = value;
+    }
+  });
+  return cleaned;
+};
+
 export const saveChannelToDb = async (userId: string, channel: SavedChannel) => {
-  await setDoc(doc(db, "users", userId, "channels", channel.id), channel);
+  const sanitizedChannel = removeUndefinedFields(channel);
+  await setDoc(doc(db, "users", userId, "channels", channel.id), sanitizedChannel);
 };
 
 export const removeChannelFromDb = async (userId: string, channelId: string) => {
@@ -47,7 +61,8 @@ export const batchSaveChannels = async (userId: string, channels: SavedChannel[]
   const batch = writeBatch(db);
   channels.forEach(ch => {
     const ref = doc(db, "users", userId, "channels", ch.id);
-    batch.set(ref, ch);
+    const sanitizedChannel = removeUndefinedFields(ch);
+    batch.set(ref, sanitizedChannel);
   });
   await batch.commit();
 };

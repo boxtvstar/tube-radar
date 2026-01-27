@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Footer } from './Footer';
+import { VideoDetailModal } from './VideoDetailModal';
 import { searchVideosForMaterials } from '../../services/youtubeService';
 import { VideoData, ChannelGroup } from '../../types';
 
@@ -8,13 +9,33 @@ interface MaterialsExplorerProps {
   groups: ChannelGroup[];
   onSave: (videos: VideoData[], groupId: string) => Promise<void>;
   onClose: () => void;
+  onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
 }
 
 type FilterDays = 1 | 7 | 30;
 type FilterType = 'all' | 'shorts' | 'long';
 type SortType = 'views' | 'velocity';
 
-export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, groups, onSave, onClose }) => {
+// Category ID to Name mapping
+const CATEGORY_NAMES: Record<string, string> = {
+  '1': '영화/애니', '2': '자동차', '10': '음악', '15': '동물', '17': '스포츠',
+  '18': '단편영화', '19': '여행', '20': '게임', '22': '브이로그/인물', '23': '코미디',
+  '24': '엔터테인먼트', '25': '뉴스/정치', '26': '노하우/스타일', '27': '교육',
+  '28': '과학/기술', '29': '비영리/사회'
+};
+
+// Helper to convert category ID to name
+const convertCategoryIdToName = (video: VideoData): VideoData => {
+  if (video.category && /^\d+$/.test(video.category)) {
+    return {
+      ...video,
+      category: CATEGORY_NAMES[video.category] || '기타'
+    };
+  }
+  return video;
+};
+
+export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, groups, onSave, onClose, onAddChannel }) => {
   // Search State
   const [query, setQuery] = useState(() => sessionStorage.getItem('me_last_query') || '');
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -22,7 +43,12 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
   const [rawResults, setRawResults] = useState<VideoData[]>(() => {
     try {
       const saved = sessionStorage.getItem('me_last_results');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Convert category IDs to names for cached data
+        return parsed.map(convertCategoryIdToName);
+      }
+      return [];
     } catch {
       return [];
     }
@@ -143,11 +169,17 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
       
       {/* (A) Top Area - Search */}
       <div className="p-6">
-        <div className="max-w-7xl mx-auto space-y-4">
-            <h1 className="text-2xl font-black italic tracking-tighter uppercase flex items-center gap-2">
-               <span className="material-symbols-outlined text-indigo-500">travel_explore</span>
-               키워드 소재 탐색
-            </h1>
+        <div className="max-w-7xl mx-auto space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
+                <span className="material-symbols-outlined text-2xl md:text-3xl">travel_explore</span>
+                키워드 소재 탐색
+              </h1>
+              <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
+                <span className="text-indigo-600 dark:text-indigo-400 font-bold">키워드로 최신 트렌드 영상</span>을 발굴하세요. 요즘 뜨는 소재를 분석하여 콘텐츠 아이디어를 얻을 수 있습니다.<br />
+                선택한 영상들은 <span className="text-rose-500 font-bold">내 모니터링에 저장</span>하여 지속적으로 추적할 수 있습니다.
+              </p>
+            </div>
             
             <div className="flex gap-2">
                <div className="relative flex-1">
@@ -375,86 +407,14 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
          </div>
       )}
 
-      {/* (7) Right Side Panel - Detail */}
+      {/* Video Detail Modal */}
       {detailedVideo && (
-         <>
-         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={() => setDetailedVideo(null)}></div>
-         <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-6 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-             <div className="flex items-start justify-between mb-6">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight flex-1 mr-4">{detailedVideo.title}</h3>
-                <button onClick={() => setDetailedVideo(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><span className="material-symbols-outlined">close</span></button>
-             </div>
-             
-             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6">
-                <div className="aspect-video bg-black rounded-xl overflow-hidden relative shadow-md">
-                   <img src={detailedVideo.thumbnailUrl} className="w-full h-full object-cover" />
-                </div>
-                
-                <div className="space-y-4">
-                   <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                      <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                         {/* Channel Icon is not in VideoSnippet initially returned by Search? Actually we fetched channel details */}
-                         {/* We don't have channel Icon in VideoData interface... using generic icon or try fetching? */}
-                         {/* For now use generic */}
-                         <span className="material-symbols-outlined w-full h-full flex items-center justify-center text-slate-400">person</span>
-                      </div>
-                      <div>
-                         <p className="font-bold text-sm text-slate-900 dark:text-white">{detailedVideo.channelName}</p>
-                         <p className="text-xs text-slate-500">구독자 {detailedVideo.subscribers}</p>
-                      </div>
-                   </div>
-
-                   <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                         <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">업로드</p>
-                         <p className="font-bold text-slate-900 dark:text-white">{detailedVideo.uploadTime}</p>
-                         <p className="text-[10px] text-slate-400 mt-0.5">{new Date(detailedVideo.publishedAt || '').toLocaleDateString()}</p>
-                      </div>
-                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                         <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">영상 길이</p>
-                         <p className="font-bold text-slate-900 dark:text-white">{detailedVideo.duration}</p>
-                      </div>
-                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                         <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">조회수</p>
-                         <p className="font-bold text-indigo-600 dark:text-indigo-400">{detailedVideo.views}</p>
-                      </div>
-                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-rose-500/20 bg-rose-50/50 dark:bg-rose-900/10">
-                         <p className="text-[10px] text-rose-500 uppercase font-bold mb-1">상승 속도</p>
-                         <p className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-base">trending_up</span>
-                            {detailedVideo.velocity?.toLocaleString() || 0}/h
-                         </p>
-                      </div>
-                   </div>
-                </div>
-                
-                <a 
-                  href={`https://www.youtube.com/watch?v=${detailedVideo.id}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-                >
-                   <span className="material-symbols-outlined">play_circle</span>
-                   유튜브에서 보기
-                </a>
-                
-                {/* Single Save */}
-                <button 
-                  onClick={() => {
-                     setSelectedIds(new Set([detailedVideo.id]));
-                     setIsSaveModalOpen(true);
-                     // Note: This logic assumes we want to open modal for single item.
-                     // The modal logic uses 'selectedIds'. 
-                  }}
-                  className="w-full py-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/20 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
-                >
-                   <span className="material-symbols-outlined">bookmark_add</span>
-                   이 영상만 저장하기
-                </button>
-
-             </div>
-         </div>
-         </>
+        <VideoDetailModal
+          video={detailedVideo}
+          onClose={() => setDetailedVideo(null)}
+          channelGroups={groups}
+          onAddChannel={onAddChannel}
+        />
       )}
 
     </div>

@@ -635,7 +635,7 @@ const calculateDDay = (expiresAt: string) => {
   return `D-${diffDays}`;
 };
 
-const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyMissing,  onDismissSync, 
+const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyMissing, onDismissSync,
   onSync,
   user,
   role,
@@ -930,6 +930,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
 };
 
 const CATEGORIES = [
+  { id: 'ENTER', name: '엔터', icon: 'theater_comedy', categoryId: '24' },
   { id: 'FILM', name: '영화/애니', icon: 'movie', categoryId: '1' },
   { id: 'AUTOS', name: '자동차', icon: 'directions_car', categoryId: '2' },
   { id: 'MUSIC', name: '음악', icon: 'music_note', categoryId: '10' },
@@ -938,7 +939,6 @@ const CATEGORIES = [
   { id: 'GAME', name: '게임', icon: 'sports_esports', categoryId: '20' },
   { id: 'BLOG', name: '인물/블로그', icon: 'person', categoryId: '22' },
   { id: 'COMEDY', name: '코미디', icon: 'sentiment_very_satisfied', categoryId: '23' },
-  { id: 'ENTER', name: '엔터', icon: 'theater_comedy', categoryId: '24' },
   { id: 'NEWS', name: '뉴스·시사', icon: 'newspaper', categoryId: '25' },
   { id: 'HOWTO', name: '노하우/스타일', icon: 'lightbulb', categoryId: '26' },
   { id: 'TECH', name: '과학/기술', icon: 'smart_toy', categoryId: '28' }
@@ -973,7 +973,13 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<string | null>(null);
   
-  const [hasPendingSync, setHasPendingSync] = useState(() => localStorage.getItem('yt_pending_sync') === 'true');
+  const [hasPendingSync, setHasPendingSync] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('yt_pending_sync') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [isSyncNoticeDismissed, setIsSyncNoticeDismissed] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   
@@ -1429,16 +1435,53 @@ export default function App() {
   if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;
   if (!user) return <Login />;
 
+  // Initialize region and category when entering Category Trend mode
   useEffect(() => {
-    // [Fix] Allow loadVideos in National/Category Trend modes (removed exclusions)
-    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode) {
-      if (!isMyMode || !hasPendingSync) {
-        loadVideos();
-      } else {
-        setLoading(false);
+    if (isCategoryTrendMode) {
+      setRegion('KR');
+      setSelectedCategory('ENTER');
+      setVideos([]); // Clear previous videos
+    }
+  }, [isCategoryTrendMode]);
+
+  // Reset category when entering National Trend mode
+  useEffect(() => {
+    if (isNationalTrendMode) {
+      setSelectedCategory(''); // National Trend doesn't use category filter
+      setVideos([]); // Clear previous videos
+    }
+  }, [isNationalTrendMode]);
+
+  // Load cached videos when entering My Monitoring List
+  useEffect(() => {
+    if (isMyMode && activeGroupId) {
+      try {
+        const cacheKey = `my_monitoring_list_${activeGroupId}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsedCache = JSON.parse(cached);
+          if (parsedCache.videos && Array.isArray(parsedCache.videos) && parsedCache.videos.length > 0) {
+            // Check cache age (7 days)
+            const cacheAge = Date.now() - (parsedCache.timestamp || 0);
+            if (cacheAge < 7 * 24 * 60 * 60 * 1000) {
+              setVideos(parsedCache.videos);
+              setVisibleVideoCount(20);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load cached videos:', e);
       }
     }
-  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, hasPendingSync, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
+  }, [isMyMode, activeGroupId]);
+
+  useEffect(() => {
+    // Auto-load only for National/Category Trend modes
+    // My Mode requires manual refresh to prevent unnecessary API calls
+    if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode && !isMyMode) {
+      loadVideos();
+    }
+  }, [ytKey, region, selectedCategory, timeRange, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
 
   const handleOpenAutoDetectDetail = (result: AutoDetectResult) => {
     // Convert AutoDetectResult to VideoData for the modal
@@ -1446,6 +1489,7 @@ export default function App() {
       id: result.representativeVideo.id,
       title: result.representativeVideo.title,
       channelName: result.title,
+      channelId: result.id, // Channel ID for "Add Channel" functionality
       thumbnailUrl: result.representativeVideo.thumbnail,
       duration: "Shorts", // Fallback
       views: formatNumber(result.representativeVideo.views),
@@ -1614,6 +1658,19 @@ export default function App() {
           setVisibleVideoCount(20);
           setHasPendingSync(false);
           setIsSyncNoticeDismissed(false);
+
+          // Save to localStorage for My Mode
+          if (isMyMode && activeGroupId) {
+            try {
+              const cacheKey = `my_monitoring_list_${activeGroupId}`;
+              localStorage.setItem(cacheKey, JSON.stringify({
+                videos: cachedData,
+                timestamp: newestTimestamp
+              }));
+            } catch (e) {
+              console.error('Failed to save cached videos:', e);
+            }
+          }
           return;
         } else {
           console.warn('사용 가능한 캐시 없음');
@@ -1624,6 +1681,19 @@ export default function App() {
       setVisibleVideoCount(20); // Reset pagination when new data loads
       setHasPendingSync(false); // Mark sync as complete
       setIsSyncNoticeDismissed(false);
+
+      // Save to localStorage for My Mode
+      if (isMyMode && activeGroupId && data && data.length > 0) {
+        try {
+          const cacheKey = `my_monitoring_list_${activeGroupId}`;
+          localStorage.setItem(cacheKey, JSON.stringify({
+            videos: data,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.error('Failed to save videos to cache:', e);
+        }
+      }
     } catch (e: any) {
       // ✅ 에러 발생 시 캐시 사용 시도
       console.warn('API 에러 발생, 캐시 확인 중...', e.message);
@@ -1651,6 +1721,19 @@ export default function App() {
         // 캐시 데이터 표시
         setVideos(cachedData);
         setVisibleVideoCount(20);
+
+        // Save to localStorage for My Mode
+        if (isMyMode && activeGroupId) {
+          try {
+            const cacheKey = `my_monitoring_list_${activeGroupId}`;
+            localStorage.setItem(cacheKey, JSON.stringify({
+              videos: cachedData,
+              timestamp: Date.now()
+            }));
+          } catch (e) {
+            console.error('Failed to save error-fallback videos:', e);
+          }
+        }
       } else {
         // 캐시도 없으면 에러 처리
         if (e.message && e.message.startsWith("QUOTA_INSUFFICIENT")) {
@@ -1789,6 +1872,91 @@ export default function App() {
        return;
     }
     callback();
+  };
+
+  const handleAddChannelFromVideo = async (channelId: string, groupId: string, newGroupName?: string) => {
+    if (isReadOnly) {
+      setAlertMessage({
+        title: "멤버십 승인이 필요합니다",
+        message: "현재는 둘러보기 모드입니다.\n이 기능을 사용하시려면 멤버십 승인이 필요합니다.",
+        type: 'info',
+        showSubscribeButton: true
+      });
+      throw new Error('멤버십 승인이 필요합니다. 둘러보기 모드에서는 채널 추가가 제한됩니다.');
+    }
+
+    if (isApiKeyMissing) {
+      throw new Error('유효한 YouTube API 키를 먼저 설정해주세요.');
+    }
+
+    let targetGroupId = groupId;
+
+    // 1. 새 그룹 생성이 요청된 경우
+    if (newGroupName && newGroupName.trim()) {
+      try {
+        const newGroup: ChannelGroup = {
+          id: `group_${Date.now()}`,
+          name: newGroupName.trim()
+        };
+        await saveGroupToDb(user!.uid, newGroup);
+        setGroups(prev => [...prev, newGroup]);
+        targetGroupId = newGroup.id;
+      } catch (e) {
+        console.error("Failed to create new group", e);
+        throw new Error('새 그룹 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      }
+    }
+
+    // 2. 채널 정보 가져오기
+    try {
+      const channelInfo = await getChannelInfo(ytKey, channelId);
+
+      if (!channelInfo) {
+        throw new Error('채널 정보를 가져올 수 없습니다. 채널 ID가 올바른지 확인해주세요.');
+      }
+
+      // 3. 중복 확인
+      const existingChannel = savedChannels.find(c => c.id === channelInfo.id);
+      if (existingChannel) {
+        throw new Error(`이미 추가된 채널입니다.\n\n채널명: ${channelInfo.title}`);
+      }
+
+      // 4. 채널 추가
+      const finalGroupId = targetGroupId || 'unassigned';
+      const newChannel: SavedChannel = {
+        ...channelInfo,
+        groupId: finalGroupId,
+        addedAt: Date.now()
+      };
+
+      // DB에 저장
+      if (user) {
+        await saveChannelToDb(user.uid, newChannel);
+      }
+
+      // 상태 업데이트
+      setSavedChannels(prev => [newChannel, ...prev]);
+      setNewlyAddedIds(prev => [...prev, newChannel.id]);
+      setHasPendingSync(true);
+      setIsSyncNoticeDismissed(false);
+
+      // 성공 알림
+      setAlertMessage({
+        title: "채널 추가 완료",
+        message: `${channelInfo.title}\n채널이 성공적으로 추가되었습니다.`,
+        type: 'info'
+      });
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') {
+        setAlertMessage({
+          title: "API 할당량 초과",
+          message: "오늘의 YouTube API 사용량을 모두 소진했습니다.\n내일 오후 5시(KST) 후에 다시 시도해주세요.",
+          type: 'error'
+        });
+        throw new Error('YouTube API 할당량을 초과했습니다. 내일 오후 5시(KST) 이후에 다시 시도해주세요.');
+      }
+      throw e;
+    }
   };
 
   const handleAddChannelBatch = async () => {
@@ -2576,11 +2744,12 @@ export default function App() {
         {isMembershipMode ? (
           <MembershipPage />
         ) : isMaterialsExplorerMode ? (
-            <MaterialsExplorer 
-              apiKey={ytKey} 
-              groups={groups} 
+            <MaterialsExplorer
+              apiKey={ytKey}
+              groups={groups}
               onSave={handleSaveMaterials}
               onClose={() => setIsMaterialsExplorerMode(false)}
+              onAddChannel={handleAddChannelFromVideo}
             />
         ) : (
         <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar scroll-smooth flex flex-col relative w-full h-full">
@@ -2831,16 +3000,6 @@ export default function App() {
 
                   {/* 2. Category Selection */}
                   <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setSelectedCategory('')}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${
-                          selectedCategory === ''
-                            ? 'bg-slate-800 text-white border-slate-800'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-transparent hover:bg-slate-200'
-                        }`}
-                    >
-                      전체
-                    </button>
                     {CATEGORIES.map(cat => (
                       <button
                         key={cat.id}
@@ -2878,6 +3037,33 @@ export default function App() {
                   <div className="py-20 text-center text-slate-400 font-bold text-sm">데이터를 불러오는 중입니다.</div>
                 )}
               </div>
+            </div>
+
+          ) : isRadarMode ? (
+            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+              <ChannelRadar
+                apiKey={ytKey}
+                onClose={() => setIsRadarMode(false)}
+                onVideoClick={(video) => {
+                  setDetailedVideo({
+                    id: video.id,
+                    title: video.title,
+                    channelName: video.channelName,
+                    channelId: video.channelId,
+                    thumbnailUrl: video.thumbnailUrl,
+                    duration: video.duration,
+                    views: video.views,
+                    avgViews: video.avgViews,
+                    subscribers: video.subscribers,
+                    viralScore: typeof video.spikeScore === 'number' ? video.spikeScore.toFixed(1) + 'x' : video.viralScore || '0x',
+                    publishedAt: video.publishedAt,
+                    uploadTime: video.uploadTime,
+                    category: video.category,
+                    reachPercentage: video.performanceRatio,
+                    tags: video.tags || []
+                  });
+                }}
+              />
             </div>
 
           ) : isUsageMode ? (
@@ -3494,38 +3680,6 @@ export default function App() {
               </div>
             </div>
           )}
-
-
-  
-  
-        {isRadarMode && (
-          <div className="flex-1 overflow-hidden relative">
-            <ChannelRadar 
-              apiKey={ytKey} 
-              onClose={() => setIsRadarMode(false)} 
-              onVideoClick={(video) => {
-                setDetailedVideo({
-                  id: video.id,
-                  title: video.title,
-                  channelName: video.channelName,
-                  channelId: video.channelId,
-                  thumbnailUrl: video.thumbnailUrl,
-                  duration: video.duration,
-                  views: video.views,
-                  avgViews: video.avgViews,
-                  subscribers: video.subscribers,
-                  viralScore: typeof video.spikeScore === 'number' ? video.spikeScore.toFixed(1) + 'x' : video.viralScore || '0x',
-                  publishedAt: video.publishedAt, // Critical Fix: Pass publishedAt
-                  uploadTime: video.uploadTime,
-                  category: video.category,
-                  reachPercentage: video.performanceRatio,
-                  tags: video.tags || []
-                }); 
-              }}
-            />
-          </div>
-        )}
-
         {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && (
             <div className="relative min-h-[60vh] flex-1">
                {isMyMode && role === 'pending' && (
@@ -3942,9 +4096,11 @@ export default function App() {
 
       {/* Video Detail Modal */}
       {detailedVideo && (
-        <VideoDetailModal 
-          video={detailedVideo} 
-          onClose={() => setDetailedVideo(null)} 
+        <VideoDetailModal
+          video={detailedVideo}
+          onClose={() => setDetailedVideo(null)}
+          channelGroups={groups}
+          onAddChannel={handleAddChannelFromVideo}
         />
       )}
 

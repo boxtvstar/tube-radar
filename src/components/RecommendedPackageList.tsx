@@ -290,12 +290,25 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
   return (
     <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
        <div className="relative overflow-hidden">
-         <div className="space-y-4 w-full relative z-10">
-            <div className="flex items-center justify-between">
-               <h2 className={`text-2xl font-black italic tracking-tighter uppercase flex items-center gap-3 ${mode === 'topic' ? 'text-amber-500' : 'text-indigo-500'}`}>
-                 <span className="material-symbols-outlined text-3xl">{mode === 'topic' ? 'lightbulb' : 'inventory_2'}</span>
-                 {mode === 'topic' ? '유튜브 추천 소재' : '추천 채널 팩'}
-               </h2>
+          <div className="w-full relative z-10">
+             <div className="flex items-center justify-between">
+               <div className="space-y-2">
+                 <h2 className={`text-xl md:text-2xl font-black italic tracking-tighter uppercase flex items-center gap-3 ${mode === 'topic' ? 'text-amber-500' : 'text-indigo-500'}`}>
+                   <span className="material-symbols-outlined text-2xl md:text-3xl">{mode === 'topic' ? 'lightbulb' : 'inventory_2'}</span>
+                   {mode === 'topic' ? '유튜브 추천 소재' : '추천 채널 팩'}
+                 </h2>
+                 {mode !== 'topic' ? (
+                   <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed hidden md:block">
+                     <span className="text-indigo-500 dark:text-indigo-400 font-bold">우리들끼리 공유하는 유튜브 채널 모음</span>을 확인하세요.<br />
+                     원하는 팩을 선택하면 내 모니터링 리스트로 <span className="text-rose-500 font-bold">일괄 추가</span>할 수 있습니다.
+                   </p>
+                 ) : (
+                   <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed hidden md:block">
+                     콘텐츠 제작을 위한 <span className="text-amber-500 font-bold">참신한 소재와 아이디어</span>를 발견하세요.<br />
+                     엄선된 주제별 채널들을 통해 <span className="text-rose-500 font-bold">새로운 영감</span>을 얻을 수 있습니다.
+                   </p>
+                 )}
+               </div>
                {mode === 'topic' && (
                   <button 
                     onClick={(e) => {
@@ -322,18 +335,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                   </button>
                )}
             </div>
-            {mode !== 'topic' ? (
-              <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed">
-                우리들끼리 공유하는 유튜브 채널 모음을 확인하세요. <br />
-                원하는 팩을 선택하면 내 모니터링 리스트로 <b>일괄 추가</b>할 수 있습니다.
-              </p>
-            ) : (
-               <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed">
-                 콘텐츠 제작을 위한 <span className="text-amber-500 font-bold">참신한 소재와 아이디어</span>를 발견하세요.<br />
-                 엄선된 주제별 채널들을 통해 새로운 영감을 얻을 수 있습니다.
-               </p>
-            )}
-         </div>
+          </div>
          
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-12 relative z-10">
             {approvedPackages.length === 0 ? (

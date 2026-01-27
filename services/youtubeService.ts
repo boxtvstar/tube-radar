@@ -4,8 +4,16 @@ import { trackUsage, checkQuotaAvailable, getRemainingQuota, markQuotaExceeded }
 
 const YOUTUBE_BASE_URL = "https://www.googleapis.com/youtube/v3";
 const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4시간 캐시
-const MAX_RESULTS_PER_UNIT = 50; 
+const MAX_RESULTS_PER_UNIT = 50;
 const MATURITY_HOURS = 720; // 영상이 평균 성과에 도달하는 성숙 기간 (30일)
+
+// Category ID to Name mapping
+const CATEGORY_NAMES: Record<string, string> = {
+  '1': '영화/애니', '2': '자동차', '10': '음악', '15': '동물', '17': '스포츠',
+  '18': '단편영화', '19': '여행', '20': '게임', '22': '브이로그/인물', '23': '코미디',
+  '24': '엔터테인먼트', '25': '뉴스/정치', '26': '노하우/스타일', '27': '교육',
+  '28': '과학/기술', '29': '비영리/사회'
+};
 
 const extractIdentifier = (input: string) => {
   const trimmed = input.trim();
@@ -1393,6 +1401,9 @@ export const searchVideosForMaterials = async (
        const hoursSince = Math.max((new Date().getTime() - publishedAt.getTime()) / (3600 * 1000), 0.1);
        const velocity = Math.round(currentViews / hoursSince);
 
+       const categoryId = v.snippet.categoryId || '';
+       const categoryName = CATEGORY_NAMES[categoryId] || '기타';
+
        return {
           id: v.id,
           title: v.snippet.title || 'No Title',
@@ -1409,7 +1420,7 @@ export const searchVideosForMaterials = async (
           viralScore: (currentViews / Math.max(ch.avgViews, 1)).toFixed(1),
           publishedAt: v.snippet.publishedAt,
           uploadTime: getTimeAgo(v.snippet.publishedAt),
-          category: v.snippet.categoryId || '',
+          category: categoryName,
           reachPercentage: 0,
           tags: v.snippet.tags || []
        } as VideoData;

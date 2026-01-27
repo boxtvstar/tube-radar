@@ -137,7 +137,7 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                    velocity: (parseInt(v.statistics.viewCount) / (Math.max(1, (Date.now() - new Date(v.snippet.publishedAt).getTime()) / (1000 * 60 * 60)))).toFixed(0)
                 });
              }
-             if (uniqueChannels.size >= 4) break;
+             if (uniqueChannels.size >= 12) break;
           }
           
           // Fetch exact subscribers & branding for these 4 channels
@@ -239,7 +239,19 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
   }, [apiKey]);
 
   const RadarDashboard = () => (
-    <div className="flex flex-col gap-4 md:gap-6 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex flex-col gap-4 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+       {/* Header Section */}
+       <div className="space-y-2 mb-2">
+         <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-amber-600 dark:text-amber-400 uppercase flex items-center gap-3">
+           <span className="material-symbols-outlined text-2xl md:text-3xl">radar</span>
+           채널 급등 레이더
+         </h2>
+         <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
+           <span className="text-amber-600 dark:text-amber-400 font-bold">급격하게 성장하는 채널과 영상</span>을 실시간으로 탐지하세요.<br />
+           성장 속도, 바이럴 지수, 조회수 변화 등 <span className="text-rose-500 font-bold">주요 급등 지표</span>를 한눈에 확인할 수 있습니다.
+         </p>
+       </div>
+       
        {/* Hero Search Section */}
        <div className="relative mb-2 md:mb-4">
           <div className="absolute inset-y-0 left-3 md:left-4 flex items-center pointer-events-none">
@@ -262,9 +274,9 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
           </button>
        </div>
 
-       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+       <div className="space-y-4 md:space-y-6">
           {/* Main Content: Real-time Rising Channels */}
-          <div className="lg:col-span-2 space-y-4 md:space-y-6">
+          <div>
              <div className="flex items-center justify-between">
                 <h3 className="text-base md:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                    <span className="material-symbols-outlined text-indigo-500 text-lg md:text-xl">show_chart</span>
@@ -276,7 +288,7 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                 </div>
              </div>
              
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
                 {trendingChannels.map((ch, idx) => (
                    <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl p-3 md:p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/30 transition-all cursor-pointer" 
                      onClick={() => onVideoClick?.({
@@ -326,84 +338,12 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                 ))}
                 
                 {isLoadingDashboard && trendingChannels.length === 0 && (
-                   <div className="col-span-2 py-20 text-center text-slate-400 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 animate-pulse">
+                   <div className="col-span-full py-20 text-center text-slate-400 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 animate-pulse">
                       실시간 트렌드 분석 중...
                    </div>
                 )}
              </div>
 
-             <div className="bg-slate-900 dark:bg-slate-950 rounded-xl md:rounded-2xl p-4 md:p-6 text-white relative overflow-hidden">
-                <div className="relative z-10 flex justify-between items-end">
-                   <div>
-                      <h4 className="font-bold text-slate-400 text-xs md:text-sm mb-1">카테고리별 실시간 성과</h4>
-                   </div>
-                </div>
-                {/* Table */}
-                <div className="mt-3 md:mt-4">
-                   <div className="flex justify-between text-[10px] md:text-xs text-slate-500 py-2 border-b border-white/10">
-                      <span>카테고리</span>
-                      <span className="text-right w-16 md:w-24">참여율</span>
-                      <span className="text-right w-16 md:w-24">점수</span>
-                   </div>
-                   {categoryStats.map((item, i) => (
-                      <div key={i} className="flex justify-between text-xs md:text-sm py-3 md:py-4 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors px-2 -mx-2 rounded-lg">
-                         <span className="font-medium text-slate-200 truncate pr-2">{item.cat}</span>
-                         <span className={`text-right w-16 md:w-24 font-bold shrink-0 ${parseFloat(item.engagement) > 3 ? 'text-emerald-400' : 'text-slate-400'}`}>{item.engagement}</span>
-                         <span className="text-right w-16 md:w-24 text-indigo-400 font-bold shrink-0">{item.score.toLocaleString()}</span>
-                      </div>
-                   ))}
-                   {isLoadingDashboard && categoryStats.length === 0 && (
-                      <div className="py-8 text-center text-xs text-slate-600">데이터 수집 중...</div>
-                   )}
-                </div>
-             </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-4 md:space-y-6">
-             {/* Keywords Widget */}
-             <div className="bg-slate-900 dark:bg-black rounded-2xl md:rounded-3xl p-4 md:p-6 text-white shadow-xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-10 md:p-20 bg-indigo-500/20 blur-3xl rounded-full translate-x-1/3 -translate-y-1/3 group-hover:bg-indigo-500/30 transition-colors"></div>
-                <div className="relative z-10">
-                   <h3 className="font-bold text-base md:text-lg mb-4 md:mb-6 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-indigo-400 text-lg md:text-xl">language</span>
-                      <span className="hidden sm:inline">실시간 급상승 키워드</span>
-                      <span className="sm:hidden">급상승 키워드</span>
-                   </h3>
-                   <div className="space-y-3 md:space-y-4">
-                      {popularKeywords.map((k, i) => (
-                         <div key={i} className="flex items-center justify-between group/item cursor-pointer hover:bg-white/5 p-1 rounded transition-colors" onClick={() => setInput(k)}>
-                            <div className="flex items-center gap-2 md:gap-3 min-w-0">
-                               <span className={`text-xs md:text-sm font-bold w-4 shrink-0 ${i<3 ? 'text-white' : 'text-slate-600'}`}>{i+1}</span>
-                               <span className="text-xs md:text-sm text-slate-300 group-hover/item:text-white transition-colors line-clamp-1">{k}</span>
-                            </div>
-                            {i===0 && <span className="bg-indigo-600/20 text-indigo-300 text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0">HOT</span>}
-                         </div>
-                      ))}
-                      {popularKeywords.length === 0 && isLoadingDashboard && (
-                         <div className="text-center text-xs text-slate-600 py-4">키워드 추출 중...</div>
-                      )}
-                      
-                      {popularKeywords.length === 0 && !isLoadingDashboard && (
-                         <div className="text-center text-xs text-slate-600 py-4">키워드 데이터 없음</div>
-                      )}
-                   </div>
-                </div>
-             </div>
-
-             {/* Banner */}
-             <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl md:rounded-3xl p-4 md:p-6 text-white shadow-lg relative overflow-hidden cursor-pointer hover:shadow-indigo-500/25 hover:scale-[1.02] transition-all">
-                <div className="relative z-10">
-                   <div className="text-[10px] font-bold bg-white/20 inline-block px-2 py-1 rounded mb-2 md:mb-3 backdrop-blur-sm">PRO 분석</div>
-                   <h3 className="text-lg md:text-xl font-black mb-1 leading-tight">내 채널도<br/>분석해볼까요?</h3>
-                   <div className="flex gap-3 md:gap-4 mt-4 md:mt-6 text-xs font-medium opacity-80">
-                      <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">auto_awesome</span> 진단</span>
-                      <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">compare_arrows</span> 비교</span>
-                   </div>
-                </div>
-                <div className="absolute -bottom-10 -right-10 size-32 md:size-40 border-[20px] md:border-[30px] border-white/10 rounded-full"></div>
-                <div className="absolute bottom-8 md:bottom-10 -right-4 md:-right-5 size-16 md:size-20 border-[10px] md:border-[15px] border-white/10 rounded-full"></div>
-             </div>
           </div>
        </div>
     </div>
@@ -411,9 +351,21 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
 
   const renderResults = () => {
      return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col">
            {/* Compact Search Bar for Results View */}
-           <div className="p-6 pb-2 shrink-0 bg-slate-50 dark:bg-background-dark z-20 sticky top-0">
+           <div className="pb-2 shrink-0">
+               {/* Header Section */}
+               <div className="space-y-2 mb-4">
+                 <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-amber-600 dark:text-amber-400 uppercase flex items-center gap-3">
+                   <span className="material-symbols-outlined text-2xl md:text-3xl">radar</span>
+                   채널 급등 레이더 분석 결과
+                 </h2>
+                 <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
+                   <span className="text-amber-600 dark:text-amber-400 font-bold">급상승 중인 영상들</span>을 발견했습니다. 각 영상의 성장 지표를 확인하세요.<br />
+                   급등 점수가 높을수록 <span className="text-rose-500 font-bold">더 빠른 성장세</span>를 보이고 있습니다.
+                 </p>
+               </div>
+               
                <div className="relative mb-4">
                   <input 
                     className="w-full p-3 pl-5 pr-24 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm shadow-sm"
@@ -446,7 +398,7 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
            </div>
 
            {/* Results Grid */}
-           <div className="flex-1 overflow-y-auto px-6 pb-20 custom-scrollbar">
+           <div>
               {results.length === 0 && status === 'done' ? (
                  <div className="flex flex-col items-center justify-center py-20 opacity-50">
                     <span className="material-symbols-outlined text-4xl mb-2">radar</span>
@@ -510,19 +462,13 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
   };
 
   return (
-    <div className="flex flex-col w-full h-full bg-slate-50 dark:bg-background-dark overflow-hidden animate-in fade-in duration-300">
-      <div className="flex-1 overflow-hidden flex flex-col max-w-7xl mx-auto w-full">
-         <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {/* Conditional Rendering: Dashboard vs Results */}
-            {((!results || results.length === 0) && status === 'idle') ? (
-               <div className="p-6">
-                  <RadarDashboard />
-               </div>
-            ) : (
-               renderResults()
-            )}
-         </div>
-      </div>
+    <div className="w-full animate-in fade-in duration-300">
+       {/* Conditional Rendering: Dashboard vs Results */}
+       {((!results || results.length === 0) && status === 'idle') ? (
+          <RadarDashboard />
+       ) : (
+          renderResults()
+       )}
     </div>
   );
 };

@@ -222,25 +222,27 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
     return (
       <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-4 md:p-8 animate-in slide-in-from-bottom-4 duration-500 flex flex-col">
          <div className="w-full max-w-[1800px] mx-auto h-full flex flex-col">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 sticky top-0 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm z-10 py-4 border-b border-transparent">
-               <div>
-                  <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
-                     비교할 채널 선택 <span className="text-indigo-500">PICK</span>
-                  </h1>
-                  <p className="text-slate-500 font-bold text-sm mt-1">
-                     비교할 대상을 2~3개 선택해주세요. <span className="text-indigo-500">({selectionCount}/3)</span>
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 sticky top-0 bg-slate-50/95 dark:bg-black/95 backdrop-blur-sm z-10 py-4 border-b border-transparent">
+               <div className="space-y-2">
+                  <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
+                     <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
+                     채널 비교 분석 <span className="text-indigo-500">PICK</span>
+                  </h2>
+                  <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
+                     비교할 채널을 <span className="text-indigo-600 dark:text-indigo-400 font-bold">2~3개 선택</span>해주세요. 선택 후 분석을 시작하면 주요 지표를 비교할 수 있습니다.<br />
+                     현재 선택: <span className="text-rose-500 font-bold">{selectionCount}/3개</span>
                   </p>
                </div>
                
-               <div className="flex items-center gap-3">
-                  <div className="relative group min-w-[240px]">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">search</span>
+               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <div className="relative group">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-lg">filter_list</span>
                       <input 
                           type="text" 
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          placeholder="채널 검색..." 
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-11 pr-4 font-bold outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                          placeholder="채널명으로 필터링" 
+                          className="w-full sm:min-w-[200px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-400"
                       />
                   </div>
                   <button
@@ -249,14 +251,14 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                          const selected = (allChannels || []).filter(c => tempSelectedIds.includes(c.id));
                          if (onUpdateChannels) onUpdateChannels(selected);
                       }}
-                      className={`px-6 py-3 rounded-xl font-black flex items-center gap-2 transition-all shadow-lg ${
+                      className={`px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
                          selectionCount >= 2 
-                         ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105' 
-                         : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                         ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 hover:-translate-y-0.5' 
+                         : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-60'
                       }`}
                   >
-                      <span>분석 시작</span>
-                      <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                      <span className="material-symbols-outlined text-lg">compare_arrows</span>
+                      <span>비교하기</span>
                   </button>
                </div>
             </div>
@@ -313,21 +315,19 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   return (
     <div className="flex-1 bg-slate-50 dark:bg-black overflow-y-auto p-3 md:p-8 animate-in slide-in-from-bottom-4 duration-500 flex flex-col">
 
+
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-6 md:mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 md:gap-4">
-          <div className="bg-indigo-600 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-lg shadow-indigo-600/20">
-            <span className="material-symbols-outlined text-white text-xl md:text-2xl">compare_arrows</span>
-          </div>
-          <div>
-            <h1 className="text-lg md:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2 md:gap-3">
-              채널 비교 분석 <span className="text-indigo-500">VS</span>
-              {loading && <span className="text-[10px] md:text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse">최신화 중...</span>}
-            </h1>
-            <p className="text-slate-500 font-bold text-xs md:text-sm mt-1">
-              선택한 {channels.length}개 채널의 핵심 지표 비교
-            </p>
-          </div>
+      <div className="max-w-7xl mx-auto mb-6 md:mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4">
+        <div className="space-y-2 flex-1">
+          <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
+            <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
+            채널 비교 분석 <span className="text-indigo-500">VS</span>
+            {loading && <span className="text-[10px] md:text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse normal-case not-italic font-bold tracking-normal">최신화 중...</span>}
+          </h2>
+          <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
+            선택한 <span className="text-indigo-600 dark:text-indigo-400 font-bold">{channels.length}개 채널의 핵심 지표</span>를 한눈에 비교하세요.<br />
+            구독자, 조회수, 바이럴 점수 등 <span className="text-rose-500 font-bold">주요 성과 지표</span>를 시각적으로 확인할 수 있습니다.
+          </p>
         </div>
         
         {/* 다시 선택 버튼 */}
@@ -337,7 +337,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
               if (onUpdateChannels) onUpdateChannels([]);
               setTempSelectedIds([]); // Reset local selection too
            }}
-           className="px-4 md:px-5 py-2 md:py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 text-sm md:text-base"
+           className="px-4 md:px-5 py-2 md:py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 text-sm md:text-base shrink-0"
         >
            <span className="material-symbols-outlined text-lg md:text-xl">restart_alt</span>
            <span>다시 선택</span>
