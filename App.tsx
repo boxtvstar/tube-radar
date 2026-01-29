@@ -10,6 +10,7 @@ import { PendingApproval } from './src/components/PendingApproval';
 import { AdminDashboard } from './src/components/AdminDashboard';
 import { UserRole } from './src/contexts/AuthContext';
 import { GuestNoticeModal } from './src/components/GuestNoticeModal';
+import { MembershipWelcomeModal } from './src/components/MembershipWelcomeModal';
 import { MyPageModal } from './src/components/MyPageModal';
 import { 
   getChannelInfo, 
@@ -766,13 +767,16 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
       
       <span className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-[0.2em] hidden md:block">통계 제어 판넬</span>
       {isApiKeyMissing ? (
-        <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full animate-in fade-in slide-in-from-left-2 shadow-[0_0_12px_rgba(244,63,94,0.1)]">
-          <span className="size-1.5 bg-rose-500 rounded-full animate-pulse"></span>
-          <span className="text-[9px] font-black text-rose-500 uppercase tracking-tighter">
+        <button 
+          onClick={() => onOpenMyPage?.('dashboard')}
+          className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full animate-in fade-in slide-in-from-left-2 shadow-[0_0_12px_rgba(244,63,94,0.1)] hover:bg-rose-500/20 transition-colors cursor-pointer group"
+        >
+          <span className="size-1.5 bg-rose-500 rounded-full animate-pulse group-hover:scale-125 transition-transform"></span>
+          <span className="text-[9px] font-black text-rose-500 uppercase tracking-tighter animate-pulse">
             <span className="md:hidden">KEY 설정</span>
-            <span className="hidden md:inline">YouTube API 키 설정이 필요합니다</span>
+            <span className="hidden md:inline">YouTube API 키 설정이 필요합니다 (클릭)</span>
           </span>
-        </div>
+        </button>
       ) : hasPendingSync && (
         <div className="flex items-center gap-2 px-3 py-1 bg-accent-hot/10 border border-accent-hot/20 rounded-full animate-in fade-in slide-in-from-left-2">
           <span className="size-1.5 bg-accent-hot rounded-full animate-pulse"></span>
@@ -949,7 +953,7 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, role: authRole, expiresAt, loading: authLoading, logout } = useAuth();
+  const { user, role: authRole, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved } = useAuth();
   
   // [Hardcode Admin Override] for specific email
   const role = (user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole;
@@ -2420,9 +2424,10 @@ export default function App() {
   }
 
   // [RBAC] 승인 대기 상태 체크 -> 둘러보기 모드로 전환 (차단 해제)
-  // if (role === 'pending') {
-  //   return <PendingApproval />;
-  // }
+  // [RBAC] 승인 대기 상태 체크 -> 전용 대기 화면 표시
+  if (role === 'pending') {
+    return <PendingApproval />;
+  }
 
   // [RBAC] 승인 대기 상태 체크 -> 둘러보기 모드로 전환 (차단 해제)
   // if (role === 'pending') {
@@ -2575,7 +2580,7 @@ export default function App() {
 
         {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
-        {showGuestNotice && user && (
+        {showGuestNotice && user && role !== 'admin' && role !== 'approved' && (
           <GuestNoticeModal 
             userName={user.displayName || 'Guest'} 
             onClose={() => setShowGuestNotice(false)} 
@@ -4020,6 +4025,15 @@ export default function App() {
             <p className="text-[10px] text-slate-400">잠시만 기다려주세요. 창을 닫지 마세요.</p>
           </div>
         </div>
+      )}
+
+      {/* Membership Welcome Modal */}
+      {membershipJustApproved && (
+         <MembershipWelcomeModal 
+           onClose={() => setMembershipJustApproved(null)}
+           userName={membershipJustApproved.name}
+           daysLeft={membershipJustApproved.daysLeft}
+         />
       )}
     </div>
   );

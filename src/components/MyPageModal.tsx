@@ -190,7 +190,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
     if (!inquiryMessage.trim()) return;
     setIsSendingInquiry(true);
     try {
-      await sendInquiry(user.uid, user.displayName || 'Anonymous', inquiryMessage);
+      await sendInquiry(user.uid, user.displayName || 'Anonymous', inquiryMessage, user.email);
       setIsInquirySuccess(true);
       setInquiryMessage('');
       // Reload inquiries
@@ -433,10 +433,21 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                           <span>API 키 입력은 관리자 승인 후 가능합니다.</span>
                         </p>
                     ) : (
-                        <p className="text-[11px] text-slate-400 mt-3 ml-1 flex items-start gap-1.5">
-                          <span className="material-symbols-outlined text-[14px] mt-0.5">info</span>
-                          <span>개인 API 키를 사용하면 공용 할당량 제한 없이 더 안정적인 분석이 가능합니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
-                        </p>
+                        <div className="flex justify-between items-start mt-3 px-1">
+                           <p className="text-[11px] text-slate-400 flex items-start gap-1.5 leading-snug">
+                             <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">info</span>
+                             <span>개인 API 키를 사용하면 공용 할당량 제한 없이 더 안정적인 분석이 가능합니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
+                           </p>
+                           <a 
+                             href="https://youtu.be/example_video_id" 
+                             target="_blank" 
+                             rel="noopener noreferrer"
+                             className="flex items-center gap-1.5 py-1.5 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold transition-colors shadow-lg shadow-red-500/20 whitespace-nowrap"
+                           >
+                              <span className="material-symbols-outlined text-[14px]">play_circle</span>
+                              API 설정하는 법
+                           </a>
+                        </div>
                     )}
                   </div>
                 </div>

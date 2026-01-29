@@ -165,13 +165,17 @@ export const getUserProposals = async (userId: string): Promise<(RecommendedPack
 
 // --- Inquiries (Support Messages) ---
 
-export const sendInquiry = async (userId: string, userName: string, message: string) => {
+// --- Inquiries (Support Messages) ---
+
+export const sendInquiry = async (userId: string, userName: string, content: string, userEmail?: string) => {
   await addDoc(collection(db, "inquiries"), {
     userId,
     userName,
-    message,
+    userEmail: userEmail || null,
+    content, // Standardized field name
     createdAt: Date.now(),
-    isAnswered: false
+    isAnswered: false,
+    type: 'general'
   });
 };
 
@@ -189,19 +193,30 @@ export const getUserInquiries = async (userId: string) => {
 
 export const replyToInquiry = async (inquiryId: string, userId: string, answer: string) => {
   // 1. Update Inquiry Doc with Answer
-  await updateDoc(doc(db, "inquiries", inquiryId), {
-    isAnswered: true,
-    answer,
-    answeredAt: Date.now()
-  });
+  try {
+    const docRef = doc(db, "inquiries", inquiryId);
+    
+    // Check if doc exists first to prevent errors
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) throw new Error("Inquiry document not found");
 
-  // 2. Send Notification
-  await sendNotification(userId, {
-    userId, // Redundant in Notification type but required by interface
-    title: "문의에 대한 답변이 도착했습니다",
-    message: "1:1 문의하기 탭에서 관리자의 답변을 확인하세요.",
-    type: "info"
-  });
+    await updateDoc(docRef, {
+      isAnswered: true,
+      answer,
+      answeredAt: Date.now()
+    });
+
+    // 2. Send Notification
+    await sendNotification(userId, {
+      userId, 
+      title: "문의에 대한 답변이 도착했습니다",
+      message: "1:1 문의하기 탭에서 관리자의 답변을 확인하세요.",
+      type: "info"
+    });
+  } catch (e) {
+    console.error("Reply failed in dbService:", e);
+    throw e;
+  }
 };
 
 // --- Membership Whitelist (Auto-Approval) ---

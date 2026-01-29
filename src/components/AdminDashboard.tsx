@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, where } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, where, addDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel } from '../../types';
@@ -160,6 +160,33 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
     fetchCounts();
   }, []);
 
+  const [viewingHistoryUser, setViewingHistoryUser] = useState<UserData | null>(null);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+
+  useEffect(() => {
+     if (viewingHistoryUser) {
+        const fetchHistory = async () => {
+           try {
+             const q = query(
+                collection(db, 'users', viewingHistoryUser.uid, 'history'), 
+                orderBy('date', 'desc'),
+                limit(50)
+             );
+             const snap = await getDocs(q);
+             setHistoryList(snap.docs.map(d => ({id: d.id, ...d.data()})));
+           } catch (e) {
+             console.log("No history or failed to fetch", e);
+             setHistoryList([]);
+           }
+        };
+        fetchHistory();
+     } else {
+        setHistoryList([]);
+     }
+  }, [viewingHistoryUser]);
+
+
+
   const handleSendInlineReply = async (inquiryId: string, userId: string, userName: string) => {
     if (!replyMessage.trim()) return;
     
@@ -186,11 +213,6 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
         alert("전송 실패");
     }
   };
-
-  // YouTube Membership Sync State
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('');
-
 
   // Whitelist Viewer State
   const [showWhitelistModal, setShowWhitelistModal] = useState(false);
@@ -351,6 +373,10 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
          const idxTotalTime = getIdx('활동한 총 기간');
          const idxStatus = getIdx('최종 업데이트');     // Col 5
          const idxTimestamp = getIdx('타임스탬프');     // Col 6
+         
+         // Try to find a column for "Remaining Days" or "Next Billing"
+         // The user sees "5일 남음" in the simplified view or CSV
+         const idxRemaining = headers.findIndex(h => h.includes('남음') || h.includes('만료') || h.includes('종료') || h.includes('Remaining') || h.includes('Billing'));
 
          const memberDetails: any[] = [];
          const uniqueIds = new Set<string>();
@@ -381,7 +407,8 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
                      tierDuration: cols[idxTierTime] || '',    // e.g. "7.09677"
                      totalDuration: cols[idxTotalTime] || '',  // e.g. "7.09677"
                      status: cols[idxStatus] || '',            // e.g. "재가입", "가입함"
-                     lastUpdate: cols[idxTimestamp] || ''      // e.g. "2026-01-20T..."
+                     lastUpdate: cols[idxTimestamp] || '',      // e.g. "2026-01-20T..."
+                     remainingDays: idxRemaining !== -1 ? cols[idxRemaining] : '' // Capture remaining days if column exists
                  });
              }
          }
@@ -400,8 +427,6 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
 
    // Reusable function to save to DB (Reference Only)
    const updateWhitelistInDb = async (ids: string[], details: any[] = []) => {
-      setIsSyncing(true);
-      setSyncStatus(`명단 저장 중...`);
       try {
          // Save ONLY to system_data whitelist (Reference Data)
          const docRef = doc(db, "system_data", "membership_whitelist");
@@ -412,15 +437,12 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
             count: ids.length,
             updatedBy: user?.email
          });
-         
-         await loadWhitelist(); 
-         setSyncStatus('저장 완료!');
+
+         await loadWhitelist();
          alert("✅ 멤버십 명단이 [참고용 데이터]로 저장되었습니다.\n(실제 유저 권한에는 영향을 주지 않습니다.)");
-         setTimeout(() => setIsSyncing(false), 1000);
       } catch (e: any) {
          console.error("Save Error", e);
-         setSyncStatus('저장 실패');
-         setTimeout(() => setIsSyncing(false), 2000);
+         alert("저장 실패: " + e.message);
       }
    };
 
@@ -439,127 +461,6 @@ export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
         alert("초기화 실패");
       }
    };
-
-  const executeSync = async (token: string) => {
-    setIsSyncing(true);
-    setSyncStatus('API 접속 중...');
-    
-    try {
-      const { fetchMemberIds, fetchMyChannelId } = await import('../../services/youtubeService');
-      
-      // 🔍 DEBUG: Verify Identity First
-      setSyncStatus('로그인된 채널 확인 중...');
-      const connectedChannelId = await fetchMyChannelId(token);
-      
-      if (!connectedChannelId) {
-         throw new Error("채널 ID를 확인할 수 없습니다. 유튜브 채널이 생성되지 않은 계정입니다.");
-      }
-
-      // 🕵️‍♂️ SCOPE INSPECTOR 🕵️‍♂️
-      // Verify what scopes are ACTUALLY inside this token
-      try {
-        const infoRes = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${token}`);
-        const infoData = await infoRes.json();
-        
-        console.log("Token Scopes:", infoData.scope);
-        
-        if (!infoData.scope.includes('channel-memberships')) {
-           alert(`[중요] 권한 누락 발견!\n\n현재 토큰에 '멤버십 권한'이 없습니다.\n\n보유 권한:\n${infoData.scope}\n\n다시 로그인하여 체크박스를 꼭! 체크해주세요.`);
-           setIsSyncing(false);
-           setSyncStatus('');
-           return;
-        }
-      } catch (err) {
-        console.warn("Token inspection failed", err);
-      }
-
-      // Explicitly ask user to confirm (Debugging Step)
-      const proceed = window.confirm(`현재 로그인된 채널 ID: ${connectedChannelId}\n\n이 채널의 멤버십 데이터를 가져오시겠습니까?`);
-      if (!proceed) {
-         setIsSyncing(false);
-         setSyncStatus('');
-         return;
-      }
-
-      // 2. Fetch All Member IDs
-      setSyncStatus(`채널(${connectedChannelId}) 멤버십 명단 가져오는 중...`);
-      const memberIds = await fetchMemberIds(token);
-      
-      if (memberIds.length === 0) {
-        alert("멤버십 가입자가 없거나 명단을 가져오지 못했습니다.");
-        setIsSyncing(false);
-        setSyncStatus('');
-        return;
-      }
-
-      setSyncStatus(`멤버십 회원 ${memberIds.length}명 확인. DB 매칭 및 Whitelist 저장 중...`);
-      
-      // 2-1. Save Whitelist for Future Auto-Approvals
-      const { saveWhitelist } = await import('../../services/dbService');
-      await saveWhitelist(memberIds);
-      
-      // 3. Match with Pending Users
-      // Need users with 'channelId' stored.
-      let matchCount = 0;
-      
-      // Iterate all pending users and checking if their channelId is in the member list
-      // Since `users` state doesn't have `channelId` (it wasn't in UserData interface yet),
-      // we need to strictly fetch or update UserData interface.
-      
-      const q = query(collection(db, 'users'));
-      const snapshot = await getDocs(q);
-      const allDocs = snapshot.docs.map(d => ({...d.data(), uid: d.id}));
-
-      for (const u of allDocs as any[]) {
-        if (memberIds.includes(u.channelId)) {
-             // MATCH FOUND (Regardless of current role, update expiry)
-             const userRef = doc(db, 'users', u.uid);
-             // Approve + Set Expiry to 35 days (buffer for monthly renewal)
-             await updateDoc(userRef, {
-               role: 'approved',
-               plan: 'membership',
-               expiresAt: calculateExpiry(35),
-               syncedAt: new Date().toISOString()
-             });
-             matchCount++;
-        }
-      }
-      
-      alert(`동기화 완료!\n총 ${memberIds.length}명의 멤버십 명단을 Whitelist에 저장했습니다.\n[${matchCount}명]의 계정 기간을 연장(또는 승인) 처리했습니다.`);
-      
-      // Refresh list
-      window.location.reload(); 
-      
-    } catch (e: any) {
-      console.warn("Sync API Warning", e);
-      
-      // Fallback: If API acts up (e.g. no membership enabled yet),
-      // allow auto-approval for the specific admin test account if it exists in pending.
-      // This is a "Safe Failover" for testing.
-      if (e.message.includes('403') || e.message.includes('forbidden') || e.message.includes('authorized')) {
-         const testTargetEmail = 'boxtvstar@gmail.com';
-         const pendingAdminUser = users.find(u => u.email === testTargetEmail && u.role !== 'approved');
-         
-         if (pendingAdminUser) {
-             setSyncStatus('테스트 계정(관리자) 강제 승인 중...');
-             await updateDoc(doc(db, 'users', pendingAdminUser.uid), {
-               role: 'approved',
-               plan: 'membership_test',
-               expiresAt: calculateExpiry(35),
-               syncedAt: new Date().toISOString()
-             });
-             alert(`[테스트 모드]\n멤버십 API 접근 권한이 없으나,\n테스트 계정(${testTargetEmail})을 발견하여 강제 승인했습니다.`);
-             window.location.reload();
-             return;
-         }
-      }
-
-      alert(`동기화 중 오류 발생: ${e.message}\n(멤버십 기능이 활성화된 채널인지 확인해주세요)`);
-    } finally {
-      setIsSyncing(false);
-      setSyncStatus('');
-    }
-  };
 
   const handleSendManualNotification = async () => {
     if (!notifMessage.trim()) return;
@@ -877,6 +778,18 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
             await updateDoc(userDocRef, updates);
             rewardMessage = `\n🎁 보상으로 이용기간이 ${rewardDays}일 연장되었습니다!`;
+
+            // Log History
+            try {
+               await addDoc(collection(db, 'users', pkg.creatorId, 'history'), {
+                  action: 'reward_extension',
+                  details: `Reward for '${pkg.title}': +${rewardDays} days`,
+                  date: new Date().toISOString(),
+                  previousExpiry: userData.expiresAt,
+                  newExpiry: newExpiry,
+                  adminId: user?.uid || 'admin'
+               });
+            } catch(e) { console.error("History logging failed", e); }
          }
        } catch (err) {
           console.error("Failed to give reward", err);
@@ -1098,6 +1011,31 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const [expiryDays, setExpiryDays] = useState<string>(''); // '' means no change or custom
   const [customExpiry, setCustomExpiry] = useState('');
 
+  // --- User History Logic ---
+  const [userHistory, setUserHistory] = useState<any[]>([]);
+  useEffect(() => {
+     if (selectedUser) {
+        const fetchHistory = async () => {
+           try {
+             // Query 'history' subcollection, sort by date desc
+             const q = query(
+                collection(db, 'users', selectedUser.uid, 'history'), 
+                orderBy('date', 'desc'),
+                limit(20)
+             );
+             const snap = await getDocs(q);
+             setUserHistory(snap.docs.map(d => ({id: d.id, ...d.data()})));
+           } catch (e) {
+             console.log("No history or failed to fetch", e);
+             setUserHistory([]);
+           }
+        };
+        fetchHistory();
+     } else {
+        setUserHistory([]);
+     }
+  }, [selectedUser]);
+
   const handleEditClick = (u: UserData) => {
     setSelectedUser(u);
     setEditRole(u.role);
@@ -1118,11 +1056,32 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     }
 
     try {
-      await updateDoc(doc(db, 'users', selectedUser.uid), { 
+      const updates: any = { 
         role: editRole,
         plan: editPlan,
         expiresAt: newExpiresAt || null
-      });
+      };
+      await updateDoc(doc(db, 'users', selectedUser.uid), updates);
+      
+      // Log History
+      try {
+         const historyRef = collection(db, 'users', selectedUser.uid, 'history');
+         let actionDetails = [];
+         if (selectedUser.role !== editRole) actionDetails.push(`등급변경: ${selectedUser.role} -> ${editRole}`);
+         if ((selectedUser.plan || 'free') !== editPlan) actionDetails.push(`플랜변경: ${selectedUser.plan || 'free'} -> ${editPlan}`);
+         if (selectedUser.expiresAt !== newExpiresAt) actionDetails.push(`만료일변경: ${selectedUser.expiresAt ? new Date(selectedUser.expiresAt).toLocaleDateString() : '없음'} -> ${newExpiresAt ? new Date(newExpiresAt).toLocaleDateString() : '없음'}`);
+         
+         if (actionDetails.length > 0) {
+            await addDoc(historyRef, {
+               action: 'admin_update',
+               details: `관리자 수정: ${actionDetails.join(', ')}`,
+               date: new Date().toISOString()
+            });
+         }
+      } catch (e) {
+         console.error("Failed to log history", e);
+      }
+
       fetchUsers();
       setSelectedUser(null);
     } catch (error) {
@@ -1330,7 +1289,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
+        <div className="flex-1 overflow-auto p-4 md:p-8 max-w-full mx-auto w-full">
           {loading ? (
             <div className="flex justify-center py-40">
               <div className="size-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
@@ -1371,6 +1330,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </span>
                       </div>
                     </th>
+                    <th className="px-6 py-4">기록</th>
                     <th className="px-6 py-4 text-right">관리</th>
                   </tr>
                 </thead>
@@ -1423,9 +1383,10 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
                         u.plan === 'yearly' ? 'bg-purple-100 text-purple-600 border-purple-200' :
                         u.plan === 'monthly' ? 'bg-indigo-100 text-indigo-600 border-indigo-200' :
+                        u.plan === 'membership' ? 'bg-amber-100 text-amber-600 border-amber-200' :
                         'bg-slate-100 text-slate-500 border-slate-200'
                       }`}>
-                        {u.plan === 'yearly' ? 'Yearly' : u.plan === 'monthly' ? 'Monthly' : 'Free'}
+                        {u.plan === 'yearly' ? 'Yearly' : u.plan === 'monthly' ? 'Monthly' : u.plan === 'membership' ? '멤버십' : 'Free'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap hidden md:table-cell">
@@ -1459,37 +1420,45 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       }`}>
                         {u.role === 'admin' ? '관리자' : u.role === 'approved' ? '승인됨' : '대기중'}
                       </span>
+
+                    </td>
+                    <td className="px-6 py-4">
+                       <div className="flex gap-2">
+                         <button onClick={() => setViewingHistoryUser(u)} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 font-bold px-2 py-1 rounded text-[10px] transition-colors">
+                            <span className="material-symbols-outlined text-[14px]">history</span>
+                            기록
+                         </button>
+                         <button 
+                           onClick={() => openNotifModal(u, 'individual')}
+                           className="flex items-center gap-1 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-slate-500 hover:text-indigo-500 font-bold px-2 py-1 rounded text-[10px] transition-colors"
+                           title="메시지 보내기"
+                         >
+                            <span className="material-symbols-outlined text-[14px]">mail</span>
+                            메세지
+                         </button>
+                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => openNotifModal(u, 'individual')}
-                        className="text-slate-500 hover:text-indigo-500 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 px-2 py-1.5 rounded-lg transition-colors mr-2 text-[10px] font-bold"
-                        title="메시지 보내기"
-                      >
-                         메세지
-                      </button>
-
-                      <button 
-                        onClick={() => handleEditClick(u)}
-                        className="text-xs font-bold text-white bg-slate-500 hover:bg-slate-600 px-3 py-1.5 rounded-lg mr-2 transition-colors shadow-sm"
-                      >
-                        수정
-                      </button>
-                      
-                      {u.uid !== user?.uid ? (
+                      <div className="flex items-center justify-end gap-2">
                         <button 
-                             onClick={() => handleDelete(u.uid)}
-                             className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
-                             title="삭제"
+                          onClick={() => handleEditClick(u)}
+                          className="text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors"
                         >
-                             <span className="material-symbols-outlined text-lg">delete</span>
+                          수정
                         </button>
-                      ) : (
-                        /* Invisible placeholder to maintain layout alignment */
-                        <div className="p-1.5 inline-block opacity-0 pointer-events-none" aria-hidden="true">
-                             <span className="material-symbols-outlined text-lg">delete</span>
-                        </div>
-                      )}
+                        
+                        {u.uid !== user?.uid ? (
+                          <button 
+                               onClick={() => handleDelete(u.uid)}
+                               className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                               title="삭제"
+                          >
+                               <span className="material-symbols-outlined text-lg">delete</span>
+                          </button>
+                        ) : (
+                          <div className="p-1.5 w-[28px]"></div> // Placeholder
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1561,7 +1530,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                  <div className="flex flex-col min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
                                        <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                                          {isExpanded ? '문의 내용 상세' : (inq.message?.length > 40 ? inq.message.substring(0, 40) + '...' : inq.message)}
+                                          {isExpanded ? '문의 내용 상세' : (inq.content?.length > 40 ? inq.content.substring(0, 40) + '...' : inq.content)}
                                        </span>
                                        {!isExpanded && (
                                          <span className="text-[10px] text-slate-400 font-mono shrink-0">
@@ -1585,7 +1554,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                            {isExpanded && (
                              <div className="p-6 bg-white dark:bg-slate-900 animate-in slide-in-from-top-2">
                                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap border border-slate-100 dark:border-slate-700">
-                                  {inq.message}
+                                  {inq.content}
                                 </div>
                                 
                                 <div className="mt-2 text-right">
@@ -1682,15 +1651,13 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                      </div>
                      
                      <div className="flex flex-col sm:flex-row gap-3">
-
-                        
                         <label className="flex-1 py-4 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2 cursor-pointer shadow-sm">
-                           <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} disabled={isSyncing} />
+                           <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
                            <span className="material-symbols-outlined text-green-500">upload_file</span>
                            CSV 업로드
                         </label>
 
-                        <button 
+                        <button
                            onClick={resetWhitelist}
                            className="px-6 py-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 font-bold rounded-xl hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-2"
                            >
@@ -2052,6 +2019,26 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                   </div>
                </div>
 
+               {/* History Section */}
+               {userHistory.length > 0 && (
+                  <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
+                    <label className="block text-xs font-bold text-slate-500 mb-2">활동 기록 (History)</label>
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
+                      {userHistory.map((h) => (
+                        <div key={h.id} className="text-xs border-b border-slate-100 dark:border-slate-700/50 pb-2 last:border-0 last:pb-0">
+                          <div className="flex justify-between text-slate-400 text-[10px] mb-0.5">
+                             <span>{new Date(h.date).toLocaleString()}</span>
+                             <span className="uppercase tracking-wider opacity-70">{h.action}</span>
+                          </div>
+                          <div className="text-slate-600 dark:text-slate-300 font-medium break-keep">
+                             {h.details}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+               )}
+
                <div className="flex gap-3 pt-4">
                  <button 
                    onClick={() => setSelectedUser(null)}
@@ -2269,6 +2256,44 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                </div>
              </div>
           </div>
+        )}
+        {/* User History View Modal (Read-Only) */}
+        {viewingHistoryUser && (
+           <div className="absolute inset-0 z-20 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+             <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+               <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                 <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">활동 기록</h3>
+                    <p className="text-xs text-slate-500">{viewingHistoryUser.displayName} 님의 기록</p>
+                 </div>
+                 <button onClick={() => setViewingHistoryUser(null)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                    <span className="material-symbols-outlined">close</span>
+                 </button>
+               </div>
+               
+               <div className="p-0 max-h-[60vh] overflow-y-auto">
+                 {historyList.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 text-sm">기록이 없습니다.</div>
+                 ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                       {historyList.map(h => (
+                          <div key={h.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                             <div className="flex items-center justify-between mb-1">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                   h.action === 'membership_sync' ? 'bg-amber-100 text-amber-600' : 
+                                   h.action === 'reward_extension' ? 'bg-emerald-100 text-emerald-600' : 
+                                   'bg-slate-100 text-slate-500'
+                                }`}>{h.action}</span>
+                                <span className="text-[10px] text-slate-400">{new Date(h.date).toLocaleString()}</span>
+                             </div>
+                             <p className="text-sm text-slate-700 dark:text-slate-300 break-keep leading-relaxed">{h.details}</p>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+               </div>
+             </div>
+           </div>
         )}
     </div>
   );
