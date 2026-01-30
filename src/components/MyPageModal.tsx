@@ -226,10 +226,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
     return diffDays;
   };
 
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
+
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
   const usagePercent = Math.min(100, Math.max(0, ((usage.total - usage.used) / usage.total) * 100));
 
   return (
+    <>
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
       <div 
         className="bg-white dark:bg-slate-900 w-full h-full md:max-w-4xl md:h-[80vh] rounded-none md:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800"
@@ -438,15 +441,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                              <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">info</span>
                              <span>개인 API 키를 사용하면 공용 할당량 제한 없이 더 안정적인 분석이 가능합니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
                            </p>
-                           <a 
-                             href="https://youtu.be/example_video_id" 
-                             target="_blank" 
-                             rel="noopener noreferrer"
+                           <button 
+                             onClick={() => setIsVideoModalOpen(true)}
                              className="flex items-center gap-1.5 py-1.5 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold transition-colors shadow-lg shadow-red-500/20 whitespace-nowrap"
                            >
                               <span className="material-symbols-outlined text-[14px]">play_circle</span>
                               API 설정하는 법
-                           </a>
+                           </button>
                         </div>
                     )}
                   </div>
@@ -892,6 +893,14 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       </div>
                    </div>
 
+                   {/* Disclaimer Notice */}
+                   <div className="w-full max-w-md mb-6 px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
+                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed text-center">
+                        표시되는 사용량은 참고용으로, 실제 사용량과 다를 수 있습니다.<br/>
+                        매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다.
+                      </p>
+                   </div>
+
                    <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-8">
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                          <div className="text-xs text-slate-400 font-bold uppercase mb-1">사용된 포인트</div>
@@ -964,5 +973,39 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         </div>
       </div>
     </div>
+
+      {/* YouTube Video Modal */}
+      {isVideoModalOpen && (
+        <div 
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in"
+          onClick={() => setIsVideoModalOpen(false)}
+        >
+          <div 
+            className="relative w-full max-w-4xl mx-4 bg-slate-900 rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => setIsVideoModalOpen(false)}
+              className="absolute top-4 right-4 z-10 size-10 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+
+            {/* YouTube iframe */}
+            <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+              <iframe
+                className="absolute inset-0 w-full h-full"
+                src="https://www.youtube.com/embed/Z7WJ2ND5424?autoplay=1"
+                title="YouTube API 설정 가이드"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

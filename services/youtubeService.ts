@@ -777,9 +777,27 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
       const res = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode=${regionCode}&videoCategoryId=${catId}&maxResults=50&key=${apiKey}`);
       trackUsage(apiKey, 'list', 1);
       const data = await res.json();
-      if (data.error) return [];
+      
+      // Check for errors
+      if (data.error) {
+        // 404 is normal (category doesn't exist in this region), just skip
+        if (data.error.code === 404) {
+          console.warn(`Category ${catId} not available in ${regionCode}`);
+          return [];
+        }
+        
+        // Check for quota exceeded
+        if (data.error.errors?.some((err: any) => err.reason === 'quotaExceeded') || data.error.message?.toLowerCase().includes('quota')) {
+          throw new Error('QUOTA_EXCEEDED');
+        }
+
+        // Log other errors for debugging
+        console.error('YouTube API Error:', data.error);
+        return [];
+      }
       return data.items || [];
-    } catch (e) {
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') throw e;
       return [];
     }
   });

@@ -8,14 +8,10 @@ export const Login = () => {
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
       <div className="max-w-md w-full bg-gray-900 rounded-2xl p-8 border border-gray-800 text-center shadow-2xl">
         <div className="mb-6 flex justify-center">
-          <div className="size-16 bg-gradient-to-tr from-pink-500 to-violet-500 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20">
-            <span className="material-symbols-outlined text-[40px] text-white">radar</span>
-          </div>
+          <img src="/logo.png" alt="Tube Radar Logo" className="h-16 w-auto object-contain" />
         </div>
         
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-2">
-          Tube Radar 2.1
-        </h1>
+
         <p className="text-gray-400 mb-8">
           유튜브 트렌드 분석 및 채널 모니터링을 시작하세요.
         </p>
@@ -35,6 +31,19 @@ export const Login = () => {
         <p className="mt-6 text-xs text-gray-600">
           로그인시 이용약관 및 개인정보처리방침에 동의하게 됩니다.
         </p>
+
+        {/* Emergency Reset Button */}
+        <button 
+          onClick={() => {
+            if(window.confirm('모든 데이터가 초기화됩니다. 계속하시겠습니까?')) {
+              localStorage.clear();
+              window.location.reload();
+            }
+          }}
+          className="mt-8 text-[10px] text-gray-700 underline hover:text-red-500 transition-colors"
+        >
+          데이터 오류 시 초기화 및 복구
+        </button>
       </div>
     </div>
   );

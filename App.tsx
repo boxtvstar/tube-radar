@@ -286,8 +286,10 @@ const Sidebar = ({
   isRadarMode,
   onToggleRadarMode,
   isMaterialsExplorerMode,
-  onToggleMaterialsExplorerMode
+  onToggleMaterialsExplorerMode,
+  theme // Added theme prop
 }: { 
+  theme?: 'dark' | 'light', // Added theme type 
   ytKey: string,
   onYtKeyChange: (val: string) => void,
   ytApiStatus: 'idle' | 'valid' | 'invalid' | 'loading',
@@ -368,12 +370,8 @@ const Sidebar = ({
               }}
               className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity group"
             >
-              <div className="size-10 bg-primary rounded-lg flex items-center justify-center text-white neon-glow group-hover:scale-110 transition-transform duration-300">
-                <span className="material-symbols-outlined">analytics</span>
-              </div>
-              <div>
-                <h1 className="text-sm font-bold leading-tight tracking-tighter uppercase dark:text-white text-slate-900 group-hover:text-primary transition-colors">Tube Radar 2.0</h1>
-                <p className="text-slate-400 dark:text-slate-500 text-[9px] font-bold uppercase tracking-widest">By 디스이즈머니</p>
+              <div className="h-14 w-56 flex items-center justify-start p-1 transition-transform duration-300 group-hover:scale-105">
+                <img src={theme === 'light' ? "/logo-light.png" : "/logo.png"} alt="Tube Radar" className="h-full w-auto object-contain" />
               </div>
             </button>
 
@@ -420,7 +418,7 @@ const Sidebar = ({
                 onToggleMaterialsExplorerMode(true);
                 if (onCloseMobileMenu) onCloseMobileMenu();
              }}
-             className={`${isMaterialsExplorerMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+             className={`${isMaterialsExplorerMode ? 'bg-cyan-50 dark:bg-cyan-500/10 !text-cyan-600 dark:!text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-cyan-500'}`}
              isCollapsed={isCollapsed}
           />
           <SidebarItem 
@@ -431,7 +429,7 @@ const Sidebar = ({
               onToggleExplorerMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
-            className={`${isExplorerMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
+            className={`${isExplorerMode ? 'bg-cyan-50 dark:bg-cyan-500/10 !text-cyan-600 dark:!text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-cyan-500'}`}
             isCollapsed={isCollapsed}
           />
           <SidebarItem 
@@ -442,7 +440,7 @@ const Sidebar = ({
               onToggleShortsDetectorMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}  
-            className={`${isShortsDetectorMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
+            className={`${isShortsDetectorMode ? 'bg-cyan-50 dark:bg-cyan-500/10 !text-cyan-600 dark:!text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-cyan-500'}`}
             isCollapsed={isCollapsed}
           />
           <SidebarItem 
@@ -453,7 +451,7 @@ const Sidebar = ({
               if (onToggleComparisonMode) onToggleComparisonMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
-            className={`${isComparisonMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+            className={`${isComparisonMode ? 'bg-cyan-50 dark:bg-cyan-500/10 !text-cyan-600 dark:!text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-cyan-500'}`}
             isCollapsed={isCollapsed}
           />
         </div>
@@ -469,7 +467,7 @@ const Sidebar = ({
               onToggleTopicMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isTopicMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+            className={`${isTopicMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
             isCollapsed={isCollapsed}
           />
           <SidebarItem 
@@ -480,7 +478,7 @@ const Sidebar = ({
               onTogglePackageMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isPackageMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+            className={`${isPackageMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
             isCollapsed={isCollapsed}
           />
         </div>
@@ -497,7 +495,7 @@ const Sidebar = ({
               onToggleNationalTrendMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isNationalTrendMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+            className={`${isNationalTrendMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
             isCollapsed={isCollapsed}
           />
           <SidebarItem 
@@ -508,7 +506,7 @@ const Sidebar = ({
               onToggleCategoryTrendMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isCategoryTrendMode ? 'bg-indigo-50 dark:bg-indigo-500/10 !text-indigo-600 dark:!text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-indigo-500'}`}
+            className={`${isCategoryTrendMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
             isCollapsed={isCollapsed}
           />
 
@@ -520,7 +518,7 @@ const Sidebar = ({
               onToggleRadarMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
-            className={`${isRadarMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
+            className={`${isRadarMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
             isCollapsed={isCollapsed}
           />
         </div>
@@ -577,6 +575,22 @@ const AlertModal = ({ title, message, onClose, type = 'info', showSubscribeButto
           확인
         </button>
       </div>
+    </div>
+  </div>
+);
+
+
+const Toast = ({ message, type = 'success' }: { message: string, type?: 'success' | 'error' }) => (
+  <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top-4 fade-in duration-300 pointer-events-none">
+    <div className={`px-6 py-3 rounded-2xl shadow-2xl backdrop-blur-md border border-white/20 flex items-center gap-3 ${
+      type === 'success' 
+        ? 'bg-emerald-500/90 text-white shadow-emerald-500/30' 
+        : 'bg-rose-500/90 text-white shadow-rose-500/30'
+    }`}>
+      <span className="material-symbols-outlined text-[20px] font-fill">
+        {type === 'success' ? 'check_circle' : 'error'}
+      </span>
+      <span className="text-sm font-bold tracking-wide pr-1 filter drop-shadow-sm">{message}</span>
     </div>
   </div>
 );
@@ -859,6 +873,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
                    1:1 문의하기
                  </button>
 
+                 {role === 'admin' && (
                  <button 
                    onClick={() => { onOpenMembership(); setIsNotifOpen(false); }}
                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
@@ -866,6 +881,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
                    <span className="material-symbols-outlined text-[18px] text-indigo-500">card_membership</span>
                    멤버십 구독
                  </button>
+                 )}
 
                  {role === 'admin' && (
                    <button 
@@ -961,6 +977,13 @@ export default function App() {
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [visibleVideoCount, setVisibleVideoCount] = useState(20); // Pagination: Show 20 videos initially
   const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error'; showSubscribeButton?: boolean } | null>(null);
+  
+  // Toast Notification System
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [detailedVideo, setDetailedVideo] = useState<VideoData | null>(null);
@@ -1568,10 +1591,10 @@ export default function App() {
       setIsMaterialsExplorerMode(false);
       setIsMyMode(true);
       
-      alert(`${uniqueChannels.length}개의 채널을 저장했습니다.`);
+      showToast(`${uniqueChannels.length}개의 채널을 저장했습니다.`);
     } catch (e) {
       console.error(e);
-      alert("저장 중 오류가 발생했습니다.");
+      showToast("저장 중 오류가 발생했습니다.", 'error');
     }
   };
 
@@ -1593,8 +1616,8 @@ export default function App() {
     const startTime = Date.now();
 
     try {
-      // Clear previous videos to prevent stale view
-      if (!isMyMode) setVideos([]);
+      // Clear previous videos to prevent stale/mixed data from different groups
+      setVideos([]);
 
       let targetChannelIds: string[] = [];
       if (isMyMode) {
@@ -2184,17 +2207,21 @@ export default function App() {
 
   const [detectRegion, setDetectRegion] = useState<'KR'|'US'|'JP'>('KR');
 
-  const handleAutoDetectShorts = async () => {
+  const handleAutoDetectShorts = async (overrideRegion?: 'KR'|'US'|'JP') => {
     if (isReadOnly) return handleActionRestricted(() => {});
     if (!ytKey) return;
+
+    const targetRegion = overrideRegion || detectRegion;
+    if (overrideRegion) setDetectRegion(overrideRegion);
+
     setIsDetectingShorts(true);
-    const regionLabel = detectRegion === 'KR' ? '한국' : (detectRegion === 'US' ? '미국' : '일본');
+    const regionLabel = targetRegion === 'KR' ? '한국' : (targetRegion === 'US' ? '미국' : '일본');
     setDetectorStatus(`최근 실시간 ${regionLabel} 인기 급상승 Shorts 스캔 중...`);
     // Clear previous results immediately for better UX
     setShortsDetectorResults([]);
     
     try {
-      const results = await autoDetectShortsChannels(ytKey, detectRegion);
+      const results = await autoDetectShortsChannels(ytKey, targetRegion);
       
       setShortsDetectorResults(results);
       
@@ -2469,6 +2496,7 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display transition-colors duration-300">
       <Sidebar 
+        theme={theme} 
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
@@ -2476,7 +2504,7 @@ export default function App() {
         isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsExplorerMode(val); }}
         isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsUsageMode(val); }}
         isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsShortsDetectorMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
         isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsTopicMode(val); }}
         isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsMembershipMode(val); }}
         isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); } setIsComparisonMode(val); }}
@@ -2659,7 +2687,7 @@ export default function App() {
                    {/* Region Toggle Buttons (KR / US / JP) */}
                    <div className="flex w-full md:w-auto bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-0.5">
                      <button 
-                       onClick={() => setDetectRegion('KR')}
+                       onClick={() => handleAutoDetectShorts('KR')}
                        className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'KR' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
@@ -2669,7 +2697,7 @@ export default function App() {
                        🇰🇷 한국
                      </button>
                      <button 
-                       onClick={() => setDetectRegion('US')}
+                       onClick={() => handleAutoDetectShorts('US')}
                        className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'US' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
@@ -2679,7 +2707,7 @@ export default function App() {
                        🇺🇸 미국
                      </button>
                      <button 
-                       onClick={() => setDetectRegion('JP')}
+                       onClick={() => handleAutoDetectShorts('JP')}
                        className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
                          detectRegion === 'JP' 
                          ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' 
@@ -2692,7 +2720,7 @@ export default function App() {
 
 
                      <button 
-                     onClick={handleAutoDetectShorts} 
+                     onClick={() => handleAutoDetectShorts()} 
                      disabled={isDetectingShorts}
                      className={`w-full md:w-auto text-white px-8 py-3 md:py-4 rounded-2xl text-sm font-black uppercase shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2 ${
                        isDetectingShorts ? 'bg-rose-500 opacity-60 cursor-wait' : 'bg-rose-500 hover:scale-[1.02]'
@@ -3873,6 +3901,9 @@ export default function App() {
             onClose={() => setAlertMessage(null)} 
           />
       )}
+
+      {/* Toast Notification */}
+      {toast && <Toast message={toast.message} type={toast.type} />}
 
       {/* Existing Batch Result Modal */}
       {batchResult && (
