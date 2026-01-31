@@ -9,6 +9,7 @@ import { saveTopicToDb, savePackageToDb } from '../../services/dbService';
 interface RecommendedPackageListProps {
   packages: RecommendedPackage[];
   onAdd: (pkg: RecommendedPackage, targetGroupId: string, newGroupName?: string) => void;
+  onDismiss: (pkgId: string) => void;
   isAdding?: boolean;
   groups: ChannelGroup[];
   activeGroupId: string;
@@ -16,7 +17,7 @@ interface RecommendedPackageListProps {
   savedChannels?: SavedChannel[];
 }
 
-export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ packages, onAdd, isAdding, groups, activeGroupId, mode = 'package', savedChannels = [] }) => {
+export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ packages, onAdd, onDismiss, isAdding, groups, activeGroupId, mode = 'package', savedChannels = [] }) => {
   const approvedPackages = React.useMemo(() => 
     packages.filter(p => !p.status || p.status === 'approved'), 
   [packages]);
@@ -391,9 +392,23 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                           {/* <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                             {pkg.category}
                           </span> */ }
-                          <span className="text-[10px] font-bold text-slate-300">
-                            {new Date(pkg.createdAt).toLocaleDateString()}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-300">
+                              {new Date(pkg.createdAt).toLocaleDateString()}
+                            </span>
+                            {!isScheduled && (
+                              <button 
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 onDismiss(pkg.id);
+                               }}
+                                className="size-6 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-slate-400 hover:text-rose-500 transition-colors"
+                                title="이 게시물 숨기기"
+                              >
+                                <span className="material-symbols-outlined text-sm">close</span>
+                              </button>
+                            )}
+                          </div>
                        </div>
                        
                        <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2 leading-tight group-hover:text-indigo-500 transition-colors">

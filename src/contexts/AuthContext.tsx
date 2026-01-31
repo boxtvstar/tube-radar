@@ -11,10 +11,12 @@ interface AuthContextType {
   role: UserRole | null;
   expiresAt: string | null;
   loading: boolean;
+  hiddenItemIds: string[];
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   membershipJustApproved: { matches: boolean; daysLeft: number; name: string } | null;
   setMembershipJustApproved: (val: { matches: boolean; daysLeft: number; name: string } | null) => void;
+  dismissItem: (itemId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -26,6 +28,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [role, setRole] = useState<UserRole | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hiddenItemIds, setHiddenItemIds] = useState<string[]>([]);
   const [membershipJustApproved, setMembershipJustApproved] = useState<{ matches: boolean; daysLeft: number; name: string } | null>(null);
 
   useEffect(() => {
@@ -34,6 +37,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (!currentUser) {
         setRole(null);
         setExpiresAt(null);
+        setHiddenItemIds([]);
         setLoading(false);
         return;
       }
@@ -89,9 +93,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const currentPlan = data.plan || 'free';
         const storedChannelId = data.channelId;
         const currentExpiresAt = data.expiresAt;
+        const currentHiddenItemIds = data.hiddenItemIds || [];
 
         setRole(currentRole);
         setExpiresAt(currentExpiresAt || null);
+        setHiddenItemIds(currentHiddenItemIds);
         
         // --- Membership Auto-Approval Logic (Real-time) ---
         // If channelId is present (e.g. just submitted), check whitelist.
@@ -204,6 +210,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubscribeSnapshot();
   }, [user]);
 
+  const dismissItem = async (itemId: string) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const currentIds = snap.data().hiddenItemIds || [];
+        if (!currentIds.includes(itemId)) {
+          await updateDoc(userRef, {
+            hiddenItemIds: [...currentIds, itemId]
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Failed to dismiss item:", error);
+    }
+  };
+
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     // Simplified Login: No sensitive scopes to avoid "Unverified App" warning
@@ -248,7 +272,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, role, expiresAt, loading, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved }}>
+    <AuthContext.Provider value={{ user, role, expiresAt, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
       {children}
     </AuthContext.Provider>
   );

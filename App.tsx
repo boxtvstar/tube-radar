@@ -1052,7 +1052,7 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, role: authRole, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved } = useAuth();
+  const { user, role: authRole, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
   
   // [Hardcode Admin Override] for specific email
   const role = ((user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole) as string;
@@ -1407,6 +1407,9 @@ export default function App() {
     setIsSyncNoticeDismissed(false);
     
     setBatchResult({ added: toAdd.length, duplicates });
+    
+    // Once added, hide from recommendations
+    await dismissItem(pkg.id);
   };
 
   const submitPackageProposal = async () => {
@@ -2788,8 +2791,20 @@ export default function App() {
         <div className="w-full p-6 md:p-10 flex flex-col relative">
           {isPackageMode || isTopicMode ? renderRestricted(
              <RecommendedPackageList
-                packages={isPackageMode ? recommendedPackages : recommendedTopics}
+                packages={(isPackageMode ? recommendedPackages : recommendedTopics).filter(p => !hiddenItemIds.includes(p.id))}
                 onAdd={(pkg, groupId, newName) => handleActionRestricted(() => handleAddPackageToMyList(pkg, groupId, newName))}
+                onDismiss={(pkgId) => {
+                  setConfirmModal({
+                    isOpen: true,
+                    title: '이 게시글 숨기기',
+                    message: '상세 내용 검토가 끝났나요?\n이 게시글은 목록에서 숨김 처리됩니다.\n숨김처리 후 되돌릴 수 없습니다.',
+                    actionLabel: '숨기기',
+                    onConfirm: () => {
+                      dismissItem(pkgId);
+                      setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                    }
+                  });
+                }}
                 isAdding={false} 
                 groups={groups}
                 activeGroupId={activeGroupId}
@@ -4155,38 +4170,58 @@ export default function App() {
          />
       )}
 
-      {/* Confirm Modal */}
       {confirmModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <div className="space-y-2">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                {confirmModal.isDestructive && <span className="material-symbols-outlined text-rose-500">warning</span>}
-                {confirmModal.title}
-              </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 whitespace-pre-line leading-relaxed">
-                {confirmModal.message}
-              </p>
-            </div>
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+          onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2.5rem] p-8 max-w-[360px] w-full shadow-[0_20px_50px_rgba(0,0,0,0.2)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)] relative overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300" 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Background Decorative Gradient */}
+            <div className={`absolute top-0 left-0 right-0 h-1 ${confirmModal.isDestructive ? 'bg-gradient-to-r from-rose-400 to-rose-600' : 'bg-gradient-to-r from-indigo-400 to-indigo-600'}`} />
             
-            <div className="flex gap-3 pt-2">
-              <button 
-                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                autoFocus
-              >
-                취소
-              </button>
-              <button 
-                onClick={confirmModal.onConfirm}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-colors shadow-lg ${
-                   confirmModal.isDestructive 
-                   ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20' 
-                   : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20'
-                }`}
-              >
-                {confirmModal.actionLabel || "확인"}
-              </button>
+            <div className="flex flex-col items-center text-center space-y-5">
+              {/* Icon Container */}
+              <div className={`size-16 rounded-3xl flex items-center justify-center mb-1 ${
+                confirmModal.isDestructive 
+                ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-500 shadow-lg shadow-rose-500/10' 
+                : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 shadow-lg shadow-indigo-500/10'
+              }`}>
+                <span className="material-symbols-outlined text-3xl font-bold">
+                  {confirmModal.isDestructive ? 'warning' : (confirmModal.title?.includes('숨기기') ? 'visibility_off' : 'help')}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                  {confirmModal.title}
+                </h3>
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {confirmModal.message}
+                </p>
+              </div>
+              
+              <div className="flex flex-col w-full gap-2 pt-2">
+                <button 
+                  onClick={confirmModal.onConfirm}
+                  className={`w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-white transition-all transform active:scale-95 shadow-xl ${
+                     confirmModal.isDestructive 
+                     ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20' 
+                     : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+                  }`}
+                >
+                  {confirmModal.actionLabel || "확인"}
+                </button>
+                <button 
+                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                  className="w-full py-3.5 rounded-2xl text-sm font-bold text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                  autoFocus
+                >
+                  취소
+                </button>
+              </div>
             </div>
           </div>
         </div>

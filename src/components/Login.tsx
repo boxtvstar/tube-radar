@@ -32,18 +32,6 @@ export const Login = () => {
           로그인시 이용약관 및 개인정보처리방침에 동의하게 됩니다.
         </p>
 
-        {/* Emergency Reset Button */}
-        <button 
-          onClick={() => {
-            if(window.confirm('모든 데이터가 초기화됩니다. 계속하시겠습니까?')) {
-              localStorage.clear();
-              window.location.reload();
-            }
-          }}
-          className="mt-8 text-[10px] text-gray-700 underline hover:text-red-500 transition-colors"
-        >
-          데이터 오류 시 초기화 및 복구
-        </button>
       </div>
     </div>
   );

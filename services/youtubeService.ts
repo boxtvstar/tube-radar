@@ -195,7 +195,7 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
       id: channel.id,
       title: channel.snippet.title,
       description: channel.snippet.description || '', // 설명 추가
-      thumbnail: channel.snippet.thumbnails.default.url,
+      thumbnail: channel.snippet.thumbnails.high?.url || channel.snippet.thumbnails.medium?.url || channel.snippet.thumbnails.default.url,
       subscriberCount: formatNumber(parseInt(channel.statistics.subscriberCount || "0")),
       videoCount: formatNumber(parseInt(channel.statistics.videoCount || "0")),
       customAvgViews: customAvg,
@@ -243,7 +243,7 @@ export const searchChannelsByKeyword = async (apiKey: string, query: string): Pr
     return data.items.map((item: any) => ({
       id: item.snippet.channelId,
       title: item.snippet.title,
-      thumbnail: item.snippet.thumbnails.default.url
+      thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url
     }));
   } catch (e) {
     console.error("Channel search failed", e);
@@ -679,7 +679,7 @@ export const fetchRealVideos = async (
         id: item.id,
         title: item.snippet.title,
         channelName: item.snippet.channelTitle,
-        thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+        thumbnailUrl: item.snippet.thumbnails.maxres?.url || item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
         duration: parseISO8601Duration(item.contentDetails.duration),
         views: formatNumber(currentViews),
         avgViews: formatNumber(channelInfo.avgViews),
@@ -897,7 +897,7 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
       return {
           id: ch.id,
           title: ch.snippet.title,
-          thumbnail: ch.snippet.thumbnails?.default?.url,
+          thumbnail: ch.snippet.thumbnails?.high?.url || ch.snippet.thumbnails?.medium?.url || ch.snippet.thumbnails?.default?.url,
           subscriberCount: formatNumber(subs),
           videoCount: formatNumber(parseInt(ch.statistics.videoCount || '0')),
           groupId: 'unassigned',
@@ -913,7 +913,7 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
               id: bestVideo.id,
               title: bestVideo.snippet.title,
               views: views,
-              thumbnail: bestVideo.snippet.thumbnails.high?.url || bestVideo.snippet.thumbnails.default?.url,
+              thumbnail: bestVideo.snippet.thumbnails.maxres?.url || bestVideo.snippet.thumbnails.high?.url || bestVideo.snippet.thumbnails.default?.url,
               publishedAt: bestVideo.snippet.publishedAt
           }
       };
@@ -969,7 +969,7 @@ export const fetchChannelPopularVideos = async (apiKey: string, channelId: strin
     const results = vData.items.map((item: any) => ({
       id: item.id,
       title: item.snippet.title,
-      thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      thumbnail: item.snippet.thumbnails.maxres?.url || item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
       views: formatNumber(parseInt(item.statistics.viewCount || "0")),
       duration: parseISO8601Duration(item.contentDetails.duration),
       publishedAt: item.snippet.publishedAt,
@@ -1199,7 +1199,7 @@ export const performRadarScan = async (
         subCount: parseInt(ch.statistics.subscriberCount || "0"),
         avgViewsEstimate: avg,
         title: ch.snippet.title,
-        thumb: ch.snippet.thumbnails.default.url
+        thumb: ch.snippet.thumbnails.high?.url || ch.snippet.thumbnails.medium?.url || ch.snippet.thumbnails.default.url
       });
     });
 
@@ -1280,7 +1280,7 @@ export const performRadarScan = async (
                title: v.snippet.title,
                channelName: chInfo.title,
                channelId: chId, // Add channelId for accurate filtering
-               thumbnailUrl: v.snippet.thumbnails.high?.url || v.snippet.thumbnails.default?.url,
+               thumbnailUrl: v.snippet.thumbnails.maxres?.url || v.snippet.thumbnails.high?.url || v.snippet.thumbnails.default?.url,
                duration: parseISO8601Duration(v.contentDetails.duration),
                views: formatNumber(views),
                avgViews: formatNumber(chInfo.avgViewsEstimate),
@@ -1434,7 +1434,7 @@ export const searchVideosForMaterials = async (
                      subs: formatNumber(parseInt(c.statistics?.subscriberCount || '0')),
                      totalViews: formatNumber(viewCount),
                      avgViews: Math.round(viewCount / videoCount),
-                     thumbnail: c.snippet?.thumbnails?.default?.url || ''
+                     thumbnail: c.snippet?.thumbnails?.high?.url || c.snippet?.thumbnails?.medium?.url || c.snippet?.thumbnails?.default?.url || ''
                   });
                });
             }
@@ -1467,7 +1467,7 @@ export const searchVideosForMaterials = async (
           title: v.snippet.title || 'No Title',
           channelName: v.snippet.channelTitle || 'Unknown',
           channelId: chId,
-          thumbnailUrl: v.snippet.thumbnails?.high?.url || v.snippet.thumbnails?.medium?.url || '',
+          thumbnailUrl: v.snippet.thumbnails?.maxres?.url || v.snippet.thumbnails?.high?.url || v.snippet.thumbnails?.medium?.url || '',
           duration: parseISO8601Duration(duration),
           durationSec: durationSec,
           velocity: velocity,

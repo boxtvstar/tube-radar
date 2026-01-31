@@ -132,7 +132,7 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
                 uniqueChannels.set(v.snippet.channelId, {
                    id: v.snippet.channelId,
                    title: v.snippet.channelTitle,
-                   thumbnail: v.snippet.thumbnails.default.url, 
+                   thumbnail: v.snippet.thumbnails.high?.url || v.snippet.thumbnails.medium?.url || v.snippet.thumbnails.default.url,
                    category: CATEGORY_NAMES[v.snippet.categoryId] || '엔터테인먼트',
                    velocity: (parseInt(v.statistics.viewCount) / (Math.max(1, (Date.now() - new Date(v.snippet.publishedAt).getTime()) / (1000 * 60 * 60)))).toFixed(0)
                 });
@@ -176,7 +176,7 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
 
              return {
                 ...base,
-                thumbnail: ch.snippet.thumbnails.default.url, 
+                thumbnail: ch.snippet.thumbnails.high?.url || ch.snippet.thumbnails.medium?.url || ch.snippet.thumbnails.default.url,
                 subs: subs, 
                 growth: growth,
                 publishedAt: validDate, 
