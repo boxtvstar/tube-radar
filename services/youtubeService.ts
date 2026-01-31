@@ -689,7 +689,7 @@ export const fetchRealVideos = async (
         id: item.id,
         title: item.snippet.title,
         channelName: item.snippet.channelTitle,
-        thumbnailUrl: item.snippet.thumbnails.maxres?.url || item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+        thumbnailUrl: item.snippet.thumbnails.maxres?.url || item.snippet.thumbnails.standard?.url || item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
         duration: parseISO8601Duration(item.contentDetails.duration),
         views: formatNumber(currentViews),
         avgViews: formatNumber(channelInfo.avgViews),
@@ -923,7 +923,7 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
               id: bestVideo.id,
               title: bestVideo.snippet.title,
               views: views,
-              thumbnail: bestVideo.snippet.thumbnails.maxres?.url || bestVideo.snippet.thumbnails.high?.url || bestVideo.snippet.thumbnails.default?.url,
+              thumbnail: bestVideo.snippet.thumbnails.maxres?.url || bestVideo.snippet.thumbnails.standard?.url || bestVideo.snippet.thumbnails.high?.url || bestVideo.snippet.thumbnails.medium?.url || bestVideo.snippet.thumbnails.default?.url,
               publishedAt: bestVideo.snippet.publishedAt
           }
       };
