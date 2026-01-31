@@ -181,11 +181,19 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
              const vData = await vRes.json();
              
              if (vData.items && vData.items.length > 0) {
-                // Calculate Median View Count
-                const views = vData.items.map((v: any) => parseInt(v.statistics.viewCount || "0")).sort((a: number, b: number) => a - b);
-                const mid = Math.floor(views.length / 2);
-                customAvg = views.length % 2 !== 0 ? views[mid] : Math.floor((views[mid - 1] + views[mid]) / 2);
+                // Calculate Median View Count, filtering out zero-view or anomalous data
+                const views = vData.items
+                  .map((v: any) => parseInt(v.statistics.viewCount || "0"))
+                  .filter(v => v > 0) // Filter out 0-view videos
+                  .sort((a: number, b: number) => a - b);
+                
+                if (views.length > 0) {
+                  const mid = Math.floor(views.length / 2);
+                  customAvg = views.length % 2 !== 0 ? views[mid] : Math.floor((views[mid - 1] + views[mid]) / 2);
+                }
              }
+             // Minimum floor for average views to prevent extreme Booster scores
+             if (customAvg < 100) customAvg = 100;
          }
     } catch (err) {
       console.warn("Failed to calc avg views for new channel", err);
@@ -629,10 +637,12 @@ export const fetchRealVideos = async (
 
     freshChannels.forEach((c: any) => {
       // Use Custom Average if available (DB > Global)
-      const globalAvg = Math.floor(parseInt(c.statistics.viewCount || "0") / Math.max(parseInt(c.statistics.videoCount || "1"), 1));
+      const totalViewsNum = parseInt(c.statistics.viewCount || "0");
+      const videoCountNum = Math.max(parseInt(c.statistics.videoCount || "1"), 1);
+      const globalAvg = Math.max(Math.floor(totalViewsNum / videoCountNum), 100);
       const dbAvg = dbAvgMap.get(c.id);
       
-      const finalAvg = dbAvg || globalAvg;
+      const finalAvg = Math.max(dbAvg || globalAvg, 100);
       
       channelMap.set(c.id, { 
         avgViews: finalAvg, 

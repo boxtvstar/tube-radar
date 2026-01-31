@@ -8,6 +8,7 @@ interface VideoDetailModalProps {
   onRemixThumbnail?: () => void;
   channelGroups?: Array<{ id: string; name: string; }>;
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
+  onExtractTranscript?: (videoUrl: string) => void;
 }
 
 // Category ID to Name mapping
@@ -18,7 +19,13 @@ const CATEGORY_NAMES: Record<string, string> = {
   '28': '과학/기술', '29': '비영리/사회'
 };
 
-export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClose, channelGroups = [], onAddChannel }) => {
+export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ 
+  video, 
+  onClose, 
+  channelGroups = [], 
+  onAddChannel,
+  onExtractTranscript 
+}) => {
   const [showGroupDropdown, setShowGroupDropdown] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -143,14 +150,14 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
             {video.title}
           </h2>
           
-          <div className="flex items-center gap-3 mb-3">
-            <div className="size-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shrink-0">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="size-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-lg border border-white/10">
               {video.channelName.substring(0,1)}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate">{video.channelName}</p>
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <span>{video.subscribers}</span>
+              <p className="text-sm font-black text-white truncate">{video.channelName}</p>
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
+                <span>{video.subscribers} 구독자</span>
                 <span>•</span>
                 <span>{video.uploadTime}</span>
                 {video.channelCountry && (
@@ -161,61 +168,76 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
                 )}
               </div>
             </div>
-            <div className="flex gap-2 shrink-0">
+          </div>
+
+          <div className="flex gap-2 mb-1">
+            <div className="flex-1">
               <a
                 href={videoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-white text-sm font-bold transition-all flex items-center gap-2 shadow-lg"
+                className="w-full px-2 py-2.5 bg-red-600 hover:bg-red-500 rounded-xl text-white text-[11px] font-black transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-red-600/20 active:scale-[0.98]"
+                title="유튜브에서 영상 보기"
               >
-                <span className="material-symbols-outlined text-base">play_circle</span>
-                <span>보기</span>
+                <span className="material-symbols-outlined text-[18px]">play_circle</span>
+                <span className="whitespace-nowrap">영상보기</span>
               </a>
-              {video.channelId && onAddChannel && (
-              <div className="relative">
+            </div>
+            
+            {onExtractTranscript && video.duration !== '0:00' && (
+              <div className="flex-1">
                 <button
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-bold text-white transition-all flex items-center gap-2 shadow-lg disabled:opacity-50"
+                  onClick={() => onExtractTranscript(videoUrl)}
+                  className="w-full px-2 py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 rounded-xl text-indigo-400 text-[11px] font-black transition-all flex items-center justify-center gap-1.5 border border-indigo-500/20 active:scale-[0.98]"
+                  title="대본 추출하기"
+                >
+                  <span className="material-symbols-outlined text-[18px]">description</span>
+                  <span className="whitespace-nowrap">대본추출</span>
+                </button>
+              </div>
+            )}
+
+            {video.channelId && onAddChannel && (
+              <div className="flex-1 relative">
+                <button
+                  className="w-full px-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-[11px] font-black text-white transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 disabled:opacity-50 active:scale-[0.98]"
                   onClick={() => setShowGroupDropdown(!showGroupDropdown)}
                   disabled={isAdding}
                 >
                   {isAdding ? (
-                    <>
-                      <span className="material-symbols-outlined text-base animate-spin">sync</span>
-                      <span>추가 중...</span>
-                    </>
+                    <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
                   ) : (
                     <>
-                      <span className="material-symbols-outlined text-base">add</span>
-                      <span>채널 추가</span>
+                      <span className="material-symbols-outlined text-[18px]">add</span>
+                      <span className="whitespace-nowrap">채널추가</span>
                     </>
                   )}
                 </button>
 
                 {showGroupDropdown && (
-                  <div className="absolute top-full mt-2 right-0 w-64 bg-slate-900 border border-white/20 rounded-xl shadow-2xl overflow-hidden z-50 animate-in zoom-in-95 fade-in">
+                  <div className="absolute top-full mt-2 right-0 w-64 bg-slate-900 border border-white/20 rounded-2xl shadow-2xl overflow-hidden z-[100] animate-in slide-in-from-top-2 fade-in">
                     <div className="p-3 border-b border-white/10 bg-slate-800/50">
-                      <div className="text-xs font-bold text-slate-300 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-sm text-indigo-400">folder_open</span>
+                      <div className="text-[10px] font-black text-indigo-400 flex items-center gap-2 uppercase tracking-widest">
+                        <span className="material-symbols-outlined text-base">folder_open</span>
                         그룹 선택
                       </div>
                     </div>
 
-                    <div className="max-h-60 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
                       {channelGroups.filter(g => g.id !== 'all').length > 0 ? (
                         channelGroups.filter(g => g.id !== 'all').map(group => (
                           <button
                             key={group.id}
-                            className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-indigo-600/80 transition-colors flex items-center gap-2 border-b border-white/5 last:border-b-0"
+                            className="w-full text-left px-4 py-3 text-xs font-bold text-white hover:bg-indigo-600 transition-colors flex items-center gap-3 border-b border-white/5 last:border-b-0"
                             onClick={async () => {
                               if (onAddChannel && video.channelId) {
                                 setIsAdding(true);
                                 try {
                                   await onAddChannel(video.channelId, group.id);
                                   setShowGroupDropdown(false);
-                                  onClose(); // 채널 추가 성공 후 모달 닫기
+                                  onClose();
                                 } catch (e: any) {
-                                  console.error('채널 추가 실패:', e);
-                                  setErrorMessage(e.message || '채널 추가 중 알 수 없는 오류가 발생했습니다.');
+                                  setErrorMessage(e.message || '오류 발생');
                                 } finally {
                                   setIsAdding(false);
                                 }
@@ -227,8 +249,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
                           </button>
                         ))
                       ) : (
-                        <div className="p-4 text-xs text-slate-500 text-center">
-                          그룹이 없습니다.
+                        <div className="p-4 text-[10px] text-slate-500 text-center font-bold">
+                          저장된 그룹이 없습니다
                         </div>
                       )}
                     </div>
@@ -237,43 +259,32 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
                       {!isCreatingGroup ? (
                         <button
                           onClick={() => setIsCreatingGroup(true)}
-                          className="w-full px-3 py-2 rounded-lg text-xs font-bold text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2 border border-dashed border-emerald-500/30"
+                          className="w-full px-3 py-2.5 rounded-xl text-[10px] font-black text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2 border border-dashed border-emerald-500/30"
                         >
-                          <span className="material-symbols-outlined text-sm">add_circle</span>
+                          <span className="material-symbols-outlined text-base">add_circle</span>
                           새 그룹 만들기
                         </button>
                       ) : (
-                        <div className="space-y-2 animate-in slide-in-from-top-2">
+                        <div className="space-y-2 p-1">
                           <input
                             type="text"
                             value={newGroupName}
                             onChange={(e) => setNewGroupName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && newGroupName.trim()) {
-                                handleCreateAndAdd();
-                              } else if (e.key === 'Escape') {
-                                setIsCreatingGroup(false);
-                                setNewGroupName('');
-                              }
-                            }}
                             placeholder="그룹명 입력..."
-                            className="w-full px-3 py-2 bg-slate-800 border border-white/20 rounded-lg text-xs text-white focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none"
+                            className="w-full px-3 py-2 bg-slate-800 border border-white/20 rounded-lg text-xs text-white focus:ring-2 focus:ring-emerald-500/30 outline-none font-bold"
                             autoFocus
                           />
-                          <div className="flex gap-2">
+                          <div className="flex gap-1.5">
                             <button
                               onClick={handleCreateAndAdd}
                               disabled={!newGroupName.trim() || isAdding}
-                              className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-xs font-bold transition-colors"
+                              className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black transition-colors"
                             >
-                              생성 & 추가
+                              만들기
                             </button>
                             <button
-                              onClick={() => {
-                                setIsCreatingGroup(false);
-                                setNewGroupName('');
-                              }}
-                              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-colors"
+                              onClick={() => { setIsCreatingGroup(false); setNewGroupName(''); }}
+                              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-black transition-colors"
                             >
                               취소
                             </button>
@@ -284,8 +295,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
                   </div>
                 )}
               </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
 
@@ -295,91 +305,91 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
           {video.duration !== '0:00' ? (
             <>
               {/* Top Row: Thumbnail + Booster */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 {/* Thumbnail */}
-                <div className="relative h-28 rounded-xl overflow-hidden border border-white/10 group">
+                <div className="relative h-20 md:h-24 rounded-xl overflow-hidden border border-white/10 group">
                   <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="size-10 rounded-full bg-red-600 flex items-center justify-center shadow-xl hover:scale-110 transition-transform">
-                      <span className="material-symbols-outlined text-white text-2xl fill-current">play_arrow</span>
+                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="size-8 rounded-full bg-red-600 flex items-center justify-center shadow-xl hover:scale-110 transition-transform">
+                      <span className="material-symbols-outlined text-white text-base fill-current">play_arrow</span>
                     </a>
                   </div>
                 </div>
 
                 {/* Booster Score */}
-                <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-4 relative overflow-hidden flex flex-col justify-center h-28">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+                <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl p-2.5 relative overflow-hidden flex flex-col justify-center h-20 md:h-24">
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-full blur-2xl"></div>
                   <div className="relative">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <span className="material-symbols-outlined text-white/80 text-base">local_fire_department</span>
-                      <span className="text-[10px] font-bold text-white/80 uppercase">부스터</span>
+                    <div className="flex items-center gap-1 mb-0">
+                      <span className="material-symbols-outlined text-white/80 text-[12px]">local_fire_department</span>
+                      <span className="text-[8px] font-black text-white/80 uppercase tracking-tighter">부스터</span>
                     </div>
-                    <div className="text-4xl font-black text-white mb-0.5">
+                    <div className="text-2xl font-black text-white leading-none">
                       {stats.outlier}x
                     </div>
-                    <div className="text-[10px] text-white/70">평소보다 {stats.outlier}배 인기</div>
+                    <div className="text-[8px] text-white/70 mt-1 font-bold">평소보다 {stats.outlier}배 인기</div>
                   </div>
                 </div>
               </div>
 
               {/* Stats Grid - 2x3 */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 {/* Views */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-sky-400 text-lg">visibility</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">조회</span>
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-sky-400 text-base">visibility</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">조회수</span>
                   </div>
-                  <div className="text-2xl font-black text-white">
+                  <div className="text-2xl font-black text-white leading-none">
                     {stats.views >= 10000 ? (stats.views / 10000).toFixed(1) + '만' : stats.views.toLocaleString()}
                   </div>
                 </div>
 
                 {/* VPH */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-amber-400 text-lg">schedule</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">시간당</span>
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-amber-400 text-base">schedule</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">시간당 조회</span>
                   </div>
-                  <div className="text-2xl font-black text-white">{stats.vph.toLocaleString()}</div>
+                  <div className="text-2xl font-black text-white leading-none">{stats.vph.toLocaleString()}</div>
                 </div>
 
                 {/* Engagement */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-emerald-400 text-lg">thumb_up</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">참여도</span>
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-emerald-400 text-base">thumb_up</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">시청 참여도</span>
                   </div>
-                  <div className={`text-xl font-black ${stats.engagementColor}`}>
+                  <div className={`text-2xl font-black leading-none ${stats.engagementColor}`}>
                     {stats.engagementGrade}
                   </div>
                 </div>
 
                 {/* Duration */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-purple-400 text-lg">timer</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">재생시간</span>
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-purple-400 text-base">timer</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">영상 길이</span>
                   </div>
-                  <div className="text-2xl font-black text-white">{video.duration}</div>
+                  <div className="text-2xl font-black text-white leading-none">{video.duration}</div>
                 </div>
 
                 {/* Avg Views */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-orange-400 text-lg">trending_up</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">평균조회</span>
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-orange-400 text-base">trending_up</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">평균 조회수</span>
                   </div>
-                  <div className="text-lg font-black text-white">{video.avgViews}</div>
+                  <div className="text-xl font-black text-white leading-none">{video.avgViews}</div>
                 </div>
 
                 {/* Category */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-pink-400 text-lg">category</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">카테고리</span>
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-pink-400 text-base">category</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">카테고리</span>
                   </div>
-                  <div className="text-sm font-black text-white truncate">{getCategoryName(video.category)}</div>
+                  <div className="text-lg font-black text-white truncate leading-none">{getCategoryName(video.category)}</div>
                 </div>
               </div>
 
@@ -435,52 +445,52 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ video, onClo
               </div>
 
               {/* Channel Stats */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-pink-400 text-lg">category</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">카테고리</span>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-pink-400 text-base">category</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">카테고리</span>
                   </div>
-                  <div className="text-base font-black text-white truncate">{getCategoryName(video.category)}</div>
+                  <div className="text-lg font-black text-white truncate leading-none">{getCategoryName(video.category)}</div>
                 </div>
 
                 {video.channelCountry && (
-                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <span className="material-symbols-outlined text-blue-400 text-lg">flag</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">국가</span>
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-blue-400 text-base">flag</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">국가</span>
                     </div>
-                    <div className="text-base font-black text-white">{getFlagEmoji(video.channelCountry)} {video.channelCountry}</div>
+                    <div className="text-lg font-black text-white leading-none">{getFlagEmoji(video.channelCountry)} {video.channelCountry}</div>
                   </div>
                 )}
 
                 {video.avgViews && video.avgViews !== '0' && (
-                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <span className="material-symbols-outlined text-orange-400 text-lg">trending_up</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">평균 조회</span>
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-orange-400 text-base">trending_up</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">평균 조회수</span>
                     </div>
-                    <div className="text-base font-black text-white">{video.avgViews}</div>
+                    <div className="text-xl font-black text-white leading-none">{video.avgViews}</div>
                   </div>
                 )}
 
                 {video.channelTotalViews && (
-                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <span className="material-symbols-outlined text-sky-400 text-lg">visibility</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">총 조회</span>
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-sky-400 text-base">visibility</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">총 조회수</span>
                     </div>
-                    <div className="text-base font-black text-white">{video.channelTotalViews}</div>
+                    <div className="text-xl font-black text-white leading-none">{video.channelTotalViews}</div>
                   </div>
                 )}
 
                 {video.viralScore && video.viralScore !== '0x' && (
-                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-4">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <span className="material-symbols-outlined text-purple-400 text-lg">local_fire_department</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">성장 지수</span>
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-purple-400 text-base">local_fire_department</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">성장 지수</span>
                     </div>
-                    <div className="text-base font-black text-purple-400">{video.viralScore}</div>
+                    <div className="text-xl font-black text-purple-400 leading-none">{video.viralScore}</div>
                   </div>
                 )}
               </div>
