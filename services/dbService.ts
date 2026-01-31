@@ -14,13 +14,22 @@ import {
 import { db } from "../src/lib/firebase";
 import { SavedChannel, ChannelGroup, RecommendedPackage, Notification } from "../types";
 
-// Helper function to remove undefined fields from objects
+// Helper function to remove undefined fields from objects (deep)
 // Firestore doesn't allow undefined values, so we need to filter them out
 const removeUndefinedFields = <T extends Record<string, any>>(obj: T): Partial<T> => {
   const cleaned: any = {};
   Object.keys(obj).forEach(key => {
     const value = obj[key];
-    if (value !== undefined) {
+    if (value === undefined) return;
+    if (Array.isArray(value)) {
+      cleaned[key] = value.map((item: any) =>
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? removeUndefinedFields(item)
+          : item
+      );
+    } else if (value && typeof value === 'object' && !(value instanceof Date)) {
+      cleaned[key] = removeUndefinedFields(value);
+    } else {
       cleaned[key] = value;
     }
   });
@@ -70,7 +79,8 @@ export const batchSaveChannels = async (userId: string, channels: SavedChannel[]
 // --- Recommended Packages (Admin/Public) ---
 
 export const savePackageToDb = async (pkg: RecommendedPackage) => {
-  await setDoc(doc(db, "recommended_packages", pkg.id), pkg);
+  const sanitized = removeUndefinedFields(pkg);
+  await setDoc(doc(db, "recommended_packages", pkg.id), sanitized);
 };
 
 export const deletePackageFromDb = async (pkgId: string) => {
@@ -88,7 +98,8 @@ export const getPackagesFromDb = async (): Promise<RecommendedPackage[]> => {
 // --- Recommended Topics (New Feature) ---
 
 export const saveTopicToDb = async (pkg: RecommendedPackage) => {
-  await setDoc(doc(db, "recommended_topics", pkg.id), pkg);
+  const sanitized = removeUndefinedFields(pkg);
+  await setDoc(doc(db, "recommended_topics", pkg.id), sanitized);
 };
 
 export const deleteTopicFromDb = async (pkgId: string) => {

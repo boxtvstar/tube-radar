@@ -33,9 +33,13 @@ interface UserData {
 
 // Notice Interface
 interface Notice {
+  id?: string;
+  title: string;
   content: string;
   isActive: boolean;
+  imageUrl?: string;
   updatedAt: string;
+  createdAt?: string;
 }
 
 // Helper to calculate expiry date
@@ -90,6 +94,46 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   const [notice, setNotice] = useState<string>('');
   const [isNoticeActive, setIsNoticeActive] = useState(false);
   const [showNoticeInput, setShowNoticeInput] = useState(false);
+  const [noticeImageUrl, setNoticeImageUrl] = useState<string>('');
+  
+  // Notice Board State
+  const [noticeList, setNoticeList] = useState<Notice[]>([]);
+  const [noticeViewMode, setNoticeViewMode] = useState<'list' | 'form'>('list');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+       alert("이미지 파일만 업로드 가능합니다.");
+       return;
+    }
+
+    // 파일 사이즈 체크 (약 1.5MB 제한 - Firestore 문서 제한 고려)
+    if (file.size > 1.5 * 1024 * 1024) {
+        alert("이미지 용량이 너무 큽니다. (1.5MB 이하만 가능)\n용량을 줄여서 다시 올려주세요.");
+        return;
+    }
+
+    setIsUploading(true);
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+        if (typeof reader.result === 'string') {
+            setNoticeImageUrl(reader.result);
+        }
+        setIsUploading(false);
+    };
+    reader.onerror = () => {
+        console.error("File reading failed");
+        alert("이미지 변환 중 오류가 발생했습니다.");
+        setIsUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Memo State
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
@@ -539,7 +583,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   };
 
   // --- Recommended Packages & Topics State ---
-const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership'>('users');
+const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership' | 'notices'>('users');
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
   const [topics, setTopics] = useState<RecommendedPackage[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
@@ -946,6 +990,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
            const data = noticeDoc.data() as Notice;
            setNotice(data.content);
            setIsNoticeActive(data.isActive);
+           setNoticeImageUrl(data.imageUrl || '');
         }
       } catch (e) {
         console.log("No notice found or init error");
@@ -1005,14 +1050,61 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   };
 
   // Notice Actions
-  const saveNotice = async () => {
+  // Notice Board Actions
+  const fetchNotices = async () => {
     try {
-      await setDoc(doc(db, 'system', 'notice'), {
-        content: notice,
-        isActive: isNoticeActive,
-        updatedAt: new Date().toISOString()
-      });
-      setShowNoticeInput(false);
+      const q = query(collection(db, 'notices'), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      setNoticeList(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notice)));
+    } catch(e) { console.error("Notice fetch failed", e); }
+  };
+
+  const handleCreateNotice = () => {
+     setEditId(null);
+     setEditTitle('');
+     setNotice('');
+     setIsNoticeActive(true);
+     setNoticeImageUrl('');
+     setNoticeViewMode('form');
+  };
+
+  const handleEditNotice = (n: Notice) => {
+     setEditId(n.id || null);
+     setEditTitle(n.title || '');
+     setNotice(n.content || '');
+     setIsNoticeActive(n.isActive);
+     setNoticeImageUrl(n.imageUrl || '');
+     setNoticeViewMode('form');
+  };
+
+  const handleDeleteNotice = async (id: string) => {
+      if(!window.confirm('삭제하시겠습니까?')) return;
+      await deleteDoc(doc(db, 'notices', id));
+      fetchNotices();
+  };
+
+  const saveNotice = async () => {
+    if (!editTitle) return alert('제목을 입력해주세요.');
+
+    const data = {
+      title: editTitle,
+      content: notice,
+      isActive: isNoticeActive,
+      imageUrl: noticeImageUrl,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      if (editId) {
+        await updateDoc(doc(db, 'notices', editId), data);
+      } else {
+        await addDoc(collection(db, 'notices'), {
+          ...data,
+          createdAt: new Date().toISOString()
+        });
+      }
+      fetchNotices();
+      setNoticeViewMode('list');
     } catch (e) {
       alert("공지사항 저장 실패");
     }
@@ -1275,6 +1367,15 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       {activeTab !== 'membership' && <span className="bg-rose-500 size-2 rounded-full"></span>}
                    </div>
                  </button>
+                 <button 
+                   onClick={() => { setActiveTab('notices'); fetchNotices(); setNoticeViewMode('list'); }}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'notices' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                 >
+                   <div className="flex items-center gap-1">
+                      <span>공지사항 게시판</span>
+                      {activeTab !== 'notices' && <span className="bg-green-500 size-2 rounded-full"></span>}
+                   </div>
+                 </button>
               </div>
           </div>
 
@@ -1297,15 +1398,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       })
                     </button>
                   ))}
-                    <button 
-                    onClick={() => setShowNoticeInput(!showNoticeInput)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ml-auto md:ml-4 whitespace-nowrap flex-shrink-0 ${
-                      isNoticeActive ? 'bg-accent-hot/10 text-accent-hot border border-accent-hot/20' : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-sm">campaign</span>
-                    공지사항
-                  </button>
+
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -1343,24 +1436,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
            </div>
         </div>
         
-        {/* Notice Input Panel */}
-        {showNoticeInput && (
-          <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 p-4 animate-in slide-in-from-top-2">
-             <div className="max-w-3xl mx-auto flex gap-4">
-               <input 
-                 value={notice} 
-                 onChange={(e) => setNotice(e.target.value)}
-                 placeholder="전체 사용자에게 보여줄 공지사항을 입력하세요"
-                 className="flex-1 p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm"
-               />
-               <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-                 <input type="checkbox" checked={isNoticeActive} onChange={(e) => setIsNoticeActive(e.target.checked)} className="rounded text-primary focus:ring-primary" />
-                 <span>활성화</span>
-               </label>
-               <button onClick={saveNotice} className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-sm font-bold">저장</button>
-             </div>
-          </div>
-        )}
+
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-4 md:p-8 max-w-full mx-auto w-full">
@@ -1699,7 +1775,186 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                   </div>
                 )}
              </div>
-          ) : activeTab === 'membership' ? (
+          ) : activeTab === 'notices' ? (
+             <div className="max-w-5xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4">
+               {/* List Mode */}
+               {noticeViewMode === 'list' && (
+                 <div className="space-y-4">
+                    <div className="flex justify-between items-center mb-6">
+                       <div>
+                          <h3 className="text-2xl font-black italic tracking-tighter text-slate-900 dark:text-white uppercase flex items-center gap-2">
+                             <span className="material-symbols-outlined text-primary text-3xl">campaign</span>
+                             Notice Board
+                          </h3>
+                          <p className="text-xs text-slate-500 font-bold mt-1 ml-1">공지사항을 작성하고 관리합니다.</p>
+                       </div>
+                       <button 
+                         onClick={handleCreateNotice}
+                         className="flex items-center gap-1 bg-primary text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20 hover:scale-105 active:scale-95"
+                       >
+                         <span className="material-symbols-outlined text-[20px]">add</span>
+                         새 공지 작성
+                       </button>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+                       <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-700">
+                             <tr>
+                                <th className="p-4 w-20 text-center">상태</th>
+                                <th className="p-4">제목 (관리자용)</th>
+                                <th className="p-4 w-40 hidden sm:table-cell text-center">작성일</th>
+                                <th className="p-4 w-32 text-right">관리</th>
+                             </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                             {noticeList.length === 0 ? (
+                               <tr><td colSpan={4} className="p-10 text-center text-slate-400 font-bold">등록된 공지사항이 없습니다.</td></tr>
+                             ) : noticeList.map((n) => (
+                               <tr key={n.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                  <td className="p-4 text-center">
+                                    {n.isActive ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
+                                        ON
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
+                                        OFF
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="p-4 font-bold text-slate-700 dark:text-slate-200 cursor-pointer hover:text-primary transition-colors" onClick={() => handleEditNotice(n)}>
+                                    <div className="flex items-center gap-2">
+                                       {n.title}
+                                       {n.imageUrl && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 font-bold">IMG</span>}
+                                    </div>
+                                  </td>
+                                  <td className="p-4 text-slate-500 text-xs font-mono hidden sm:table-cell text-center">
+                                    {n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '-'}
+                                  </td>
+                                  <td className="p-4 text-right">
+                                     <div className="flex justify-end gap-1">
+                                       <button onClick={() => handleEditNotice(n)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-indigo-500 transition-colors">
+                                         <span className="material-symbols-outlined text-[20px]">edit</span>
+                                       </button>
+                                       <button onClick={() => handleDeleteNotice(n.id!)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-slate-400 hover:text-rose-500 transition-colors">
+                                         <span className="material-symbols-outlined text-[20px]">delete</span>
+                                       </button>
+                                     </div>
+                                  </td>
+                               </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                    </div>
+                 </div>
+               )}
+
+               {/* Form Mode */}
+               {noticeViewMode === 'form' && (
+                 <div className="space-y-4 animate-in slide-in-from-right-4 fade-in duration-300">
+                    <div className="flex items-center gap-2 mb-2">
+                       <button onClick={() => setNoticeViewMode('list')} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
+                          <span className="material-symbols-outlined">arrow_back</span>
+                       </button>
+                       <h3 className="text-xl font-bold">{editId ? '공지사항 수정' : '새 공지 작성'}</h3>
+                    </div>
+                    
+                    <div className="grid gap-6 bg-white dark:bg-slate-900 p-6 md:p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                       {/* Title & Active */}
+                       <div className="flex flex-col md:flex-row gap-6">
+                          <div className="flex-1">
+                             <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">제목 (관리자용 - 사용자 비노출)</label>
+                             <input 
+                               value={editTitle}
+                               onChange={(e) => setEditTitle(e.target.value)}
+                               placeholder="관리자 확인용 제목을 입력하세요 (사용자에게 노출되지 않습니다)"
+                               className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                             />
+                          </div>
+                          <div className="w-full md:w-40">
+                             <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">노출 상태</label>
+                             <label className={`flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer select-none transition-all ${isNoticeActive ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800' : 'bg-slate-50 border-slate-200 text-slate-400 dark:bg-slate-800 dark:border-slate-700'}`}>
+                                <input type="checkbox" checked={isNoticeActive} onChange={(e) => setIsNoticeActive(e.target.checked)} className="rounded text-green-600 focus:ring-green-500 size-5" />
+                                <span className="text-sm font-bold">{isNoticeActive ? '노출 중' : '숨김 상태'}</span>
+                             </label>
+                          </div>
+                       </div>
+
+                       {/* Content (HTML) */}
+                       <div>
+                          <div className="flex justify-between mb-1.5">
+                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">내용 (HTML)</label>
+                             <span className="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">HTML 지원됨</span>
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[500px]">
+                             <div className="flex flex-col h-full"> 
+                                <textarea 
+                                    value={notice}
+                                    onChange={(e) => setNotice(e.target.value)}
+                                    placeholder="<p>내용을 입력하세요</p>"
+                                    className="flex-1 w-full p-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono overflow-auto resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none custom-scrollbar mb-2"
+                                />
+                                <div className="text-[10px] text-slate-400 px-1">
+                                    💡 Tip: &lt;b&gt;, &lt;strong&gt;, &lt;br&gt;, &lt;span style="..."&gt; 등의 태그를 사용할 수 있습니다.
+                                </div>
+                             </div>
+                             
+                             <div className="h-full p-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-y-auto custom-scrollbar relative shadow-inner">
+                                <div className="absolute top-3 right-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 z-10">Preview</div>
+                                <div 
+                                  className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-3 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>a]:text-indigo-500 [&>a]:underline"
+                                  dangerouslySetInnerHTML={{ __html: notice || '<div class="flex items-center justify-center h-full text-slate-400 text-sm">미리보기 영역입니다.</div>' }}
+                                />
+                             </div>
+                          </div>
+                       </div>
+
+                       {/* Image */}
+                       <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">첨부 이미지</label>
+                          <div className="flex flex-col md:flex-row gap-3">
+                             <input 
+                               value={noticeImageUrl} 
+                               onChange={(e) => setNoticeImageUrl(e.target.value)}
+                               placeholder="이미지 URL (직접 입력 또는 업로드)"
+                               className="flex-1 p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                             />
+                             <label className={`bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-6 py-3 rounded-xl text-sm font-bold cursor-pointer whitespace-nowrap flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <span className="material-symbols-outlined text-[20px]">upload_file</span>
+                                <span>{isUploading ? '변환 중...' : '이미지 업로드'}</span>
+                                <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    className="hidden" 
+                                    onChange={handleImageUpload}
+                                    disabled={isUploading}
+                                />
+                             </label>
+                          </div>
+                          {noticeImageUrl && (
+                             <div className="mt-4 relative w-full h-48 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group flex items-center justify-center">
+                                <img src={noticeImageUrl} alt="Preview" className="h-full object-contain" />
+                                <button onClick={() => setNoticeImageUrl('')} className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm">
+                                  <span className="material-symbols-outlined text-[16px]">close</span>
+                                </button>
+                             </div>
+                          )}
+                       </div>
+                       
+                       {/* Footer */}
+                       <div className="flex justify-end gap-3 mt-4 pt-6 border-t border-slate-100 dark:border-slate-800">
+                          <button onClick={() => setNoticeViewMode('list')} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">취소</button>
+                          <button onClick={saveNotice} className="bg-primary hover:bg-primary-dark text-white px-8 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/30 transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[18px]">save</span>
+                            {editId ? '수정 사항 저장' : '공지사항 등록'}
+                          </button>
+                       </div>
+                    </div>
+                 </div>
+               )}
+             </div>
+          ) : (activeTab === 'membership' ? (
             <div className="space-y-6 animate-in fade-in max-w-6xl mx-auto w-full">
                {/* Stats & Actions Card */}
                <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1892,7 +2147,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                      </table>
                   </div>
                </div>
-            </div>
+             </div>
           ) : (
             <div className="flex flex-col gap-6">
                 {/* Package Filters */}
@@ -1998,9 +2253,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                   )}
                 </div>
              </div>
-          )}
+          ))}
         </div>
-        
+
         {/* User Edit Modal */}
         {selectedUser && (
           <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 z-10 flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">

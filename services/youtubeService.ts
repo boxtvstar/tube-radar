@@ -898,6 +898,8 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
           id: ch.id,
           title: ch.snippet.title,
           thumbnail: ch.snippet.thumbnails?.default?.url,
+          subscriberCount: formatNumber(subs),
+          videoCount: formatNumber(parseInt(ch.statistics.videoCount || '0')),
           groupId: 'unassigned',
           viralScore: viralScore,
           stats: {

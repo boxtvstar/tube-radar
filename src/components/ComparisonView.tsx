@@ -222,7 +222,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
       <div className="bg-slate-50 dark:bg-black p-6 md:p-10 space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
          <div className="w-full max-w-[1800px] mx-auto space-y-6">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 py-4 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-4 border-b border-slate-200 dark:border-slate-800">
                <div className="space-y-2">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
                      <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
@@ -294,10 +294,10 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                                <p className={`font-bold text-sm truncate px-2 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-900 dark:text-slate-200'}`}>{ch.title}</p>
                                <div className="flex flex-col gap-0.5 mt-1.5">
                                   <span className="text-[10px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full mx-auto">
-                                     구독자 {ch.subscriberCount}
+                                     구독자 {ch.subscriberCount || '정보 없음'}
                                   </span>
                                   <span className="text-[10px] text-slate-400 font-medium">
-                                     영상 {ch.videoCount}개
+                                     영상 {ch.videoCount || '-'}개
                                   </span>
                                </div>
                             </div>
@@ -316,7 +316,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
        <div className="w-full max-w-[1800px] mx-auto space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-4 border-b border-slate-200 dark:border-slate-800">
         <div className="space-y-2 flex-1">
           <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
             <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>

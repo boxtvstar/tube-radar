@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore'; 
+import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit } from 'firebase/firestore'; 
 import { MOCK_VIDEOS, MOCK_STATS, NETWORK_VELOCITY_DATA } from './constants';
 import { getApiUsage, resetQuota } from './services/usageService';
 import { db } from './src/lib/firebase';
@@ -688,11 +688,28 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
 
   // Notice State
-  const [notice, setNotice] = useState<{ content: string; isActive: boolean } | null>(null);
+  const [notice, setNotice] = useState<{ id?: string; title?: string; content: string; isActive: boolean; imageUrl?: string } | null>(null);
   const [isNoticeDismissed, setIsNoticeDismissed] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const unreadCount = notifications.filter(n => !n.isRead).length;
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // Notice Popup State & Logic
+  const [showNoticePopup, setShowNoticePopup] = useState(false);
+
+  useEffect(() => {
+    if (notice && notice.isActive && (notice.content || notice.imageUrl)) {
+      const uniqueKey = (notice.content || "") + (notice.imageUrl || "");
+      const hiddenContent = localStorage.getItem('tubeRadar_notice_hidden_content');
+      if (hiddenContent !== uniqueKey) {
+        setShowNoticePopup(true);
+      } else {
+        setShowNoticePopup(false);
+      }
+    } else {
+      setShowNoticePopup(false);
+    }
+  }, [notice]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -706,17 +723,37 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
 
 
   useEffect(() => {
-    // Real-time listener for notice
-    const unsub = onSnapshot(doc(db, 'system', 'notice'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as { content: string; isActive: boolean };
-        setNotice(data);
-        // Reset dismissal when content changes significantly (optional logic, simplifed here to always show unless dismissed this session)
-        // If we want to re-show on update:
-        // setIsNoticeDismissed(false); 
+    // Real-time listener for notices (Fetch latest active notice)
+    // where + orderBy on different fields requires composite index
+    // Use simple where query and sort client-side to avoid index requirement
+    const q = query(
+      collection(db, 'notices'),
+      where('isActive', '==', true)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        // Sort client-side by createdAt desc, pick latest
+        const sorted = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a: any, b: any) => {
+            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bTime - aTime;
+          });
+        const latest = sorted[0] as any;
+        setNotice({
+           id: latest.id,
+           content: latest.content,
+           isActive: latest.isActive,
+           imageUrl: latest.imageUrl,
+           title: latest.title
+        });
       } else {
-        setNotice(null);
+         setNotice(null);
       }
+    }, (error) => {
+      console.error('Notice listener error:', error);
     });
     return () => unsub();
   }, []);
@@ -752,23 +789,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
 
   return (
   <header className="flex flex-col sticky top-0 z-40">
-    {/* Notice Banner */}
-    {notice && notice.isActive && notice.content && !isNoticeDismissed && (
-      <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white text-[11px] font-bold py-1.5 px-4 tracking-wide animate-in slide-in-from-top-full relative overflow-hidden flex items-center justify-between">
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-white/20"></div>
-        <div className="flex-1 flex items-center justify-center gap-2 pl-6">
-          <span className="material-symbols-outlined text-[14px] animate-pulse">campaign</span>
-          <span>{notice.content}</span>
-        </div>
-        <button 
-          onClick={() => setIsNoticeDismissed(true)} 
-          className="text-white/70 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
-          title="공지 닫기"
-        >
-          <span className="material-symbols-outlined text-[14px] block">close</span>
-        </button>
-      </div>
-    )}
+    
     <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 bg-white/80 dark:bg-background-dark/50 backdrop-blur-md transition-colors duration-300 relative z-50">
     <div className="flex items-center gap-4">
       {/* Mobile Menu Toggle */}
@@ -803,6 +824,42 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
       )}
     </div>
     <div className="flex items-center gap-4">
+      
+      {role === 'admin' && (
+        <button 
+          onClick={onOpenAdmin}
+          className="flex items-center justify-center size-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500 hover:text-white transition-all shadow-sm"
+          title="관리자 대시보드"
+        >
+          <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+        </button>
+      )}
+
+      {/* Theme Toggle Switch */}
+      <button 
+        onClick={onToggleTheme}
+        className={`relative w-12 h-6 rounded-full transition-colors duration-300 flex items-center px-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`}
+        title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}
+      >
+        <div className={`size-4 rounded-full bg-white shadow-sm transform transition-transform duration-300 flex items-center justify-center ${theme === 'dark' ? 'translate-x-6' : 'translate-x-0'}`}>
+           <span className="material-symbols-outlined text-[10px] text-slate-900">
+             {theme === 'dark' ? 'dark_mode' : 'light_mode'}
+           </span>
+        </div>
+      </button>
+
+      {/* Hero Badge */}
+      <div className="bg-rose-500/10 dark:bg-rose-500/20 backdrop-blur-md border border-rose-500/20 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-lg shadow-lg shadow-rose-500/10 flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+        </span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-shadow-sm">
+          <span className="md:hidden">{region}</span>
+          <span className="hidden md:inline">{region} 지역 • {count}개 신호 감지</span>
+        </span>
+      </div>
+
       {user && (
         <div className="flex items-center gap-3 md:pl-4 md:border-l border-slate-200 dark:border-white/10 relative order-last md:order-none" ref={notifRef}>
            <button 
@@ -907,43 +964,69 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
            )}
         </div>
       )}
-      
-      {role === 'admin' && (
-        <button 
-          onClick={onOpenAdmin}
-          className="flex items-center justify-center size-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500 hover:text-white transition-all shadow-sm"
-          title="관리자 대시보드"
-        >
-          <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
-        </button>
-      )}
 
-      {/* Theme Toggle Switch */}
-      <button 
-        onClick={onToggleTheme}
-        className={`relative w-12 h-6 rounded-full transition-colors duration-300 flex items-center px-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`}
-        title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}
-      >
-        <div className={`size-4 rounded-full bg-white shadow-sm transform transition-transform duration-300 flex items-center justify-center ${theme === 'dark' ? 'translate-x-6' : 'translate-x-0'}`}>
-           <span className="material-symbols-outlined text-[10px] text-slate-900">
-             {theme === 'dark' ? 'dark_mode' : 'light_mode'}
-           </span>
+    </div>
+    </div>
+    
+    {/* Notice Popup */}
+    {showNoticePopup && notice && (
+        <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:right-6 sm:bottom-6 z-[100000] sm:max-w-md sm:w-[400px] animate-in slide-in-from-bottom-10 fade-in duration-500">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden ring-1 ring-black/5 flex flex-col max-h-[85vh] sm:max-h-[80vh]">
+             <div className="bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-3 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                   <span className="material-symbols-outlined text-[18px]">campaign</span>
+                   <span>공지사항</span>
+                </div>
+                <button
+                  onClick={() => setShowNoticePopup(false)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+             </div>
+
+             {notice.imageUrl && (
+               <div className="relative bg-slate-100 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700 overflow-hidden shrink-0">
+                 <img
+                   src={notice.imageUrl}
+                   alt="공지 이미지"
+                   className="w-full h-auto max-h-[40vh] sm:max-h-[50vh] object-contain block"
+                 />
+               </div>
+             )}
+
+             {notice.content && (
+                <div className="p-4 sm:p-5 overflow-y-auto min-h-0 custom-scrollbar">
+                    <div
+                      className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed font-medium prose dark:prose-invert max-w-none break-words [&>p]:mb-2 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>a]:text-indigo-500 [&>a]:underline [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_table]:w-full [&_table]:overflow-x-auto [&_table]:block [&_iframe]:max-w-full [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{ __html: notice.content }}
+                    />
+                </div>
+             )}
+
+             <div className="h-px bg-slate-100 dark:bg-slate-700 mx-4 shrink-0"></div>
+             <div className="flex shrink-0">
+                <button
+                  onClick={() => {
+                     const uniqueKey = (notice.content || "") + (notice.imageUrl || "");
+                     localStorage.setItem('tubeRadar_notice_hidden_content', uniqueKey);
+                     setShowNoticePopup(false);
+                  }}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                >
+                  다시 보지 않기
+                </button>
+                <div className="w-px bg-slate-100 dark:bg-slate-700"></div>
+                <button
+                  onClick={() => setShowNoticePopup(false)}
+                  className="flex-1 py-3 text-xs font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/10"
+                >
+                  닫기
+                </button>
+             </div>
+          </div>
         </div>
-      </button>
-
-      {/* Hero Badge */}
-      <div className="bg-rose-500/10 dark:bg-rose-500/20 backdrop-blur-md border border-rose-500/20 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-lg shadow-lg shadow-rose-500/10 flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-        </span>
-        <span className="text-[10px] font-black uppercase tracking-widest text-shadow-sm">
-          <span className="md:hidden">{region}</span>
-          <span className="hidden md:inline">{region} 지역 • {count}개 신호 감지</span>
-        </span>
-      </div>
-    </div>
-    </div>
+      )}
   </header>
   );
 };
@@ -972,7 +1055,7 @@ export default function App() {
   const { user, role: authRole, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved } = useAuth();
   
   // [Hardcode Admin Override] for specific email
-  const role = (user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole;
+  const role = ((user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole) as string;
 
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [visibleVideoCount, setVisibleVideoCount] = useState(20); // Pagination: Show 20 videos initially
@@ -1100,6 +1183,32 @@ export default function App() {
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+  
+  // Custom Confirm Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    actionLabel?: string;
+    isDestructive?: boolean; // 빨간색 버튼 여부
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+  
+  // Footer Terms/Privacy Modal State
+  const [footerModal, setFooterModal] = useState<{
+    isOpen: boolean;
+    type: 'terms' | 'privacy';
+  }>({
+    isOpen: false,
+    type: 'terms',
+  });
+
+
 
   const [isChannelListExpanded, setIsChannelListExpanded] = useState(false);
   const [showGuestNotice, setShowGuestNotice] = useState(false);
@@ -1355,6 +1464,8 @@ export default function App() {
       const now = new Date().getTime();
 
       const staleChannels = savedChannels.filter(ch => {
+        // 구독자/영상 수 누락된 채널 우선 업데이트
+        if (!ch.subscriberCount || !ch.videoCount) return true;
         // Use lastUpdated if available, otherwise fallback to addedAt
         const lastDate = ch.lastUpdated || ch.addedAt;
         if (!lastDate) return true; // Treat missing date as stale
@@ -1376,8 +1487,9 @@ export default function App() {
                    lastUpdated: Date.now() 
                };
                
-               // Update DB immediately
+               // Update DB and state
                await saveChannelToDb(user.uid, updated);
+               setSavedChannels(prev => prev.map(c => c.id === ch.id ? updated : c));
                console.log(`[AutoUpdate] Refreshed: ${ch.title}`);
                
                // Gentle delay between updates
@@ -1441,9 +1553,7 @@ export default function App() {
           const dbChannels = await getChannelsFromDb(user.uid);
           const uniqueChannels = Array.from(new Map(dbChannels.map(c => [c.id, c])).values());
           setSavedChannels(uniqueChannels);
-                    if (dbChannels.length === 0) {
-            setShowOnboarding(true);
-           }
+          
            // Fetch Notifications
            const notifs = await getNotifications(user.uid);
            setNotifications(notifs);
@@ -1855,64 +1965,71 @@ export default function App() {
   const [progress, setProgress] = useState<{ current: number; total: number; message: string } | null>(null);
   
   // --- Bulk Update Channel Stats (For Avg Views) ---
-  const handleUpdateChannelStats = async () => {
+  const handleUpdateChannelStats = () => {
     if (!currentGroupChannels.length) return;
-    const confirm = window.confirm(`전체 ${currentGroupChannels.length}개 채널의 정보를 최신화하여 '평균 조회수'를 재계산하시겠습니까?\n(시간이 조금 소요될 수 있습니다)`);
-    if (!confirm) return;
-
-    setLoading(true);
-    const total = currentGroupChannels.length;
-    setProgress({ current: 0, total, message: "채널 정보를 분석하고 있습니다..." });
     
-    let updatedCount = 0;
+    setConfirmModal({
+      isOpen: true,
+      title: "통계 업데이트",
+      message: `전체 ${currentGroupChannels.length}개 채널의 정보를 최신화하여 '평균 조회수'를 재계산하시겠습니까?\n(시간이 조금 소요될 수 있습니다)`,
+      actionLabel: "업데이트 시작",
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setLoading(true);
+        const total = currentGroupChannels.length;
+        setProgress({ current: 0, total, message: "채널 정보를 분석하고 있습니다..." });
+        
+        let updatedCount = 0;
+        
+        try {
+          // 1. Process Update
+          const updatedChannels = [...savedChannels]; // Copy full list
+          // Filter target channels that belong to current views
+          const targetIds = currentGroupChannels.map(c => c.id);
+          
+          for (let i = 0; i < total; i++) {
+              const id = targetIds[i];
+              const original = updatedChannels.find(c => c.id === id);
+              if (original) {
+                 try {
+                    // Fetch fresh info (calculates avg)
+                    const info = await getChannelInfo(ytKey, original.id);
+                    if (info) {
     
-    try {
-      // 1. Process Update
-      const updatedChannels = [...savedChannels]; // Copy full list
-      // Filter target channels that belong to current views
-      const targetIds = currentGroupChannels.map(c => c.id);
-      
-      for (let i = 0; i < total; i++) {
-          const id = targetIds[i];
-          const original = updatedChannels.find(c => c.id === id);
-          if (original) {
-             try {
-                // Fetch fresh info (calculates avg)
-                const info = await getChannelInfo(ytKey, original.id);
-                if (info) {
-
-                   const updated = { ...original, ...info, addedAt: original.addedAt, groupId: original.groupId }; // Preserve metadata
-                   
-                   // Update in-memory list
-                   const idx = updatedChannels.findIndex(c => c.id === id);
-                   if (idx !== -1) updatedChannels[idx] = updated;
-                   updatedCount++;
-                   
-                   // Update DB immediately
-                   if (user) await saveChannelToDb(user.uid, updated);
-                }
-             } catch (e) {
-                console.warn(`Failed to update ${original.title}`, e);
-             }
+                       const updated = { ...original, ...info, addedAt: original.addedAt, groupId: original.groupId }; // Preserve metadata
+                       
+                       // Update in-memory list
+                       const idx = updatedChannels.findIndex(c => c.id === id);
+                       if (idx !== -1) updatedChannels[idx] = updated;
+                       updatedCount++;
+                       
+                       // Update DB immediately
+                       if (user) await saveChannelToDb(user.uid, updated);
+                    }
+                 } catch (e) {
+                    console.warn(`Failed to update ${original.title}`, e);
+                 }
+              }
+              // Update Progress
+              setProgress({ current: i + 1, total, message: `분석 완료: ${original?.title || 'Unknown'}` });
           }
-          // Update Progress
-          setProgress({ current: i + 1, total, message: `분석 완료: ${original?.title || 'Unknown'}` });
+          
+          setSavedChannels(updatedChannels);
+          // alert(`${updatedCount}개의 채널 정보가 최신화되었습니다.`); // Remove alert, UI shows completion
+          
+          // Refresh videos with new stats
+          await loadVideos(true);
+          
+        } catch (e: any) {
+          console.error(e);
+          setAlertMessage({ title: "오류 발생", message: `업데이트 중 오류가 발생했습니다:\n${e.message || JSON.stringify(e)}`, type: 'error' });
+        } finally {
+          setLoading(false);
+          // Give user a moment to see 100%
+          setTimeout(() => setProgress(null), 500);
+        }
       }
-      
-      setSavedChannels(updatedChannels);
-      // alert(`${updatedCount}개의 채널 정보가 최신화되었습니다.`); // Remove alert, UI shows completion
-      
-      // Refresh videos with new stats
-      await loadVideos(true);
-      
-    } catch (e: any) {
-      console.error(e);
-      alert(`업데이트 중 오류가 발생했습니다:\n${e.message || JSON.stringify(e)}`);
-    } finally {
-      setLoading(false);
-      // Give user a moment to see 100%
-      setTimeout(() => setProgress(null), 500);
-    }
+    });
   };
 
   const handleActionRestricted = (callback: () => void) => {
@@ -2322,6 +2439,8 @@ export default function App() {
       id: result.id,
       title: result.title,
       thumbnail: result.thumbnail,
+      subscriberCount: result.subscriberCount,
+      videoCount: result.videoCount,
       groupId: activeGroupId === 'all' ? 'unassigned' : activeGroupId,
       addedAt: Date.now()
     };
@@ -2415,22 +2534,31 @@ export default function App() {
   const handleDeleteGroup = (e: React.MouseEvent, groupId: string) => {
     e.preventDefault(); e.stopPropagation();
     if (groupId === 'all' || groupId === 'unassigned') return;
-    if (window.confirm("그룹을 삭제하시겠습니까?")) {
-      setSavedChannels(prev => prev.map(c => {
-        if (c.groupId === groupId) {
-          const updated = { ...c, groupId: 'unassigned' };
-          if (user) saveChannelToDb(user.uid, updated);
-          return updated;
-        }
-        return c;
-      }));
-      setGroups(prev => prev.filter(g => g.id !== groupId));
-      if (user) deleteGroupFromDb(user.uid, groupId);
-      if (activeGroupId === groupId) setActiveGroupId('all');
-      setEditingGroupId(null);
-      setHasPendingSync(true);
-      setIsSyncNoticeDismissed(false);
-    }
+
+    setConfirmModal({
+      isOpen: true,
+      title: "그룹 삭제",
+      message: "이 그룹을 정말 삭제하시겠습니까?\n포함된 채널들은 '미지정' 그룹으로 이동됩니다.",
+      actionLabel: "삭제",
+      isDestructive: true,
+      onConfirm: () => {
+        setSavedChannels(prev => prev.map(c => {
+          if (c.groupId === groupId) {
+            const updated = { ...c, groupId: 'unassigned' };
+            if (user) saveChannelToDb(user.uid, updated);
+            return updated;
+          }
+          return c;
+        }));
+        setGroups(prev => prev.filter(g => g.id !== groupId));
+        if (user) deleteGroupFromDb(user.uid, groupId);
+        if (activeGroupId === groupId) setActiveGroupId('all');
+        setEditingGroupId(null);
+        setHasPendingSync(true);
+        setIsSyncNoticeDismissed(false);
+        setConfirmModal(prev => ({ ...prev, isOpen: false })); // Close modal
+      }
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -3230,17 +3358,17 @@ export default function App() {
                 )}
               </div>
             </div>
-          ) : isMyMode && (
+          ) : isMyMode && (<>
+            <style>{`
+              @keyframes neon-blink {
+                0%, 100% { box-shadow: 0 0 10px rgba(19, 55, 236, 0.4), 0 0 20px rgba(19, 55, 236, 0.2); border-color: rgba(19, 55, 236, 0.6); }
+                50% { box-shadow: 0 0 25px rgba(19, 55, 236, 0.8), 0 0 45px rgba(19, 55, 236, 0.4); border-color: rgba(19, 55, 236, 1); transform: scale(1.02); }
+              }
+              .neon-blink-btn {
+                animation: neon-blink 1.5s infinite ease-in-out;
+              }
+            `}</style>
             <div className="space-y-6 pb-20 animate-in slide-in-from-right-4 duration-500">
-              <style>{`
-                @keyframes neon-blink {
-                  0%, 100% { box-shadow: 0 0 10px rgba(19, 55, 236, 0.4), 0 0 20px rgba(19, 55, 236, 0.2); border-color: rgba(19, 55, 236, 0.6); }
-                  50% { box-shadow: 0 0 25px rgba(19, 55, 236, 0.8), 0 0 45px rgba(19, 55, 236, 0.4); border-color: rgba(19, 55, 236, 1); transform: scale(1.02); }
-                }
-                .neon-blink-btn {
-                  animation: neon-blink 1.5s infinite ease-in-out;
-                }
-              `}</style>
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="space-y-2">
@@ -3499,14 +3627,22 @@ export default function App() {
                          VS 비교
                       </button>
 
-                      <button onClick={async () => {
-                        if(window.confirm(`${selectedChannelIds.length}개 채널을 삭제하시겠습니까?`)) {
-                          if (user) {
-                            await Promise.all(selectedChannelIds.map(id => removeChannelFromDb(user.uid, id)));
+                      <button onClick={() => {
+                        setConfirmModal({
+                          isOpen: true,
+                          title: "채널 삭제",
+                          message: `선택하신 ${selectedChannelIds.length}개 채널을 삭제하시겠습니까?`,
+                          actionLabel: "삭제",
+                          isDestructive: true,
+                          onConfirm: async () => {
+                            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                            if (user) {
+                              await Promise.all(selectedChannelIds.map(id => removeChannelFromDb(user.uid, id)));
+                            }
+                            setSavedChannels(prev => prev.filter(c => !selectedChannelIds.includes(c.id)));
+                            setSelectedChannelIds([]);
                           }
-                          setSavedChannels(prev => prev.filter(c => !selectedChannelIds.includes(c.id)));
-                          setSelectedChannelIds([]);
-                        }
+                        });
                       }} className="size-9 md:size-12 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shrink-0">
                         <span className="material-symbols-outlined text-[18px] md:text-[24px]">delete</span>
                       </button>
@@ -3584,7 +3720,7 @@ export default function App() {
                 })}
               </div>
             </div>
-          )}
+          </>)}
         {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && (
             <div className="space-y-6 pb-20">
                {isMyMode && role === 'pending' && (
@@ -3750,7 +3886,7 @@ export default function App() {
           )}
         </div>
         )}
-        <Footer />
+        <Footer onOpenModal={(type) => setFooterModal({ isOpen: true, type })} />
         </div>
       </main>
 
@@ -3945,55 +4081,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Onboarding Modal */}
-      {showOnboarding && (
-        <div className="fixed inset-0 z-[100] bg-slate-50 dark:bg-slate-950 flex flex-col animate-in fade-in duration-500 overflow-y-auto">
-          <div className="max-w-7xl mx-auto w-full px-6 py-12 flex-1 flex flex-col">
-            <div className="flex justify-between items-center mb-12">
-               <div className="flex items-center gap-2">
-                 <span className="material-symbols-outlined text-3xl text-primary animate-pulse">radar</span>
-                 <span className="text-xl font-black tracking-tighter uppercase text-slate-900 dark:text-white">TubeRadar</span>
-               </div>
-               <button 
-                 onClick={() => setShowOnboarding(false)} 
-                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-sm font-bold uppercase tracking-widest hover:underline decoration-2 underline-offset-4"
-               >
-                 건너뛰기
-               </button>
-            </div>
-            
-            <div className="text-center space-y-6 mb-16 animate-in slide-in-from-bottom-4 duration-700 delay-100 fill-mode-both">
-               <h1 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tighter mb-2">
-                 당신의 <span className="text-primary italic">알고리즘 레이더</span>를<br />
-                 지금 가동하세요.
-               </h1>
-               <p className="text-slate-500 dark:text-slate-400 text-lg md:text-xl font-medium max-w-2xl mx-auto leading-relaxed">
-                 모니터링할 채널이 비어있습니다.<br />
-                 전문가가 엄선한 <span className="text-indigo-500 font-bold">추천 채널 팩</span>으로 즉시 분석을 시작해보세요.
-               </p>
-            </div>
-            
-            <div className="animate-in slide-in-from-bottom-8 duration-1000 delay-200 fill-mode-both">
-              <RecommendedPackageList 
-                packages={recommendedPackages} 
-                groups={groups}
-                activeGroupId={activeGroupId}
-                onAdd={async (pkg, targetGroupId, newGroupName) => {
-                  try {
-                    await handleAddPackageToMyList(pkg, targetGroupId, newGroupName);
-                    setShowOnboarding(false);
-                    // Force refresh visuals
-                    setIsMyMode(true); 
-                  } catch (e) {
-                    console.error(e);
-                  }
-                }}
-                savedChannels={savedChannels} 
-              />
-            </div>
-          </div>
-        </div>
-      )}
+
       {/* Suggestion Success Modal */}
       {hasSuggestionSuccess && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -4065,6 +4153,76 @@ export default function App() {
            userName={membershipJustApproved.name}
            daysLeft={membershipJustApproved.daysLeft}
          />
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                {confirmModal.isDestructive && <span className="material-symbols-outlined text-rose-500">warning</span>}
+                {confirmModal.title}
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 whitespace-pre-line leading-relaxed">
+                {confirmModal.message}
+              </p>
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <button 
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                autoFocus
+              >
+                취소
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-colors shadow-lg ${
+                   confirmModal.isDestructive 
+                   ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20' 
+                   : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20'
+                }`}
+              >
+                {confirmModal.actionLabel || "확인"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer Terms Modal */}
+      {footerModal.isOpen && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setFooterModal(prev => ({ ...prev, isOpen: false }))}>
+          <div 
+             className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200 ring-1 ring-white/10" 
+             onClick={e => e.stopPropagation()}
+          >
+             <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center sticky top-0 bg-white dark:bg-slate-900">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                   {footerModal.type === 'terms' ? '이용약관' : '개인정보처리방침'}
+                </h3>
+                <button onClick={() => setFooterModal(prev => ({ ...prev, isOpen: false }))} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                   <span className="material-symbols-outlined text-slate-500">close</span>
+                </button>
+             </div>
+             
+             <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
+                <div className="prose dark:prose-invert prose-sm max-w-none text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap">
+                   {footerModal.type === 'terms' ? (
+`튜브레이더 이용약관\n\n제1조 (목적)\n본 약관은 튜브레이더(이하 “회사”)가 제공하는 Tube Radar 서비스(이하 “서비스”)의 이용과 관련하여 회사와 이용자 간의 권리, 의무 및 책임사항을 규정함을 목적으로 합니다.\n\n제2조 (용어의 정의)\n1. “서비스”란 회사가 제공하는 유튜브 채널 분석, 키워드 탐색, 트렌드 분석, 채널 관리 등 Tube Radar 관련 모든 기능을 의미합니다.\n2. “이용자”란 본 약관에 동의하고 서비스를 이용하는 회원 및 비회원을 의미합니다.\n3. “회원”이란 이메일 또는 소셜 로그인 등을 통해 계정을 생성한 자를 의미합니다.\n4. “유료 서비스”란 결제 또는 멤버십 가입을 통해 이용 가능한 기능 또는 콘텐츠를 의미합니다.\n\n제3조 (약관의 효력 및 변경)\n1. 본 약관은 서비스 화면에 게시하거나 기타 방법으로 이용자에게 공지함으로써 효력을 발생합니다.\n2. 회사는 관련 법령을 위반하지 않는 범위에서 약관을 변경할 수 있으며, 변경 시 사전 공지합니다.\n3. 이용자가 변경된 약관에 동의하지 않을 경우 서비스 이용을 중단할 수 있습니다.\n\n제4조 (서비스의 제공)\n회사는 다음과 같은 서비스를 제공합니다.\n1. 유튜브 채널 및 영상 분석\n2. 키워드 및 트렌드 분석\n3. AI 기반 채널 진단 및 추천\n4. 기타 회사가 정하는 부가 서비스\n서비스는 연중무휴 제공을 원칙으로 하나, 시스템 점검 등의 사유로 일시 중단될 수 있습니다.\n\n제5조 (회원가입 및 계정 관리)\n1. 회원가입은 이용자가 약관에 동의하고 회사가 정한 절차를 완료함으로써 이루어집니다.\n2. 이용자는 계정 정보의 관리 책임을 가지며, 이를 제3자에게 양도하거나 공유할 수 없습니다.\n\n제6조 (유료 서비스 및 결제)\n1. 일부 서비스는 유료로 제공될 수 있습니다.\n2. 결제 금액, 이용 기간, 환불 조건은 서비스 화면에 별도로 안내합니다.\n3. 환불은 관련 법령 및 회사의 환불 정책에 따릅니다.\n\n제7조 (이용자의 의무)\n이용자는 다음 행위를 하여서는 안 됩니다.\n1. 법령 또는 공공질서에 위반되는 행위\n2. 서비스의 정상적인 운영을 방해하는 행위\n3. 타인의 정보 또는 계정을 도용하는 행위\n4. 회사의 지적재산권을 침해하는 행위\n\n제8조 (지적재산권)\n1. 서비스에 포함된 모든 콘텐츠 및 데이터에 대한 권리는 회사에 귀속됩니다.\n2. 이용자는 회사의 사전 동의 없이 이를 복제, 배포, 상업적으로 이용할 수 없습니다.\n\n제9조 (서비스 이용 제한)\n회사는 이용자가 본 약관을 위반할 경우 서비스 이용을 제한하거나 계정을 해지할 수 있습니다.\n\n제10조 (책임의 제한)\n1. 회사는 유튜브 정책 변경, 외부 API 제한 등 회사의 통제 범위를 벗어난 사유로 발생한 손해에 대해 책임을 지지 않습니다.\n2. 서비스에서 제공되는 분석 결과는 참고용 정보이며, 회사는 이를 통한 성과를 보장하지 않습니다.\n\n제11조 (준거법 및 관할)\n본 약관은 대한민국 법령을 준거법으로 하며, 분쟁 발생 시 회사의 본점 소재지를 관할하는 법원을 전속 관할로 합니다.`
+                   ) : (
+`1. 개인정보의 수집 항목\n\n회사는 다음과 같은 개인정보를 수집합니다.\n필수항목: 이메일 주소, 로그인 정보, 서비스 이용 기록\n선택항목: 유튜브 채널 정보, 결제 정보\n자동 수집 항목: IP 주소, 접속 로그, 쿠키, 기기 정보\n\n2. 개인정보의 수집 및 이용 목적\n\n회사는 수집한 개인정보를 다음 목적을 위해 이용합니다.\n회원 관리 및 본인 확인\n서비스 제공 및 개선\n결제 처리 및 이용 요금 정산\n고객 문의 응대 및 공지사항 전달\n서비스 이용 통계 및 분석\n\n3. 개인정보의 보유 및 이용 기간\n\n회원 탈퇴 시 개인정보는 즉시 파기합니다.\n단, 관계 법령에 따라 보존이 필요한 경우 해당 기간 동안 보관합니다.\n\n4. 개인정보의 제3자 제공\n\n회사는 이용자의 개인정보를 원칙적으로 외부에 제공하지 않습니다.\n다만, 법령에 따라 요구되는 경우는 예외로 합니다.\n\n5. 개인정보 처리의 위탁\n\n회사는 원활한 서비스 제공을 위해 결제 처리, 서버 운영 등을 외부 업체에 위탁할 수 있으며, 이 경우 관련 법령을 준수합니다.\n\n6. 개인정보의 파기 절차 및 방법\n\n전자적 파일 형태: 복구 불가능한 방식으로 삭제\n출력물: 분쇄 또는 소각\n\n7. 이용자의 권리\n\n이용자는 언제든지 자신의 개인정보 열람, 수정, 삭제, 처리 정지를 요청할 수 있습니다.\n\n8. 개인정보 보호를 위한 기술적·관리적 조치\n\n회사는 개인정보 보호를 위해 암호화, 접근 제한, 보안 시스템 등을 적용하고 있습니다.\n\n9. 개인정보 보호책임자\n\n성명: 현승효\n이메일: boxtvstar@gmail.com\n\n개인정보 관련 문의사항은 위 이메일 또는 서비스 내 1:1 문의 기능을 이용해주세요.\n\n10. 정책 변경\n\n본 개인정보처리방침은 법령 또는 서비스 변경에 따라 수정될 수 있으며, 변경 시 서비스 내 공지합니다.`
+                   )}
+                </div>
+             </div>
+             
+             <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-right">
+                <button onClick={() => setFooterModal(prev => ({ ...prev, isOpen: false }))} className="px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition-opacity text-sm">확인</button>
+             </div>
+          </div>
+        </div>
       )}
     </div>
   );
