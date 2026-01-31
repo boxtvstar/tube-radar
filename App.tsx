@@ -2606,7 +2606,7 @@ export default function App() {
         
 
 
-        {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} />}
+        {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} apiKey={ytKey} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
         {showGuestNotice && user && role !== 'admin' && role !== 'approved' && (
           <GuestNoticeModal 

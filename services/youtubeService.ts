@@ -194,6 +194,7 @@ export const getChannelInfo = async (apiKey: string, query: string): Promise<Sav
     return {
       id: channel.id,
       title: channel.snippet.title,
+      description: channel.snippet.description || '', // 설명 추가
       thumbnail: channel.snippet.thumbnails.default.url,
       subscriberCount: formatNumber(parseInt(channel.statistics.subscriberCount || "0")),
       videoCount: formatNumber(parseInt(channel.statistics.videoCount || "0")),

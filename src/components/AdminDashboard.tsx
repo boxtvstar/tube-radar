@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel } from '../../types';
 import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
+import { generateChannelRecommendation } from '../../services/geminiService';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ko } from 'date-fns/locale/ko';
 
@@ -74,7 +75,7 @@ const getStatusLabel = (status?: string) => {
   }
 };
 
-export const AdminDashboard = ({ onClose }: { onClose: () => void }) => {
+export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKey?: string }) => {
   const { user } = useAuth();
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -559,18 +560,34 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   
   // YouTube API Key for Admin
   // YouTube API Key for Admin (Auto-load from user settings)
-  const [adminYtKey, setAdminYtKey] = useState(''); 
+  // YouTube API Key for Admin (Prioritize Props -> LocalStorage)
+  const [adminYtKey, setAdminYtKey] = useState(apiKey || ''); 
+  
+  // Gemini API Key for AI Analysis
+  const [adminGeminiKey, setAdminGeminiKey] = useState('');
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
   useEffect(() => {
-    const userKey = localStorage.getItem('tube_radar_api_key');
-    if (userKey) {
-      setAdminYtKey(userKey);
+    // 1. Props로 받은 키가 있으면 최우선 사용
+    if (apiKey) {
+      setAdminYtKey(apiKey);
+      // return; // Gemini Key도 로드해야 하므로 return 제거
     } else {
-      // Fallback: check legacy
-      const legacy = localStorage.getItem('admin_yt_key');
-      if (legacy) setAdminYtKey(legacy);
+        // 2. 없으면 로컬 스토리지에서 로드
+        const userKey = localStorage.getItem('yt_api_key');
+        if (userKey) {
+          setAdminYtKey(userKey);
+        } else {
+          // Fallback: check legacy custom key
+          const legacy = localStorage.getItem('tube_radar_api_key');
+          if (legacy) setAdminYtKey(legacy);
+        }
     }
-  }, []); 
+    
+    // Load Gemini Key
+    const geminiKey = localStorage.getItem('admin_gemini_key');
+    if (geminiKey) setAdminGeminiKey(geminiKey);
+  }, [apiKey]); 
 
   const fetchPackages = async () => {
     try {
@@ -610,7 +627,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   }, [activeTab]);
 
   const handleAddChannelToPkg = async () => {
-    if (!pkgChannelInput || !adminYtKey) return alert("채널 입력과 API 키가 필요합니다.");
+    if (!pkgChannelInput) return alert("채널 입력이 필요합니다.");
+    if (!adminYtKey) return alert("YouTube API 키가 설정되지 않았습니다. 대시보드 메인 화면(좌측 하단)에서 API 키를 입력해주세요.");
     setIsResolvingChannel(true);
     
     // Split input by comma, newline, or space
@@ -626,15 +644,41 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         if (info) {
           if (!pkgChannels.some(c => c.id === info.id) && !newChannelsList.some(c => c.id === info.id)) {
             // [Admin UX] Preview videos if activeTab is 'topics'
+            let videoTitles: string[] = [];
             if (activeTab === 'topics') {
                try {
                   const videos = await fetchChannelPopularVideos(adminYtKey, info.id);
                   if (videos.length > 0) {
                     info.topVideos = videos;
+                    videoTitles = videos.map(v => v.title);
                   }
                } catch (err) {
                   console.error("Failed to fetch preview videos", err);
                }
+            }
+            
+            // --- [AUTO FILL] 제목 & AI 추천 이유 자동 생성 ---
+            
+            // 1. 제목이 비어있으면 채널명으로 자동 설정
+            if (!pkgTitle.trim()) {
+                setPkgTitle(info.title);
+            }
+
+            // 2. 설명이 비어있고 Gemini 키가 있으면 AI 분석 시작
+            if (!pkgDesc.trim() && adminGeminiKey) {
+                setIsGeneratingAi(true);
+                // 비동기로 실행하여 UI 블락 방지
+                generateChannelRecommendation(adminGeminiKey, info.title, info.description || '', videoTitles)
+                    .then(aiReason => {
+                        setPkgDesc(prev => prev ? prev : aiReason); // 사용자가 그새 입력했으면 덮어쓰지 않음
+                        setIsGeneratingAi(false);
+                    })
+                    .catch(err => {
+                        console.error("AI Generation Failed", err);
+                        setIsGeneratingAi(false);
+                    });
+            } else if (!adminGeminiKey) {
+                console.log("Gemini Key missing, skipping AI analysis");
             }
 
             newChannelsList.push(info);
@@ -1132,6 +1176,36 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                <span className="text-sm font-bold uppercase hidden md:inline">Close</span>
                <span className="material-symbols-outlined text-xl">close</span>
             </button>
+          </div>
+
+          
+          {/* --- [NEW] API Settings Section --- */}
+          <div className="mb-4 -mt-2 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-slate-800 dark:to-slate-800/50 rounded-xl border border-indigo-100 dark:border-slate-700 flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div className="flex items-center gap-3 w-full md:w-auto">
+               <div className="w-8 h-8 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-indigo-500 shadow-sm shrink-0">
+                  <span className="material-symbols-outlined text-lg">auto_awesome</span>
+               </div>
+               <div>
+                 <h3 className="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-2">Gemini AI <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">Pro</span></h3>
+                 <p className="text-[10px] text-slate-500 dark:text-slate-400">자동 추천 글 작성 및 비디오 분석</p>
+               </div>
+            </div>
+            <div className="flex-1 max-w-sm w-full relative">
+               <input 
+                 type="password"
+                 value={adminGeminiKey}
+                 onChange={(e) => {
+                   const val = e.target.value;
+                   setAdminGeminiKey(val);
+                   if(val) localStorage.setItem('admin_gemini_key', val);
+                 }}
+                 placeholder="Google Gemini API Key 입력..."
+                 className="w-full pl-3 pr-8 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+               />
+               <div className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
+                 {adminGeminiKey ? <span className="material-symbols-outlined text-green-500 text-sm">check_circle</span> : <span className="material-symbols-outlined text-sm">vpn_key</span>}
+               </div>
+            </div>
           </div>
 
             {/* New Row: Tabs */}
@@ -1844,7 +1918,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    ))}
                    </div>
                    
-                   {/* Create Button */}
+                   {/* Created Button */}
                    <button 
                      onClick={() => { resetPkgForm(); setIsPackageModalOpen(true); }}
                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-md"
@@ -2095,8 +2169,37 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                        </div>
                      )}
                    </div>
-                   <div>
-                     <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{activeTab === 'topics' ? '추천 이유' : '설명'}</label>
+                   <div className="relative">
+                     <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-xs font-bold text-slate-500 uppercase">{activeTab === 'topics' ? '추천 이유' : '설명'}</label>
+                        <button 
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (!adminGeminiKey) return alert("Gemini API 키가 필요합니다. 대시보드 상단에서 설정해주세요.");
+                            if (pkgChannels.length === 0) return alert("먼저 채널을 추가해주세요.");
+                            
+                            setIsGeneratingAi(true);
+                            const mainChannel = pkgChannels[0];
+                            const videoTitles = mainChannel.topVideos ? mainChannel.topVideos.map(v => v.title) : [];
+                            
+                            generateChannelRecommendation(adminGeminiKey, mainChannel.title, mainChannel.description || '', videoTitles)
+                                .then(aiReason => {
+                                    setPkgDesc(aiReason);
+                                    setIsGeneratingAi(false);
+                                })
+                                .catch(err => {
+                                    console.error("AI Gen Failed", err);
+                                    alert("AI 작성 실패: " + err.message);
+                                    setIsGeneratingAi(false);
+                                });
+                          }}
+                          disabled={isGeneratingAi || pkgChannels.length === 0}
+                          className="flex items-center gap-1 text-[10px] bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-bold border border-indigo-100 dark:border-indigo-800"
+                        >
+                           <span className={`material-symbols-outlined text-[14px] ${isGeneratingAi ? 'animate-spin' : ''}`}>auto_awesome</span>
+                           {isGeneratingAi ? '작성 중...' : 'AI 자동 작성'}
+                        </button>
+                     </div>
                      <textarea 
                        value={pkgDesc} 
                        onChange={(e) => setPkgDesc(e.target.value)} 
@@ -2128,8 +2231,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                  <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
                     <label className="block text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
                       <span>채널 구성 ({pkgChannels.length}개)</span>
-                      {!adminYtKey && <span className="text-rose-500 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">warning</span> API Key 필요</span>}
+                       {!adminYtKey && <span className="text-rose-500 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">warning</span> API Key 필요</span>}
                     </label>
+
                     <div className="flex gap-2 mb-4">
                        <input 
                          value={pkgChannelInput}

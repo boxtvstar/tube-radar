@@ -535,7 +535,19 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                             )}
                             <img src={ch.thumbnail} alt={ch.title} className="size-8 rounded-full bg-slate-100 object-cover shrink-0" />
                             <div className="flex-1 min-w-0 pr-5">
-                              <h4 className={`font-bold text-xs truncate ${isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-900 dark:text-slate-200'}`}>{ch.title}</h4>
+                              <h4 className={`font-bold text-xs truncate ${isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-900 dark:text-slate-200'} mb-1`}>{ch.title}</h4>
+                              <div className="flex flex-col gap-0.5">
+                                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap overflow-hidden">
+                                     <span className="truncate">구독 {ch.subscriberCount || '-'}</span>
+                                     <span className="w-0.5 h-0.5 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0"></span>
+                                     <span className="truncate">영상 {ch.videoCount || '-'}개</span>
+                                 </div>
+                                 {ch.joinDate && (
+                                     <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap overflow-hidden">
+                                         <span className="truncate">{`${new Date(ch.joinDate).getFullYear()}.${new Date(ch.joinDate).getMonth()+1}.${new Date(ch.joinDate).getDate()} 개설`}</span>
+                                     </div>
+                                 )}
+                              </div>
                             </div>
                             <a href={`https://youtube.com/${ch.customUrl || 'channel/' + ch.id}`} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-red-500 p-1 z-10" onClick={(e) => e.stopPropagation()}>
                               <span className="material-symbols-outlined text-sm">open_in_new</span>

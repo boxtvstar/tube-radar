@@ -46,6 +46,7 @@ export interface VideoSnippet {
 export interface SavedChannel {
   id: string;
   title: string;
+  description?: string; // 채널 설명 추가
   thumbnail: string;
   customUrl?: string;
   groupId?: string; // 소속 그룹 ID (optional until saved)
