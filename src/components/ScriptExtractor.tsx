@@ -39,7 +39,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
     setTranscript('');
     setVideoInfo(null);
 
-    const APIFY_TOKEN = ''; // API 토큰을 여기에 입력하거나 환경변수를 사용하세요.
+    const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || '';
     
     try {
       // 1. 기본 정보 호출 (선택 사항)
