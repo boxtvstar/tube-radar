@@ -9,6 +9,7 @@ interface VideoDetailModalProps {
   channelGroups?: Array<{ id: string; name: string; }>;
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
   onExtractTranscript?: (videoUrl: string) => void;
+  onAnalyzeChannel?: (channelId: string) => void;
 }
 
 // Category ID to Name mapping
@@ -24,7 +25,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   onClose, 
   channelGroups = [], 
   onAddChannel,
-  onExtractTranscript 
+  onExtractTranscript,
+  onAnalyzeChannel
 }) => {
   const [showGroupDropdown, setShowGroupDropdown] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
@@ -155,7 +157,36 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
               {video.channelName.substring(0,1)}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-white truncate">{video.channelName}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-black text-white truncate">{video.channelName}</p>
+                {video.channelId && (
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(`https://www.youtube.com/channel/${video.channelId}`);
+                        alert('채널 주소가 복사되었습니다.');
+                      }}
+                      className="size-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                      title="채널 주소 복사"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">content_copy</span>
+                    </button>
+                    {onAnalyzeChannel && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAnalyzeChannel(video.channelId);
+                        }}
+                        className="size-6 rounded-full bg-indigo-500/20 hover:bg-indigo-500/40 flex items-center justify-center text-indigo-400 hover:text-indigo-300 transition-colors border border-indigo-500/30"
+                        title="채널 영상 탐지"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">radar</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
                 <span>{video.subscribers} 구독자</span>
                 <span>•</span>

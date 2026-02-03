@@ -11,6 +11,7 @@ interface ChannelRadarProps {
   apiKey: string;
   onClose: () => void;
   onVideoClick?: (video: RadarVideo) => void;
+  initialQuery?: string;
 }
 
 interface RadarVideo {
@@ -45,8 +46,8 @@ const CATEGORY_NAMES: Record<string, string> = {
   '28': '과학/기술', '29': '비영리/사회'
 };
 
-export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProps) => {
-  const [input, setInput] = useState('');
+export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: ChannelRadarProps) => {
+  const [input, setInput] = useState(initialQuery || '');
   const [status, setStatus] = useState<'idle' | 'analyzing' | 'searching' | 'fetching' | 'calculating' | 'done'>('idle');
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
@@ -68,18 +69,29 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick }: ChannelRadarProp
 
   const addLog = (msg: string) => setLogs(prev => [...prev, msg]);
 
-  const runRadar = async () => {
-    if (!input.trim()) return;
+  // Auto-run if initialQuery is provided
+  useEffect(() => {
+    if (initialQuery) {
+       runRadar(initialQuery);
+    }
+  }, []);
+
+  const runRadar = async (overrideInput?: string | any) => {
+    const target = (typeof overrideInput === 'string' && overrideInput) ? overrideInput : input;
+    
+    if (!target.trim()) return;
     setStatus('analyzing');
+    // If running via effect or override, update input state visually
+    if (typeof overrideInput === 'string' && overrideInput !== input) setInput(overrideInput);
+    
     setResults([]);
     setLogs([]);
     setProgress(10);
-    setDisplayLimit(12); 
-    
+    setDisplayLimit(12);     
     try {
-      addLog(`분석 시작: ${input}`);
+      addLog(`분석 시작: ${target}`);
       
-      const channelInfo = await getChannelInfo(apiKey, input);
+      const channelInfo = await getChannelInfo(apiKey, target);
       if (!channelInfo) {
         addLog("채널을 찾을 수 없습니다.");
         setStatus('idle');

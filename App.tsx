@@ -1129,6 +1129,7 @@ export default function App() {
   const [isUsageMode, setIsUsageMode] = useState(false);
   const [isPackageMode, setIsPackageMode] = useState(false);
   const [isRadarMode, setIsRadarMode] = useState(false);
+  const [radarInitialQuery, setRadarInitialQuery] = useState('');
   const [isMaterialsExplorerMode, setIsMaterialsExplorerMode] = useState(false);
   const [isScriptMode, setIsScriptMode] = useState(false);
   const [scriptModeUrl, setScriptModeUrl] = useState('');
@@ -3108,6 +3109,7 @@ export default function App() {
               <ChannelRadar
                 apiKey={ytKey}
                 onClose={() => setIsRadarMode(false)}
+                initialQuery={radarInitialQuery}
                 onVideoClick={(video) => {
                   setDetailedVideo({
                     id: video.id,
@@ -4160,6 +4162,25 @@ export default function App() {
             setIsMyMode(false);
             setIsComparisonMode(false);
             setIsRadarMode(false);
+            setIsNationalTrendMode(false);
+            setIsCategoryTrendMode(false);
+            setIsMaterialsExplorerMode(false);
+          }}
+          onAnalyzeChannel={(channelId) => {
+            setDetailedVideo(null);
+            setRadarInitialQuery(channelId);
+            setIsRadarMode(true);
+            
+            // 다른 메뉴 상태 초기화
+            setIsScriptMode(false);
+            setIsMembershipMode(false);
+            setIsUsageMode(false);
+            setIsExplorerMode(false);
+            setIsPackageMode(false);
+            setIsShortsDetectorMode(false);
+            setIsTopicMode(false);
+            setIsMyMode(false);
+            setIsComparisonMode(false);
             setIsNationalTrendMode(false);
             setIsCategoryTrendMode(false);
             setIsMaterialsExplorerMode(false);
