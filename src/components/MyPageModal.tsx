@@ -950,15 +950,15 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                                               {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                            </td>
                                            <td className="px-4 py-2.5">
-                                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${log.type === 'search' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
-                                                 {log.type}
+                                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${log.type === 'bonus' ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' : log.type === 'search' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                 {log.type === 'bonus' ? '⭐ BONUS' : log.type}
                                               </span>
                                               <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[120px]" title={log.details}>
                                                  {log.details}
                                               </div>
                                            </td>
-                                           <td className="px-4 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300">
-                                              -{log.cost}
+                                           <td className={`px-4 py-2.5 text-right font-bold ${log.type === 'bonus' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                                              {log.type === 'bonus' ? `+${Math.abs(Number(log.cost))}` : `-${log.cost}`}
                                            </td>
                                         </tr>
                                      ))}

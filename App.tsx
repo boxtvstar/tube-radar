@@ -353,7 +353,9 @@ const Sidebar = ({
   isAdmin?: boolean;
 }) => {
   if (!usage) return null;
-  const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
+  const bonusPoints = usage.bonusPoints || 0;
+  const dailyRemain = isApiKeyMissing ? 0 : usage.total - usage.used;
+  const remain = dailyRemain + bonusPoints; // Total available = daily remaining + bonus
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
   const isCritical = !isApiKeyMissing && percent < 10;
   const isWarning = !isApiKeyMissing && percent < 30;
@@ -3277,6 +3279,14 @@ export default function App() {
                         {isApiKeyMissing ? '0' : (usage.total - usage.used).toLocaleString()}
                       </p>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">잔여 LP / 10,000</p>
+                      {(usage.bonusPoints || 0) > 0 && (
+                        <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                          <p className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-sm">stars</span>
+                            보너스: +{(usage.bonusPoints || 0).toLocaleString()} P
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -3312,6 +3322,35 @@ export default function App() {
                     <span className="material-symbols-outlined text-sm">info</span>
                     포인트 사용량 분석
                   </h3>
+                  
+                  {/* Bonus Points Display */}
+                  {(usage.bonusPoints || 0) > 0 && (
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-2 border-amber-200 dark:border-amber-800 p-6 rounded-2xl mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="size-12 bg-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/30">
+                            <span className="material-symbols-outlined text-white text-2xl">stars</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-amber-900 dark:text-amber-100">보너스 포인트</p>
+                            <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400">관리자 보상으로 받은 추가 포인트</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-3xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                            +{(usage.bonusPoints || 0).toLocaleString()}
+                          </p>
+                          <p className="text-[10px] font-bold text-amber-500 uppercase">BONUS POINTS</p>
+                        </div>
+                      </div>
+                      <div className="bg-white/60 dark:bg-black/20 rounded-lg p-3 border border-amber-200/50 dark:border-amber-800/50">
+                        <p className="text-[10px] text-amber-800 dark:text-amber-200 font-bold leading-relaxed">
+                          💡 <b>보너스 포인트는 매일 초기화되지 않습니다!</b> 일일 할당량을 모두 사용한 후에도 보너스 포인트로 계속 이용할 수 있으며, 사용 시에만 차감됩니다.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-white dark:bg-slate-900/50 p-5 rounded-2xl flex items-center justify-between shadow-sm border border-slate-100 dark:border-white/5">
                       <div className="flex items-center gap-4">
@@ -3339,7 +3378,7 @@ export default function App() {
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400 font-medium italic mt-4 text-center">
-                    ※ 홈페이지에서 사용할수 있는 포인트를 나타낸것으로 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급의 경우 매일 2천포인트가 지급되고 골드등급의 경우 매일 5천포인트가 지급이 됩니다.
+                    ※ 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급의 경우 매일 2천포인트가 지급되고 골드등급의 경우 매일 5천포인트가 지급이 됩니다.
                   </p>
                 </div>
                 <div className="mt-6 bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-3xl p-6">
@@ -3347,15 +3386,29 @@ export default function App() {
                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                     {usage.logs && usage.logs.length > 0 ? (
                       usage.logs.map((log, index) => (
-                        <div key={index} className="flex items-center justify-between text-[10px] p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-white/5">
+                        <div key={index} className={`flex items-center justify-between text-[10px] p-2 rounded-lg border ${
+                          log.type === 'bonus' 
+                            ? 'bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-200 dark:border-amber-800' 
+                            : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-white/5'
+                        }`}>
                           <div className="flex items-center gap-3">
                             <span className="font-mono text-slate-400">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                            <span className={`font-bold uppercase px-1.5 py-0.5 rounded ${log.type === 'search' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' : log.type === 'script' ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'}`}>
-                              {log.type === 'search' ? 'SEARCH' : log.type === 'script' ? 'SCRIPT' : 'LIST'}
+                            <span className={`font-bold uppercase px-1.5 py-0.5 rounded ${
+                              log.type === 'bonus' 
+                                ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' 
+                                : log.type === 'search' 
+                                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' 
+                                : log.type === 'script' 
+                                ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' 
+                                : 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'
+                            }`}>
+                              {log.type === 'bonus' ? '⭐ BONUS' : log.type === 'search' ? 'SEARCH' : log.type === 'script' ? 'SCRIPT' : 'LIST'}
                             </span>
                             <span className="text-slate-600 dark:text-slate-300 font-medium truncate max-w-[150px]">{log.details}</span>
                           </div>
-                          <span className="font-black text-rose-500">-{log.cost}</span>
+                          <span className={`font-black ${log.type === 'bonus' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-500'}`}>
+                            {log.type === 'bonus' ? `+${Math.abs(Number(log.cost))}` : `-${log.cost}`}
+                          </span>
                         </div>
                       ))
                     ) : (

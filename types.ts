@@ -72,7 +72,7 @@ export interface ViralStat {
 
 export interface ApiUsageLog {
   timestamp: string;
-  type: 'search' | 'list' | 'script' | 'system';
+  type: 'search' | 'list' | 'script' | 'system' | 'bonus';
   cost: number;
   details?: string;
 }
@@ -80,6 +80,7 @@ export interface ApiUsageLog {
 export interface ApiUsage {
   total: number;
   used: number;
+  bonusPoints?: number; // Bonus points that persist across daily resets
   lastReset: string; // ISO Date
   details: {
     search: number;

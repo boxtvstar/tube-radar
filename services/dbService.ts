@@ -294,6 +294,7 @@ export const getUsageFromDb = async (userId: string, plan: string = 'general'): 
   const defaultUsage: ApiUsage = {
     total,
     used: 0,
+    bonusPoints: 0,
     lastReset: currentResetTime.toISOString(),
     details: { search: 0, list: 0, script: 0 },
     logs: []
@@ -306,11 +307,12 @@ export const getUsageFromDb = async (userId: string, plan: string = 'general'): 
   const data = snap.data() as ApiUsage;
   const lastReset = new Date(data.lastReset);
 
-  // If stored data is from a previous cycle, return empty (and UI will treat as fresh)
-  // We don't necessarily need to write to DB here, we can wait for first update.
-  // But returning fresh structure is important.
+  // If stored data is from a previous cycle, preserve bonusPoints
   if (lastReset < currentResetTime) {
-    return defaultUsage;
+    return {
+      ...defaultUsage,
+      bonusPoints: data.bonusPoints || 0
+    };
   }
 
   // Ensure total reflects current plan (in case plan changed)
@@ -331,6 +333,7 @@ export const subscribeToUsage = (userId: string, plan: string, callback: (usage:
   const defaultUsage: ApiUsage = {
     total,
     used: 0,
+    bonusPoints: 0,
     lastReset: currentResetTime.toISOString(),
     details: { search: 0, list: 0, script: 0 },
     logs: []
@@ -338,6 +341,7 @@ export const subscribeToUsage = (userId: string, plan: string, callback: (usage:
 
   return onSnapshot(docRef, (snap) => {
     if (!snap.exists()) {
+      console.log('[subscribeToUsage] No usage doc exists, returning default');
       callback(defaultUsage);
       return;
     }
@@ -345,12 +349,26 @@ export const subscribeToUsage = (userId: string, plan: string, callback: (usage:
     const data = snap.data() as ApiUsage;
     const lastReset = new Date(data.lastReset);
 
-    // If stored data is from a previous cycle, return empty (and UI will treat as fresh)
+    console.log('[subscribeToUsage] Received update:', {
+      bonusPoints: data.bonusPoints,
+      used: data.used,
+      total: data.total,
+      lastReset: data.lastReset
+    });
+
+    // If stored data is from a previous cycle, preserve bonusPoints
     if (lastReset < currentResetTime) {
-      callback(defaultUsage);
+      const result = {
+        ...defaultUsage,
+        bonusPoints: data.bonusPoints || 0
+      };
+      console.log('[subscribeToUsage] Data from previous cycle, preserving bonus:', result.bonusPoints);
+      callback(result);
     } else {
       // Ensure total reflects current plan
-      callback({ ...data, total });
+      const result = { ...data, total };
+      console.log('[subscribeToUsage] Current cycle data, bonusPoints:', result.bonusPoints);
+      callback(result);
     }
   }, (error) => {
       console.error("Usage subscription error:", error);
@@ -390,11 +408,13 @@ export const updateUsageInDb = async (userId: string, plan: string | undefined, 
     usage = snap.data() as ApiUsage;
     const lastReset = new Date(usage.lastReset);
     
-    // Reset if stale
+    // Reset if stale (but keep bonusPoints)
     if (lastReset < currentResetTime) {
+      const preservedBonus = usage.bonusPoints || 0;
       usage = {
          total: limit,
          used: 0,
+         bonusPoints: preservedBonus,
          lastReset: currentResetTime.toISOString(),
          details: { search: 0, list: 0, script: 0 },
          logs: []
@@ -404,19 +424,34 @@ export const updateUsageInDb = async (userId: string, plan: string | undefined, 
     usage = {
       total: limit,
       used: 0,
+      bonusPoints: 0,
       lastReset: currentResetTime.toISOString(),
       details: { search: 0, list: 0, script: 0 },
       logs: []
     };
   }
 
-  // Check Quota
-  if (usage.used + cost > limit) {
+  // Calculate available points (daily limit + bonus)
+  const bonusPoints = usage.bonusPoints || 0;
+  const availablePoints = (limit - usage.used) + bonusPoints;
+
+  // Check Quota (including bonus)
+  if (availablePoints < cost) {
     throw new Error('Quota Exceeded');
   }
 
-  // Update
-  usage.used += cost;
+  // Deduct from daily quota first, then from bonus
+  const remainingDailyQuota = limit - usage.used;
+  if (cost <= remainingDailyQuota) {
+    // Use daily quota only
+    usage.used += cost;
+  } else {
+    // Use all remaining daily quota + some bonus
+    const bonusNeeded = cost - remainingDailyQuota;
+    usage.used = limit; // Max out daily quota
+    usage.bonusPoints = bonusPoints - bonusNeeded;
+  }
+
   usage.total = limit; // Update limit in case plan changed
   
   if (type === 'search') usage.details.search += cost;
@@ -437,4 +472,50 @@ export const updateUsageInDb = async (userId: string, plan: string | undefined, 
   // Save
   await setDoc(docRef, usage);
   return usage;
+};
+
+// Grant Bonus Points to User
+export const grantBonusPoints = async (userId: string, points: number, reason: string = 'Admin Reward') => {
+  const docRef = doc(db, "users", userId, "usage", "daily");
+  const snap = await getDoc(docRef);
+  
+  let currentBonus = 0;
+  let currentLogs: any[] = [];
+  if (snap.exists()) {
+    const data = snap.data();
+    currentBonus = data.bonusPoints || 0;
+    currentLogs = data.logs || [];
+  }
+  
+  const newBonus = currentBonus + points;
+  console.log(`[grantBonusPoints] User: ${userId}, Current: ${currentBonus}, Adding: ${points}, New Total: ${newBonus}`);
+  
+  // Add bonus grant to logs
+  const bonusLog = {
+    timestamp: new Date().toISOString(),
+    type: 'bonus' as const,
+    cost: points, // Store as positive for bonus (credits)
+    details: reason
+  };
+  
+  const updatedLogs = [bonusLog, ...currentLogs].slice(0, 50);
+  
+  await setDoc(docRef, {
+    bonusPoints: newBonus,
+    logs: updatedLogs
+  }, { merge: true });
+
+  console.log(`[grantBonusPoints] Successfully updated bonusPoints to ${newBonus} and added log entry`);
+
+  // Log the grant in user history
+  try {
+    await addDoc(collection(db, 'users', userId, 'history'), {
+      action: 'bonus_points_granted',
+      details: `${reason}: +${points} 포인트`,
+      date: new Date().toISOString(),
+      points: points
+    });
+  } catch(e) {
+    console.error('Failed to log bonus grant:', e);
+  }
 };

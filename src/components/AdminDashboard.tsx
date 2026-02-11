@@ -848,52 +848,54 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const processRewardFlow = async (pkg: RecommendedPackage) => {
     if (!pkg.creatorId) return;
 
-    let rewardDays = 0;
-    const rewardInput = window.prompt("사용자에게 이용권 보상을 지급하시겠습니까? (일 단위 입력, 없으면 0 or 취소)", "3");
+    // Show custom dialog for point selection
+    const pointOptions = ['500', '1000', '2000', '3000', '직접 입력', '보상 없음'];
+    const optionText = pointOptions.map((opt, idx) => `${idx + 1}. ${opt}`).join('\n');
+    const selection = window.prompt(
+      `사용자에게 포인트 보상을 지급하시겠습니까?\n\n${optionText}\n\n번호를 입력하거나 직접 포인트를 입력하세요:`,
+      '2'
+    );
     
-    if (rewardInput && !isNaN(parseInt(rewardInput))) {
-       rewardDays = parseInt(rewardInput);
+    if (!selection) return; // Cancelled
+
+    let rewardPoints = 0;
+    const selectionNum = parseInt(selection);
+    
+    // Check if it's a menu selection (1-6)
+    if (selectionNum >= 1 && selectionNum <= pointOptions.length) {
+      if (selectionNum === 5) {
+        // 직접 입력
+        const customInput = window.prompt('지급할 포인트를 입력하세요:', '1000');
+        if (customInput && !isNaN(parseInt(customInput))) {
+          rewardPoints = parseInt(customInput);
+        }
+      } else if (selectionNum === 6) {
+        // 보상 없음
+        rewardPoints = 0;
+      } else {
+        // Preset values (500, 1000, 2000, 3000)
+        rewardPoints = parseInt(pointOptions[selectionNum - 1]);
+      }
+    } else if (!isNaN(selectionNum)) {
+      // Direct number input
+      rewardPoints = selectionNum;
     }
 
     let rewardMessage = "";
     
-    if (rewardDays > 0) {
-       // Update User Expiry
+    if (rewardPoints > 0) {
+       // Grant Bonus Points
        try {
-         const userDocRef = doc(db, 'users', pkg.creatorId);
-         const userSnap = await getDoc(userDocRef);
-         
-         if (userSnap.exists()) {
-            const userData = userSnap.data() as UserData;
-            const currentExpiry = userData.expiresAt ? new Date(userData.expiresAt).getTime() : 0;
-            const now = Date.now();
-            const baseTime = currentExpiry > now ? currentExpiry : now;
-            const newExpiry = new Date(baseTime + (rewardDays * 24 * 60 * 60 * 1000)).toISOString();
-            
-            const updates: any = { expiresAt: newExpiry };
-            // FIX: Do not downgrade admin to approved
-            if (userData.role !== 'admin') {
-               updates.role = 'approved';
-            }
-
-            await updateDoc(userDocRef, updates);
-            rewardMessage = `\n🎁 보상으로 이용기간이 ${rewardDays}일 연장되었습니다!`;
-
-            // Log History
-            try {
-               await addDoc(collection(db, 'users', pkg.creatorId, 'history'), {
-                  action: 'reward_extension',
-                  details: `Reward for '${pkg.title}': +${rewardDays} days`,
-                  date: new Date().toISOString(),
-                  previousExpiry: userData.expiresAt,
-                  newExpiry: newExpiry,
-                  adminId: user?.uid || 'admin'
-               });
-            } catch(e) { console.error("History logging failed", e); }
-         }
+         const { grantBonusPoints } = await import('../../services/dbService');
+         await grantBonusPoints(
+           pkg.creatorId, 
+           rewardPoints, 
+           `'${pkg.title}' ${activeTab === 'topics' ? '소재' : '패키지'} 승인 보상`
+         );
+         rewardMessage = `\n🎁 보상으로 ${rewardPoints.toLocaleString()} 포인트가 지급되었습니다!`;
        } catch (err) {
-          console.error("Failed to give reward", err);
-          alert("보상 지급 중 오류가 발생했습니다 (승인은 완료됨).");
+          console.error("Failed to grant bonus points", err);
+          alert("포인트 지급 중 오류가 발생했습니다 (승인은 완료됨).");
        }
     }
 
@@ -904,7 +906,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
        type: 'success'
     });
     
-    if (rewardDays > 0) alert(`승인 및 ${rewardDays}일 보상 지급 완료`);
+    if (rewardPoints > 0) alert(`승인 및 ${rewardPoints.toLocaleString()} 포인트 보상 지급 완료`);
   };
 
   const handleApprovePackage = async (pkg: RecommendedPackage) => {

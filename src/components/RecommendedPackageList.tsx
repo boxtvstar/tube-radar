@@ -251,7 +251,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
             {isGroupSelectOpen && (
                <>
                  <div className="fixed inset-0 z-[60]" onClick={() => setIsGroupSelectOpen(false)} />
-                 <div className={`absolute ${isFooter ? 'bottom-full mb-1' : 'top-full mt-1'} right-0 w-52 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden z-[70] animate-in zoom-in-95 duration-200 flex flex-col`}>
+                 <div className="absolute bottom-full mb-1 left-0 right-0 w-full min-w-[200px] bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden z-[70] animate-in zoom-in-95 duration-200 flex flex-col">
                     <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
                       <button
                         onClick={() => {
@@ -483,7 +483,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
            onClick={() => setSelectedPackage(null)}
          >
            <div 
-             className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[85vh] rounded-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800"
+             className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[85vh] rounded-[2rem] shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800"
              onClick={(e) => e.stopPropagation()}
            >
              {/* Modal Header */}
@@ -507,10 +507,10 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
              </div>
 
              {/* Modal Body - 2 Columns Layout */}
-             <div className="flex-1 overflow-hidden flex flex-col md:flex-row bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+             <div className="flex-1 flex flex-col md:flex-row bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
                
                {/* Left Column: Channels */}
-               <div className={`flex flex-col overflow-hidden ${popularVideos.length > 0 ? 'md:w-1/3 border-b md:border-b-0 md:border-r border-slate-100 dark:border-slate-800' : 'w-full'}`}>
+               <div className={`flex flex-col ${popularVideos.length > 0 ? 'md:w-1/3 border-b md:border-b-0 md:border-r border-slate-100 dark:border-slate-800' : 'w-full'}`}>
                  {/* Fixed Header with Group Select */}
                  <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 z-20 shrink-0 flex items-center justify-between gap-2 overflow-visible">
                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 shrink-0">
@@ -574,7 +574,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                  </div>
 
                  {/* Action Area (Buttons Only) */}
-                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 z-10 shrink-0">
+                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 z-10 shrink-0 overflow-visible">
                     {/* Topic Mode Only: Group Selector Here */}
                     {mode === 'topic' && (
                        <div className="mb-3">
@@ -615,7 +615,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
 
                {/* Right Column: Popular Videos (Only if available) */}
                {popularVideos.length > 0 && (
-                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/20">
+                 <div className="flex-1 flex flex-col bg-slate-50/50 dark:bg-slate-950/20">
                     {/* Fixed Header */}
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 shrink-0">
                       <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -671,7 +671,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                      <div className="size-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
                         <span className="material-symbols-outlined text-4xl text-emerald-500 animate-bounce">check_circle</span>
                      </div>
-                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3">소재 등록 완료!</h3>
+                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3">등록 완료!</h3>
                      <p className="text-slate-500 dark:text-slate-400 font-medium leading-relaxed mb-4">
                         성공적으로 등록되었습니다. <br/>
                         <b>관리자 승인 후</b> 공개됩니다.
@@ -679,7 +679,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                      <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20 mb-8 max-w-sm">
                         <p className="text-indigo-600 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2">
                            <span className="material-symbols-outlined text-lg">redeem</span>
-                           승인이 되면 관리자가 이용일자 보상을 지급합니다.
+                           승인이 되면 관리자가 포인트 보상을 지급합니다.
                         </p>
                      </div>
                      <button 
