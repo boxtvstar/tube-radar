@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { ApiUsage } from '../../types';
 
 interface ScriptExtractorProps {
   apiKey: string;
   initialUrl?: string;
+  usage: ApiUsage;
+  onUsageUpdate: (cost: number, type: 'search' | 'list' | 'script', details?: string) => void;
 }
 
-export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initialUrl }) => {
+export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initialUrl, usage, onUsageUpdate }) => {
   const [url, setUrl] = useState(initialUrl || '');
   const [loading, setLoading] = useState(false);
   
@@ -34,12 +37,18 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
       return;
     }
 
+    if (usage.used + 200 > usage.total) {
+      setError('일일 API 사용 한도가 초과되었습니다. (필요: 200 Unit)');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setTranscript('');
     setVideoInfo(null);
 
     const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || '';
+    let fetchedTitle = '';
     
     try {
       // 1. 기본 정보 호출 (선택 사항)
@@ -48,6 +57,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         const infoData = await infoRes.json();
         if (infoData.items && infoData.items.length > 0) {
           const snippet = infoData.items[0].snippet;
+          fetchedTitle = snippet.title;
           setVideoInfo({
             title: snippet.title,
             author: snippet.channelTitle,
@@ -123,6 +133,9 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
             .filter(line => line.length > 0)
             .join('\n');
           setTranscript(formattedText);
+          
+          // 포인트 차감 적용
+          onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
         } else {
           throw new Error('추출된 텍스트 내용이 너무 짧거나 유효하지 않습니다.');
         }
@@ -144,6 +157,9 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
              .filter(line => line.length > 0)
              .join('\n');
            setTranscript(formattedEmergency);
+           
+           // 포인트 차감 적용
+           onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
         } else {
            throw new Error('이 영상에서 대본 데이터를 파싱할 수 없습니다. 자막이 비활성화된 영상일 수 있습니다.');
         }

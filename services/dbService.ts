@@ -4,6 +4,7 @@ import {
   setDoc,
   getDocs,
   getDoc, // Added Import
+  onSnapshot, // Added Import
   deleteDoc,
   writeBatch,
   query,
@@ -12,7 +13,7 @@ import {
   updateDoc
 } from "firebase/firestore";
 import { db } from "../src/lib/firebase";
-import { SavedChannel, ChannelGroup, RecommendedPackage, Notification } from "../types";
+import { SavedChannel, ChannelGroup, RecommendedPackage, Notification, ApiUsage } from "../types";
 
 // Helper function to remove undefined fields from objects (deep)
 // Firestore doesn't allow undefined values, so we need to filter them out
@@ -255,4 +256,185 @@ export const checkWhitelist = async (channelId: string): Promise<boolean> => {
     console.error("Whitelist check failed", e);
     return false;
   }
+};
+// --- Usage Persistence (Points) ---
+
+const getQuotaResetTime = (): Date => {
+  const now = new Date();
+  const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const todayReset = new Date(kst);
+  todayReset.setHours(17, 0, 0, 0);
+  if (kst < todayReset) {
+    todayReset.setDate(todayReset.getDate() - 1);
+  }
+  return todayReset;
+};
+
+const getServiceDate = (): string => {
+  // Returns YYYY-MM-DD of the current "service day" (starts at 5PM KST previous day?)
+  // Actually, "reset at 5PM KST" means:
+  // After 5PM KST on May 21st, it is considered "May 21st cycle" (or 22nd?).
+  // Let's stick to the reset timestamp comparison.
+  // The daily doc will store the `lastResetTime` (ISO string) closest to valid cycle.
+  // If `storedResetTime` < `currentResetTime`, it means we entered a new cycle.
+  return getQuotaResetTime().toISOString();
+};
+
+export const getUsageFromDb = async (userId: string, plan: string = 'general'): Promise<ApiUsage> => {
+  const docRef = doc(db, "users", userId, "usage", "daily");
+  const snap = await getDoc(docRef);
+  
+  // Determine Total based on Plan
+  let total = 1000; // Default/General
+  if (plan === 'silver') total = 2000;
+  if (plan === 'gold') total = 5000;
+  if (plan === 'admin') total = 10000;
+
+  const currentResetTime = getQuotaResetTime();
+  const defaultUsage: ApiUsage = {
+    total,
+    used: 0,
+    lastReset: currentResetTime.toISOString(),
+    details: { search: 0, list: 0, script: 0 },
+    logs: []
+  };
+
+  if (!snap.exists()) {
+    return defaultUsage;
+  }
+
+  const data = snap.data() as ApiUsage;
+  const lastReset = new Date(data.lastReset);
+
+  // If stored data is from a previous cycle, return empty (and UI will treat as fresh)
+  // We don't necessarily need to write to DB here, we can wait for first update.
+  // But returning fresh structure is important.
+  if (lastReset < currentResetTime) {
+    return defaultUsage;
+  }
+
+  // Ensure total reflects current plan (in case plan changed)
+  return { ...data, total }; // Override total with current plan limit
+};
+
+// Real-time Usage Subscription
+export const subscribeToUsage = (userId: string, plan: string, callback: (usage: ApiUsage) => void) => {
+  const docRef = doc(db, "users", userId, "usage", "daily");
+  const currentResetTime = getQuotaResetTime();
+
+  // Determine Total based on Plan
+  let total = 1000; // Default/General
+  if (plan === 'silver') total = 2000;
+  if (plan === 'gold') total = 5000;
+  if (plan === 'admin') total = 10000;
+
+  const defaultUsage: ApiUsage = {
+    total,
+    used: 0,
+    lastReset: currentResetTime.toISOString(),
+    details: { search: 0, list: 0, script: 0 },
+    logs: []
+  };
+
+  return onSnapshot(docRef, (snap) => {
+    if (!snap.exists()) {
+      callback(defaultUsage);
+      return;
+    }
+
+    const data = snap.data() as ApiUsage;
+    const lastReset = new Date(data.lastReset);
+
+    // If stored data is from a previous cycle, return empty (and UI will treat as fresh)
+    if (lastReset < currentResetTime) {
+      callback(defaultUsage);
+    } else {
+      // Ensure total reflects current plan
+      callback({ ...data, total });
+    }
+  }, (error) => {
+      console.error("Usage subscription error:", error);
+  });
+};
+
+export const updateUsageInDb = async (userId: string, plan: string | undefined, cost: number, type: 'search' | 'list' | 'script', details: string): Promise<ApiUsage> => {
+  const docRef = doc(db, "users", userId, "usage", "daily");
+  const currentResetTime = getQuotaResetTime();
+  
+  // Determine Limit
+  let limit = 1000;
+  if (plan) {
+      if (plan === 'silver') limit = 2000;
+      if (plan === 'gold') limit = 5000;
+      if (plan === 'admin') limit = 10000;
+  } else {
+      // Fetch user role if plan not provided (likely called from usageService)
+      try {
+         const userSnap = await getDoc(doc(db, "users", userId));
+         if (userSnap.exists()) {
+            const role = userSnap.data().role;
+            if (role === 'regular') limit = 2000;
+            else if (role === 'pro') limit = 5000;
+            else if (role === 'admin') limit = 10000;
+         }
+      } catch (e) {
+         // Default 1000
+      }
+  }
+
+  // Read-Modify-Write (simplified transaction)
+  const snap = await getDoc(docRef);
+  let usage: ApiUsage;
+
+  if (snap.exists()) {
+    usage = snap.data() as ApiUsage;
+    const lastReset = new Date(usage.lastReset);
+    
+    // Reset if stale
+    if (lastReset < currentResetTime) {
+      usage = {
+         total: limit,
+         used: 0,
+         lastReset: currentResetTime.toISOString(),
+         details: { search: 0, list: 0, script: 0 },
+         logs: []
+      };
+    }
+  } else {
+    usage = {
+      total: limit,
+      used: 0,
+      lastReset: currentResetTime.toISOString(),
+      details: { search: 0, list: 0, script: 0 },
+      logs: []
+    };
+  }
+
+  // Check Quota
+  if (usage.used + cost > limit) {
+    throw new Error('Quota Exceeded');
+  }
+
+  // Update
+  usage.used += cost;
+  usage.total = limit; // Update limit in case plan changed
+  
+  if (type === 'search') usage.details.search += cost;
+  else if (type === 'list') usage.details.list += cost;
+  else if (type === 'script') usage.details.script = (usage.details.script || 0) + cost;
+
+  // Add Log (Max 50)
+  const newLog = {
+    timestamp: new Date().toISOString(),
+    type,
+    cost,
+    details
+  };
+  
+  // Dedup logic (optional, keep simple for DB)
+  usage.logs = [newLog, ...(usage.logs || [])].slice(0, 50);
+
+  // Save
+  await setDoc(docRef, usage);
+  return usage;
 };

@@ -27,13 +27,9 @@ export const Footer = ({ onOpenModal }: { onOpenModal: (type: 'terms' | 'privacy
             <span className="hidden sm:inline text-slate-300 dark:text-slate-700">|</span>
             <span className="whitespace-nowrap"><b className="text-slate-700 dark:text-slate-300">사업자번호</b> : 591-37-00365</span>
             <span className="hidden sm:inline text-slate-300 dark:text-slate-700">|</span>
-            <span className="whitespace-nowrap"><b className="text-slate-700 dark:text-slate-300">주소</b> : 인천 연수구 아카데미로312번길 31 402/601</span>
-            <span className="hidden sm:inline text-slate-300 dark:text-slate-700">|</span>
-             <span className="whitespace-nowrap"><b className="text-slate-700 dark:text-slate-300">TEL</b> : 010-4436-2010</span>
-             <span className="hidden sm:inline text-slate-300 dark:text-slate-700">|</span>
              <span className="whitespace-nowrap"><b className="text-slate-700 dark:text-slate-300">EMAIL</b> : boxtvstar@gmail.com</span>
              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">|</span>
-             <span className="whitespace-nowrap"><b className="text-slate-700 dark:text-slate-300">통신판매업</b> : 준비중</span>
+             <span className="whitespace-nowrap"><b className="text-slate-700 dark:text-slate-300">통신판매업</b> : 제2026-인천연수구-0425호</span>
         </div>
 
       </div>

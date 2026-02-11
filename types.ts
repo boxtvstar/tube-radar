@@ -72,7 +72,7 @@ export interface ViralStat {
 
 export interface ApiUsageLog {
   timestamp: string;
-  type: 'search' | 'list' | 'system';
+  type: 'search' | 'list' | 'script' | 'system';
   cost: number;
   details?: string;
 }
@@ -84,6 +84,7 @@ export interface ApiUsage {
   details: {
     search: number;
     list: number;
+    script?: number;
   };
   logs: ApiUsageLog[];
 }

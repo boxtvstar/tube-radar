@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit } from 'firebase/firestore'; 
 import { MOCK_VIDEOS, MOCK_STATS, NETWORK_VELOCITY_DATA } from './constants';
-import { getApiUsage, resetQuota } from './services/usageService';
+import { getApiUsage, resetQuota, trackUsage } from './services/usageService';
 import { db } from './src/lib/firebase';
 import { useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
@@ -36,7 +36,10 @@ import {
   getNotifications,
   markNotificationAsRead,
   sendNotification,
-  deleteNotification
+  deleteNotification,
+  getUsageFromDb,
+  subscribeToUsage,
+  updateUsageInDb
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 import type { AutoDetectResult } from './services/youtubeService';
@@ -52,6 +55,13 @@ import { ScriptExtractor } from './src/components/ScriptExtractor';
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
 
 const formatNumber = (num: number) => {
+// ... (omitted)
+// I can't skip separate lines in one replacement block easily if they are far apart.
+// I will split.
+// Imports are ~ line 36.
+// UseEffect is ~ line 1340.
+// I will do Imports FIRST.
+
   if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
   if (num >= 10000) return (num / 10000).toFixed(1) + "만";
   return num.toLocaleString();
@@ -223,7 +233,7 @@ const SidebarItem = ({
   isCollapsed
 }: { 
   icon: string, 
-  label: string, 
+  label: string | React.ReactNode, 
   active: boolean, 
   onClick: () => void,
   className?: string,
@@ -236,7 +246,7 @@ const SidebarItem = ({
         ? 'shadow-sm scale-[1.02]' 
         : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
     } ${className}`}
-    title={isCollapsed ? label : undefined}
+    title={isCollapsed && typeof label === 'string' ? label : undefined}
   >
     <span className="material-symbols-outlined text-[18px]">{icon}</span>
     {!isCollapsed && label}
@@ -289,7 +299,10 @@ const Sidebar = ({
   onToggleMaterialsExplorerMode,
   theme, // Added theme prop
   isScriptMode,
-  onToggleScriptMode
+  onToggleScriptMode,
+  userGrade, // Added userGrade
+  onShowAlert, // Added onShowAlert
+  isAdmin // Added isAdmin
 }: { 
   theme?: 'dark' | 'light', // Added theme type 
   ytKey: string,
@@ -335,6 +348,9 @@ const Sidebar = ({
   onToggleMaterialsExplorerMode: (val: boolean) => void;
   isScriptMode: boolean;
   onToggleScriptMode: (val: boolean) => void;
+  userGrade?: string;
+  onShowAlert?: (alert: { title: string, message: string, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => void;
+  isAdmin?: boolean;
 }) => {
   if (!usage) return null;
   const remain = isApiKeyMissing ? 0 : usage.total - usage.used;
@@ -431,6 +447,7 @@ const Sidebar = ({
             className={`${isRadarMode ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-indigo-500'}`}
             isCollapsed={isCollapsed}
           />
+
         </div>
 
         {/* 2. 키워드 탐색 */}
@@ -465,9 +482,33 @@ const Sidebar = ({
         <div className="px-2 space-y-1">
           <SidebarItem 
             icon="lightbulb" 
-            label="유튜브 추천 소재" 
+            label={
+              <span className="flex items-center gap-1.5">
+                유튜브 추천 소재
+                <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">
+                     {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                   </span>
+                   GOLD
+                </span>
+              </span>
+            } 
             active={isTopicMode} 
             onClick={() => {
+              if (!isAdmin && userGrade !== 'gold') {
+                 if (onShowAlert) {
+                    onShowAlert({
+                       title: "권한 제한",
+                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                       type: 'error',
+                       showSubscribeButton: true,
+                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                    });
+                 } else {
+                    alert("🚫 이 기능은 골드 등급 전용입니다.");
+                 }
+                 return;
+              }
               onToggleTopicMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
@@ -476,26 +517,74 @@ const Sidebar = ({
           />
           <SidebarItem 
             icon="inventory_2" 
-            label="추천 채널 팩" 
+            label={
+              <span className="flex items-center gap-1.5">
+                추천 채널 팩
+                <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">
+                     {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                   </span>
+                   GOLD
+                </span>
+              </span>
+            } 
             active={isPackageMode} 
             onClick={() => {
+              if (!isAdmin && userGrade !== 'gold') {
+                 if (onShowAlert) {
+                    onShowAlert({
+                       title: "권한 제한",
+                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                       type: 'error',
+                       showSubscribeButton: true,
+                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                    });
+                 } else {
+                    alert("🚫 이 기능은 골드 등급 전용입니다.");
+                 }
+                 return;
+              }
               onTogglePackageMode(true);
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isPackageMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
             isCollapsed={isCollapsed}
           />
-          <SidebarItem 
-            icon="description" 
-            label="유튜브 대본 추출" 
-            active={isScriptMode} 
-            onClick={() => {
-              onToggleScriptMode(true);
-              if (onCloseMobileMenu) onCloseMobileMenu();
-            }}
-            className={`${isScriptMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
-            isCollapsed={isCollapsed}
-          />
+            <SidebarItem 
+              icon="description" 
+              label={
+                <span className="flex items-center gap-1.5">
+                  유튜브 대본 추출
+                  <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                     <span className="material-symbols-outlined text-[10px]">
+                       {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                     </span>
+                     GOLD
+                  </span>
+                </span>
+              } 
+              active={isScriptMode} 
+              onClick={() => {
+                if (!isAdmin && userGrade !== 'gold') {
+                   if (onShowAlert) {
+                      onShowAlert({
+                         title: "권한 제한",
+                         message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                         type: 'error',
+                         showSubscribeButton: true,
+                         onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                      });
+                   } else {
+                      alert("🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.");
+                   }
+                   return;
+                }
+                onToggleScriptMode(true);
+                if (onCloseMobileMenu) onCloseMobileMenu();
+              }}
+              className={`${isScriptMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
+              isCollapsed={isCollapsed}
+            />
         </div>
 
         {/* 4. 국가별 트렌드 (유지) */}
@@ -539,7 +628,7 @@ const Sidebar = ({
 
       </nav>
 
-      {/* API & 포인트 - Bottom Section */}
+      {/* 포인트 - Bottom Section */}
       <div className="shrink-0 p-3 bg-slate-100 dark:bg-slate-800/50">
         <button
           onClick={() => {
@@ -547,7 +636,7 @@ const Sidebar = ({
             if (onCloseMobileMenu) onCloseMobileMenu();
           }}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 border border-transparent`}
-          title={isCollapsed ? "API 및 포인트 관리" : undefined}
+          title={isCollapsed ? "포인트 관리" : undefined}
         >
           <div className="relative">
             <span className="material-symbols-outlined text-[18px]">settings_input_antenna</span>
@@ -555,7 +644,7 @@ const Sidebar = ({
           </div>
           {!isCollapsed && (
             <div className="flex-1 flex items-center justify-between">
-              <span>API & 포인트</span>
+              <span>포인트 관리</span>
               <span className={`text-[10px] font-black ${isCritical ? 'text-rose-500' : isWarning ? 'text-orange-500' : 'text-emerald-500'}`}>
                 {percent.toFixed(0)}%
               </span>
@@ -1067,7 +1156,7 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, role: authRole, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
+  const { user, role: authRole, plan, membershipTier, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
   
   // [Hardcode Admin Override] for specific email
   const role = ((user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole) as string;
@@ -1247,24 +1336,16 @@ export default function App() {
 
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Update usage when API key changes
+  // Load usage from DB (Real-time)
   useEffect(() => {
-    if (ytKey) {
-      setUsage(getApiUsage(ytKey));
+    if (user && role !== 'pending') {
+      const targetPlan = (role === 'admin' ? 'admin' : plan) || 'general';
+      const unsubscribe = subscribeToUsage(user.uid, targetPlan, (newUsage) => {
+        setUsage(newUsage);
+      });
+      return () => unsubscribe();
     }
-  }, [ytKey]);
-
-  // Listen to quota usage updates
-  useEffect(() => {
-    const handleUsageUpdate = (event: Event) => {
-      if (ytKey) {
-        const customEvent = event as CustomEvent;
-        setUsage(customEvent.detail);
-      }
-    };
-    window.addEventListener('yt-api-usage-updated', handleUsageUpdate);
-    return () => window.removeEventListener('yt-api-usage-updated', handleUsageUpdate);
-  }, [ytKey]);
+  }, [user, role, plan]);
 
   const handleOpenMyPage = (tab: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage' = 'dashboard') => {
     setMyPageInitialTab(tab);
@@ -1333,8 +1414,22 @@ export default function App() {
     localStorage.setItem('yt_pending_sync', hasPendingSync.toString());
   }, [hasPendingSync]);
 
+  // Load usage from DB
   useEffect(() => {
-    const handleUsageUpdate = (e: any) => setUsage(e.detail);
+    if (user && role !== 'pending') {
+      const plan = role === 'pro' ? 'gold' : role === 'admin' ? 'admin' : role === 'guest' ? 'general' : 'silver';
+      getUsageFromDb(user.uid, plan).then(setUsage).catch(console.error);
+    }
+  }, [user, role]);
+
+  // Listen to realtime usage updates
+  useEffect(() => {
+    const handleUsageUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail) {
+        setUsage(customEvent.detail);
+      }
+    };
     window.addEventListener('yt-api-usage-updated', handleUsageUpdate);
     return () => window.removeEventListener('yt-api-usage-updated', handleUsageUpdate);
   }, []);
@@ -1382,6 +1477,20 @@ export default function App() {
       getTopicsFromDb().then(setRecommendedTopics);
     }
   }, [isTopicMode, user]);
+
+  const handleApiUsage = async (cost: number, type: 'search' | 'list' | 'script', details?: string) => {
+    if (!user) return;
+    try {
+       const plan = role === 'pro' ? 'gold' : role === 'admin' ? 'admin' : role === 'guest' ? 'general' : 'silver';
+       const newUsage = await updateUsageInDb(user.uid, plan, cost, type, details || '');
+       setUsage(newUsage);
+    } catch (e: any) {
+       console.error("Usage Update Failed", e);
+       if (e.message === 'Quota Exceeded') {
+          alert(`포인트 부족 (일일 한도 초과)\n\n오늘의 포인트(${usage.total.toLocaleString()})를 모두 소진했습니다.\n내일 오후 5시(KST)에 충전됩니다.`);
+       }
+    }
+  };
 
   const handleAddPackageToMyList = async (pkg: RecommendedPackage, targetGroupId: string, newGroupName?: string) => {
     if (!user) {
@@ -2678,6 +2787,9 @@ export default function App() {
         onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
         isScriptMode={isScriptMode}
         onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        userGrade={plan || 'general'}
+        isAdmin={role === 'admin'}
+        onShowAlert={setAlertMessage}
       />
       
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -2740,6 +2852,8 @@ export default function App() {
               }
             }}
             role={role}
+            plan={plan}
+            membershipTier={membershipTier}
             expiresAt={expiresAt}
             onLogout={logout}
             ytKey={ytKey}
@@ -2788,8 +2902,10 @@ export default function App() {
         ) : isScriptMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <ScriptExtractor 
-              apiKey={ytKey}
-              initialUrl={scriptModeUrl}
+              apiKey={ytKey} 
+              initialUrl={scriptModeUrl} 
+              usage={usage}
+              onUsageUpdate={handleApiUsage}
             />
           </div>
         ) : isMaterialsExplorerMode ? (
@@ -3194,7 +3310,7 @@ export default function App() {
                 <div className="mt-12 bg-primary/5 border border-primary/20 p-8 rounded-3xl space-y-6">
                   <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
                     <span className="material-symbols-outlined text-sm">info</span>
-                    유닛 소모 기준 (YouTube Data API v3)
+                    포인트 사용량 분석
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-white dark:bg-slate-900/50 p-5 rounded-2xl flex items-center justify-between shadow-sm border border-slate-100 dark:border-white/5">
@@ -3223,19 +3339,19 @@ export default function App() {
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400 font-medium italic mt-4 text-center">
-                    ※ 10,000 유닛은 구글에서 제공하는 무료 일일 한도이며, 소진 시 검색 및 새로고침 기능이 제한될 수 있습니다.
+                    ※ 홈페이지에서 사용할수 있는 포인트를 나타낸것으로 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급의 경우 매일 2천포인트가 지급되고 골드등급의 경우 매일 5천포인트가 지급이 됩니다.
                   </p>
                 </div>
                 <div className="mt-6 bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-3xl p-6">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 px-2">API 호출 기록 (오늘)</h3>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 px-2">포인트 사용 기록 (오늘)</h3>
                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                     {usage.logs && usage.logs.length > 0 ? (
                       usage.logs.map((log, index) => (
                         <div key={index} className="flex items-center justify-between text-[10px] p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-white/5">
                           <div className="flex items-center gap-3">
                             <span className="font-mono text-slate-400">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                            <span className={`font-bold uppercase px-1.5 py-0.5 rounded ${log.type === 'search' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'}`}>
-                              {log.type === 'search' ? 'SEARCH' : 'LIST'}
+                            <span className={`font-bold uppercase px-1.5 py-0.5 rounded ${log.type === 'search' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' : log.type === 'script' ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' : 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'}`}>
+                              {log.type === 'search' ? 'SEARCH' : log.type === 'script' ? 'SCRIPT' : 'LIST'}
                             </span>
                             <span className="text-slate-600 dark:text-slate-300 font-medium truncate max-w-[150px]">{log.details}</span>
                           </div>
@@ -3244,7 +3360,7 @@ export default function App() {
                       ))
                     ) : (
                       <div className="text-center py-8 text-slate-400 text-[10px] font-medium italic">
-                        오늘 기록된 API 호출이 없습니다.
+                        오늘 기록된 포인트 사용 내역이 없습니다.
                       </div>
                     )}
                   </div>
@@ -4223,6 +4339,8 @@ export default function App() {
            onClose={() => setMembershipJustApproved(null)}
            userName={membershipJustApproved.name}
            daysLeft={membershipJustApproved.daysLeft}
+           plan={membershipJustApproved.plan}
+           limit={membershipJustApproved.limit}
          />
       )}
 

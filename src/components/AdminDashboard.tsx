@@ -23,10 +23,11 @@ interface UserData {
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'admin' | 'approved' | 'pending';
+  role: 'admin' | 'approved' | 'pending' | 'regular' | 'pro' | 'guest';
   createdAt: string;
   expiresAt?: string; // Optional: Expiration date
   plan?: string; // Subscription Plan
+  channelId?: string; // YouTube Channel ID
   lastLoginAt?: string;
   adminMemo?: string;
 }
@@ -153,8 +154,9 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   };
 
 
-  const [replyingInquiryId, setReplyingInquiryId] = useState<string | null>(null);
-  const [replyMessage, setReplyMessage] = useState('');
+  // const [replyingInquiryId, setReplyingInquiryId] = useState<string | null>(null); // Deprecated
+  // const [replyMessage, setReplyMessage] = useState(''); // Deprecated
+  const [replyDrafts, setReplyDrafts] = useState<{[key:string]: string}>({});
 
   const openNotifModal = (u: UserData | null, mode: 'individual' | 'all') => {
     setNotifTargetUser(u);
@@ -232,26 +234,32 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
 
 
-  const handleSendInlineReply = async (inquiryId: string, userId: string, userName: string) => {
-    if (!replyMessage.trim()) return;
+  const handleSendInlineReply = async (inquiryId: string, userId: string, userName: string, content: string) => {
+    if (!content.trim()) return;
     
     try {
-        await replyToInquiry(inquiryId, userId, replyMessage);
+        await replyToInquiry(inquiryId, userId, content);
         
         if (user) {
             await logAdminMessage({
                 recipientId: userId,
                 recipientName: userName,
-                message: `[Inquiry Reply] ${replyMessage}`,
+                message: `[Inquiry Reply] ${content}`,
                 adminId: user.uid,
                 type: 'individual'
             });
         }
         
         // Update local state
-        setInquiries(prev => prev.map(inq => inq.id === inquiryId ? {...inq, isAnswered: true, answer: replyMessage, answeredAt: Date.now()} : inq));
-        setReplyingInquiryId(null);
-        setReplyMessage('');
+        setInquiries(prev => prev.map(inq => inq.id === inquiryId ? {...inq, isAnswered: true, answer: content, answeredAt: Date.now()} : inq));
+        
+        // Clear draft
+        setReplyDrafts(prev => {
+            const newState = {...prev};
+            delete newState[inquiryId];
+            return newState;
+        });
+        
         alert("답장이 전송되었습니다.");
     } catch (e) {
         console.error(e);
@@ -587,7 +595,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
   const [topics, setTopics] = useState<RecommendedPackage[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
-  const [inquiryFilter, setInquiryFilter] = useState<'all' | 'pending' | 'answered'>('all');
+  const [inquiryFilter, setInquiryFilter] = useState<'all' | 'pending' | 'answered'>('pending');
   const [packageFilter, setPackageFilter] = useState<'all' | 'approved' | 'pending'>('all');
   const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<RecommendedPackage | null>(null);
@@ -651,10 +659,14 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     }
   };
 
+  const [inquirySearch, setInquirySearch] = useState('');
+
   const fetchInquiriesData = async () => {
     try {
       const data = await getInquiries();
-      setInquiries(data);
+      // Initially sort by createdAt desc
+      const sorted = data.sort((a: any, b: any) => b.createdAt - a.createdAt);
+      setInquiries(sorted);
     } catch (e) {
       console.error(e);
     }
@@ -1131,6 +1143,48 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     }
   };
 
+  const handleResetUser = async (uid: string) => {
+    if (!window.confirm("이 사용자의 모든 활동 데이터(문의, 저장 채널, 그룹, 알림, 기록)를 초기화하시겠습니까?\n(계정과 멤버십은 유지됩니다. 이 작업은 되돌릴 수 없습니다.)")) return;
+
+    try {
+      // Helper to clear subcollection
+      const clearSubcollection = async (subName: string) => {
+         const q = query(collection(db, 'users', uid, subName));
+         const snap = await getDocs(q);
+         snap.forEach(d => {
+            deleteDoc(d.ref); // Async delete immediately for simplicity
+         });
+      };
+
+      // 1. Clear Subcollections
+      await clearSubcollection('channels');
+      await clearSubcollection('groups');
+      await clearSubcollection('notifications');
+      await clearSubcollection('history'); // Clear old history
+
+      // 2. Clear Inquiries
+      const qInq = query(collection(db, 'inquiries'), where('userId', '==', uid));
+      const snapInq = await getDocs(qInq);
+      snapInq.forEach(d => {
+         deleteDoc(d.ref);
+      });
+
+      // 3. Add Log (New History)
+      await addDoc(collection(db, 'users', uid, 'history'), {
+         action: 'admin_reset',
+         details: '관리자에 의한 활동 데이터 초기화',
+         date: new Date().toISOString(),
+         adminId: user?.uid
+      });
+
+      alert("✅ 사용자의 모든 활동 데이터가 초기화되었습니다.");
+      fetchUsers();
+    } catch (e) {
+      console.error("Reset failed", e);
+      alert("초기화 중 오류가 발생했습니다.");
+    }
+  };
+
   const handleDelete = async (uid: string) => {
     if (!window.confirm("정말 이 사용자를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
     try {
@@ -1142,12 +1196,163 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   };
 
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
-  const [editRole, setEditRole] = useState<'admin' | 'approved' | 'pending'>('pending');
+  const [editRole, setEditRole] = useState<'admin' | 'approved' | 'pending' | 'regular' | 'pro' | 'guest'>('pending');
   const [editPlan, setEditPlan] = useState<string>('free'); // New Plan State
   const [expiryDays, setExpiryDays] = useState<string>(''); // '' means no change or custom
   const [customExpiry, setCustomExpiry] = useState('');
 
-  // --- User History Logic ---
+  // --- Add Member Modal State ---
+  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+  const [newMemberData, setNewMemberData] = useState({
+     name: '',
+     id: '',
+     tier: '실버 버튼',
+     remainingDays: '30'
+  });
+
+  const handleAddMember = async () => {
+      if(!newMemberData.name || !newMemberData.id) return alert("이름과 ID를 입력해주세요.");
+      
+      const newEntry = {
+          name: newMemberData.name,
+          id: newMemberData.id.trim(),
+          tier: newMemberData.tier,
+          tierDuration: '',
+          totalDuration: '',
+          status: '수동 추가',
+          lastUpdate: new Date().toISOString(),
+          remainingDays: newMemberData.remainingDays
+      };
+
+      const newList = [...(whitelistData.memberDetails || []), newEntry];
+      const newIds = [...(whitelistData.ids || []), newEntry.id];
+      
+      try {
+          await updateWhitelistInDb(newIds, newList);
+          
+          // --- [NEW] Start: Update Actual User Permissions Immediately ---
+          const targetId = newMemberData.id.trim();
+          const targetTier = newMemberData.tier; // '실버 버튼' or '골드 버튼'
+          const safeTarget = targetId.toLowerCase();
+
+          // Find User (Robust Fuzzy Matching)
+          const foundUser = users.find(u => {
+                const uChannelId = (u as any).channelId || '';
+                const uEmail = (u.email || '').toLowerCase().trim();
+                
+                // Exact Channel ID match
+                if (uChannelId && uChannelId === targetId) return true;
+
+                // Email match
+                if (uEmail === safeTarget) return true;
+                if (uEmail.split('@')[0] === safeTarget) return true;
+                
+                return false;
+          });
+
+          if (foundUser) {
+              const days = parseInt(newMemberData.remainingDays || '30');
+              const newExpiryDate = new Date();
+              newExpiryDate.setDate(newExpiryDate.getDate() + days);
+
+              let newRole: 'regular' | 'pro' = 'regular';
+              let newPlan: 'silver' | 'gold' = 'silver';
+
+              if (targetTier.includes('골드') || targetTier.includes('Gold') || targetTier.includes('pro')) {
+                  newRole = 'pro';
+                  newPlan = 'gold';
+              }
+
+              // Update User Doc
+              await updateDoc(doc(db, 'users', foundUser.uid), {
+                  role: newRole,
+                  plan: newPlan,
+                  membershipTier: targetTier, // Store original display string
+                  expiresAt: newExpiryDate.toISOString()
+              });
+
+              // Add History Log
+              try {
+                  await addDoc(collection(db, 'users', foundUser.uid, 'history'), {
+                      action: 'admin_manual_add',
+                      details: `관리자에 의한 멤버십 수동 등록 (${targetTier}, ${days}일)`,
+                      date: new Date().toISOString()
+                  });
+              } catch(e) {/* ignore log error */}
+
+              alert(`✅ 명단 추가 및 사용자 권한 업데이트 완료!\n\n사용자: ${foundUser.displayName}\n등급: ${targetTier}\n만료일: ${newExpiryDate.toLocaleDateString()}`);
+              fetchUsers(); // Refresh UI
+          } else {
+              alert(`✅ 명단에 추가되었습니다.\n(단, 일치하는 가입자를 찾지 못해 권한은 자동 부여되지 않았습니다. 해당 ID로 가입 시 자동 적용됩니다.)`);
+          }
+          // --- [NEW] End ---
+
+          setIsAddMemberModalOpen(false);
+          setNewMemberData({ name: '', id: '', tier: '실버 버튼', remainingDays: '30' });
+      } catch (e) {
+          console.error(e);
+          alert("추가 중 오류가 발생했습니다.");
+      }
+  };
+
+  const handleDeleteMember = async (targetId: string, targetName: string) => {
+    if (!window.confirm(`'${targetName}' (${targetId}) 님을 명단에서 삭제하시겠습니까?\n\n삭제 시 해당 사용자의 멤버십 등급이 즉시 해제됩니다.`)) return;
+
+    // 1. Update Whitelist (Remove from list)
+    const newList = whitelistData.memberDetails.filter((x: any) => x.id !== targetId);
+    const newIds = whitelistData.ids.filter((id: any) => id !== targetId);
+    
+    try {
+        await updateWhitelistInDb(newIds, newList); // This updates system_data/membership_whitelist
+
+        // 2. Find and Downgrade the Actual User (Robust Matching)
+        // Instead of strict Firestore query, use the loaded 'users' array which allows us to use multiple matching strategies
+        // Strategy similar to table rendering logic: Match ChannelID OR Email (fuzzy)
+        
+        const safeTarget = targetId.trim().toLowerCase();
+        const foundUser = users.find(u => {
+             const uChannelId = (u as any).channelId || '';
+             const uEmail = (u.email || '').toLowerCase().trim();
+             
+             // Exact Channel ID match (most reliable)
+             if (uChannelId && uChannelId === targetId.trim()) return true;
+
+             // Email match (exact or prefix)
+             if (uEmail === safeTarget) return true;
+             if (uEmail.split('@')[0] === safeTarget) return true;
+             
+             return false;
+        });
+
+        if (foundUser) {
+            await updateDoc(doc(db, 'users', foundUser.uid), {
+                role: 'approved', // Downgrade to basic approved user
+                plan: 'free',
+                membershipTier: null,
+                expiresAt: null
+            });
+
+            // Add History Log
+            try {
+               await addDoc(collection(db, 'users', foundUser.uid, 'history'), {
+                  action: 'membership_revoked',
+                  details: `관리자에 의한 멤버십 명단 삭제 및 등급 해제 (${targetId})`,
+                  date: new Date().toISOString()
+               });
+            } catch(e) {/* ignore log error */}
+
+            alert(`명단 삭제 완료.\n사용자(${foundUser.displayName})의 등급도 '승인됨(Free)'으로 변경되었습니다.`);
+            
+            // Refresh to show updated status
+            fetchUsers(); 
+        } else {
+            alert("명단에서 삭제되었습니다.\n(일치하는 가입자를 찾을 수 없어 등급 변경은 수행되지 않았습니다. 사용자가 아직 가입하지 않았거나 ID가 다를 수 있습니다.)");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("삭제 중 오류가 발생했습니다.");
+    }
+  };
   const [userHistory, setUserHistory] = useState<any[]>([]);
   useEffect(() => {
      if (selectedUser) {
@@ -1175,7 +1380,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const handleEditClick = (u: UserData) => {
     setSelectedUser(u);
     setEditRole(u.role);
-    setEditPlan(u.plan || 'free'); // Init plan
+    setEditPlan(u.plan === 'free' ? 'general' : u.plan || 'general'); // Init plan (free -> general)
     setExpiryDays('');
     setCustomExpiry(u.expiresAt ? new Date(u.expiresAt).toISOString().split('T')[0] : '');
   };
@@ -1455,7 +1660,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     <th className="px-6 py-4">사용자</th>
                     <th className="px-6 py-4 hidden md:table-cell">관리자 메모</th>
                     <th className="px-6 py-4 hidden md:table-cell">이메일</th>
-                    <th className="px-6 py-4 hidden md:table-cell">플랜</th>
+                    <th className="px-6 py-4 hidden md:table-cell">등급</th>
                     <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('lastLoginAt')}>
                       <div className="flex items-center gap-1">
                         최근 접속
@@ -1498,8 +1703,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                         <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="size-10 rounded-full bg-slate-200 ring-2 ring-white dark:ring-slate-800" alt="" />
-                         <span className="font-bold text-sm dark:text-slate-200 whitespace-nowrap">{u.displayName}</span>
+                         <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="size-8 rounded-full bg-slate-200 ring-2 ring-white dark:ring-slate-800" alt="" />
+                         <span className="font-bold text-xs dark:text-slate-200 whitespace-nowrap">{u.displayName}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 hidden md:table-cell">
@@ -1528,21 +1733,61 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                </button>
                             )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 hidden md:table-cell">{u.email}</td>
+                    <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400 hidden md:table-cell">{u.email}</td>
+
                     <td className="px-6 py-4 hidden md:table-cell">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
-                        u.plan === 'yearly' ? 'bg-purple-100 text-purple-600 border-purple-200' :
-                        u.plan === 'monthly' ? 'bg-indigo-100 text-indigo-600 border-indigo-200' :
-                        u.plan === 'membership' ? 'bg-amber-100 text-amber-600 border-amber-200' :
-                        'bg-slate-100 text-slate-500 border-slate-200'
-                      }`}>
-                        {u.plan === 'yearly' ? 'Yearly' : u.plan === 'monthly' ? 'Monthly' : u.plan === 'membership' ? '멤버십' : 'Free'}
-                      </span>
+                      {(() => {
+                         let tier = '';
+                         // 1. Check Whitelist (Robust Matching: ID first, then Email)
+                         if (whitelistData?.memberDetails) {
+                            const safeEmail = (u.email || '').toLowerCase().trim();
+                            // Access channelId from 'u' as any to bypass TS error temporarily if interface not updated yet
+                            const safeChannelId = (u as any).channelId || '';
+
+                            const match = whitelistData.memberDetails.find((m: any) => {
+                               const mId = String(m.id || '').trim();
+                               if (!mId) return false;
+                               // Match by Channel ID (Exact)
+                               if (safeChannelId && mId === safeChannelId) return true;
+                               // Match by Email (Case-insensitive)
+                               const mIdLower = mId.toLowerCase();
+                               return safeEmail === mIdLower || safeEmail.split('@')[0] === mIdLower;
+                            });
+                            if (match && match.tier) tier = match.tier.trim(); // Keep original case for Korean
+                         }
+                         
+                         // 2. Check Role/Plan (Fallback)
+                         if (!tier || tier === '-') {
+                            if (u.role === 'admin') tier = 'admin';
+                            else if (u.role === 'pro' || u.plan === 'gold') tier = 'gold';
+                            else if (u.role === 'regular' || u.plan === 'silver') tier = 'silver';
+                         }
+                         
+                         // 3. Render
+                         let label = '일반';
+                         let style = 'bg-slate-100 text-slate-500 border-slate-200';
+
+                         if (tier === 'admin') { label = 'ADMIN'; style = 'bg-purple-100 text-purple-600 border-purple-200'; }
+                         else if (tier.includes('gold') || tier.includes('골드')) { label = '골드 버튼'; style = 'bg-amber-100 text-amber-600 border-amber-200'; }
+                         else if (tier.includes('silver') || tier.includes('실버')) { label = '실버 버튼'; style = 'bg-indigo-50 text-indigo-600 border-indigo-100'; }
+                         else if (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') { label = '승인됨'; style = 'bg-emerald-100 text-emerald-600 border-emerald-200'; }
+
+                         return (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${style}`}>
+                            {label}
+                          </span>
+                         );
+                      })()}
                     </td>
                     <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap hidden md:table-cell">
                       {u.lastLoginAt ? (
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-700 dark:text-slate-300">{new Date(u.lastLoginAt).toLocaleDateString()}</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                             {(() => {
+                                const d = new Date(u.lastLoginAt);
+                                return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+                             })()}
+                          </span>
                           <span className="text-[10px] text-slate-400">{new Date(u.lastLoginAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                         </div>
                       ) : '-'}
@@ -1550,7 +1795,12 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     <td className="px-6 py-4 text-xs font-mono whitespace-nowrap hidden md:table-cell">
                       {u.expiresAt ? (
                         <div className="flex flex-col">
-                          <span className="text-slate-600 dark:text-slate-400 font-bold">{new Date(u.expiresAt).toLocaleDateString()}</span>
+                          <span className="text-slate-600 dark:text-slate-400 font-bold">
+                             {(() => {
+                                const d = new Date(u.expiresAt);
+                                return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+                             })()}
+                          </span>
                           <span className={`text-[10px] font-bold mt-0.5 ${
                             calculateDDay(u.expiresAt) === '만료됨' ? 'text-rose-500' :
                             calculateDDay(u.expiresAt)?.startsWith('D-') ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded w-fit' : 'text-slate-400'
@@ -1565,10 +1815,10 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide border ${
                         u.role === 'admin' ? 'bg-purple-100 text-purple-600 border-purple-200' :
-                        u.role === 'approved' ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
+                        (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
                         'bg-yellow-100 text-yellow-600 border-yellow-200'
                       }`}>
-                        {u.role === 'admin' ? '관리자' : u.role === 'approved' ? '승인됨' : '대기중'}
+                        {u.role === 'admin' ? '관리자' : (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') ? '승인됨' : '대기중'}
                       </span>
 
                     </td>
@@ -1591,8 +1841,16 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
+                          onClick={() => handleResetUser(u.uid)}
+                          className="text-xs font-bold text-amber-500 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/10 dark:hover:bg-amber-900/30 px-3 py-1.5 rounded-lg transition-colors border border-amber-200 dark:border-amber-800"
+                          title="활동 내역 초기화 (계정 유지)"
+                        >
+                          초기화
+                        </button>
+                        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                        <button 
                           onClick={() => handleEditClick(u)}
-                          className="text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+                          className="text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white px-3 py-1.5 rounded-lg transition-colors"
                         >
                           수정
                         </button>
@@ -1601,7 +1859,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                           <button 
                                onClick={() => handleDelete(u.uid)}
                                className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
-                               title="삭제"
+                               title="계정 삭제"
                           >
                                <span className="material-symbols-outlined text-lg">delete</span>
                           </button>
@@ -1618,45 +1876,81 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
           ) : activeTab === 'inquiries' ? (
              <div className="space-y-4">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col md:flex-row items-center justify-between mb-4 gap-4">
                     <h3 className="text-xl font-bold">1:1 문의 내역</h3>
-                    <div className="flex items-center gap-2">
-                       {['all', 'pending', 'answered'].map(f => (
-                         <button 
-                           key={f}
-                           onClick={() => setInquiryFilter(f as any)}
-                           className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                             inquiryFilter === f 
-                             ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' 
-                             : 'bg-white dark:bg-slate-800 text-slate-500 hover:text-indigo-500'
-                           }`}
-                         >
-                           {f === 'all' ? '전체' : f === 'pending' ? '대기중' : '답변완료'}
-                           <span className="ml-2 text-xs opacity-60 bg-black/10 px-1.5 rounded-full">
-                             {f === 'all' 
-                               ? inquiries.length 
-                               : inquiries.filter((i: any) => f === 'pending' ? !i.isAnswered : i.isAnswered).length}
-                           </span>
-                         </button>
-                       ))}
+                    <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+                       {/* Search Input */}
+                       <div className="relative w-full sm:w-64">
+                          <input 
+                            value={inquirySearch}
+                            onChange={(e) => setInquirySearch(e.target.value)}
+                            placeholder="이름 또는 내용 검색..."
+                            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                       </div>
+
+                       <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
+                         {['all', 'pending', 'answered'].map(f => (
+                           <button 
+                             key={f}
+                             onClick={() => setInquiryFilter(f as any)}
+                             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                               inquiryFilter === f 
+                               ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' 
+                               : 'bg-white dark:bg-slate-800 text-slate-500 hover:text-indigo-500 border border-slate-200 dark:border-slate-700'
+                             }`}
+                           >
+                             {f === 'all' ? '전체' : f === 'pending' ? '대기중' : '답변완료'}
+                             <span className="ml-2 opacity-60 bg-black/10 px-1.5 py-0.5 rounded-full text-[10px]">
+                               {f === 'all' 
+                                 ? inquiries.length 
+                                 : inquiries.filter((i: any) => f === 'pending' ? !i.isAnswered : i.isAnswered).length}
+                             </span>
+                           </button>
+                         ))}
+                       </div>
                     </div>
                 </div>
 
                 {inquiries.filter((inq: any) => {
-                    if (inquiryFilter === 'pending') return !inq.isAnswered;
-                    if (inquiryFilter === 'answered') return inq.isAnswered;
+                    // 1. Filter by Type
+                    if (inquiryFilter === 'pending' && inq.isAnswered) return false;
+                    if (inquiryFilter === 'answered' && !inq.isAnswered) return false;
+                    
+                    // 2. Filter by Search (Name or Content)
+                    if (inquirySearch) {
+                       const lower = inquirySearch.toLowerCase();
+                       return (
+                          (inq.userName && inq.userName.toLowerCase().includes(lower)) ||
+                          (inq.content && inq.content.toLowerCase().includes(lower))
+                       );
+                    }
                     return true;
                 }).length === 0 ? (
                   <div className="p-10 text-center text-slate-400 border border-dashed rounded-2xl">
-                    {inquiryFilter === 'all' ? '문의 내역이 없습니다.' : inquiryFilter === 'pending' ? '대기 중인 문의가 없습니다.' : '답변 완료된 문의가 없습니다.'}
+                    검색 결과가 없습니다.
                   </div>
                 ) : (
                   <div className="grid gap-4">
                      {inquiries.filter((inq: any) => {
-                         if (inquiryFilter === 'pending') return !inq.isAnswered;
-                         if (inquiryFilter === 'answered') return inq.isAnswered;
+                         if (inquiryFilter === 'pending' && inq.isAnswered) return false;
+                         if (inquiryFilter === 'answered' && !inq.isAnswered) return false;
+                         if (inquirySearch) {
+                            const lower = inquirySearch.toLowerCase();
+                            return (
+                               (inq.userName && inq.userName.toLowerCase().includes(lower)) ||
+                               (inq.content && inq.content.toLowerCase().includes(lower))
+                            );
+                         }
                          return true;
-                     }).map((inq: any) => {
+                     })
+                     .sort((a: any, b: any) => {
+                        const dateA = new Date(a.createdAt).getTime();
+                        const dateB = new Date(b.createdAt).getTime();
+                        return dateB - dateA; // Newest first
+                     })
+                     .map((inq: any) => {
                        const isExpanded = expandedInquiryId === inq.id;
                        return (
                         <div key={inq.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:border-indigo-500 transition-all">
@@ -1689,7 +1983,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                        )}
                                     </div>
                                     <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
-                                       <span className="font-bold">{inq.userName}</span>
+                                       <span className="font-bold text-indigo-600 dark:text-indigo-400">{inq.userName}</span>
                                        <span className="opacity-50">|</span>
                                        <span className="font-mono">{inq.userId}</span>
                                     </div>
@@ -1703,18 +1997,18 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                            {/* Expanded Content */}
                            {isExpanded && (
                              <div className="p-6 bg-white dark:bg-slate-900 animate-in slide-in-from-top-2">
-                                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap border border-slate-100 dark:border-slate-700">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap border border-slate-100 dark:border-slate-700 mb-2">
                                   {inq.content}
                                 </div>
                                 
-                                <div className="mt-2 text-right">
-                                  <span className="text-[10px] text-slate-400">
-                                    문의 일시: {new Date(inq.createdAt).toLocaleString()}
-                                  </span>
+                                <div className="flex items-center justify-end gap-2 mb-6">
+                                   <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                                     {new Date(inq.createdAt).toLocaleString()}
+                                   </span>
                                 </div>
 
                                 {inq.isAnswered ? (
-                                   <div className="mt-6 pl-4 border-l-2 border-emerald-500/30">
+                                   <div className="pl-4 border-l-2 border-emerald-500/30">
                                       <div className="text-[11px] font-bold text-emerald-600 mb-2 flex items-center gap-1.5">
                                         <span className="material-symbols-outlined text-base">reply</span>
                                         관리자 답변 완료 <span className="text-slate-400 font-normal">({new Date(inq.answeredAt).toLocaleString()})</span>
@@ -1723,48 +2017,31 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                         {inq.answer}
                                       </div>
                                    </div>
-                                 ) : replyingInquiryId === inq.id ? (
-                                   <div className="mt-6 bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20 animate-in fade-in">
-                                      <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2 flex items-center gap-1">
-                                         <span className="material-symbols-outlined text-sm">edit</span>
-                                         답변 작성 중...
+                                 ) : (
+                                   <div className="bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-500/20 animate-in fade-in">
+                                      <div className="flex justify-between items-center mb-2">
+                                         <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-sm">edit_note</span>
+                                            답변 작성
+                                         </div>
                                       </div>
                                       <textarea 
-                                        value={replyMessage}
-                                        onChange={(e) => setReplyMessage(e.target.value)}
-                                        placeholder="답변 내용을 입력하세요..."
-                                        className="w-full h-32 p-4 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-white dark:bg-slate-800 text-sm resize-none focus:ring-2 focus:ring-indigo-500 mb-3 shadow-inner"
-                                        autoFocus
+                                        value={replyDrafts[inq.id] || ''}
+                                        onChange={(e) => setReplyDrafts(prev => ({...prev, [inq.id]: e.target.value}))}
+                                        placeholder="여기에 답변을 바로 입력하세요..."
+                                        className="w-full h-32 p-4 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-white dark:bg-slate-800 text-sm resize-none focus:ring-2 focus:ring-indigo-500 mb-3 shadow-sm transition-all focus:shadow-md"
+                                        autoFocus={false} // Don't autofocus all of them
                                       />
                                       <div className="flex justify-end gap-2">
                                         <button 
-                                          onClick={() => { setReplyingInquiryId(null); setReplyMessage(''); }}
-                                          className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                        >
-                                          취소
-                                        </button>
-                                        <button 
-                                          onClick={() => handleSendInlineReply(inq.id, inq.userId, inq.userName)}
-                                          className="px-6 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/30 flex items-center gap-2"
+                                          onClick={() => handleSendInlineReply(inq.id, inq.userId, inq.userName, replyDrafts[inq.id] || '')}
+                                          disabled={!replyDrafts[inq.id]?.trim()}
+                                          className="px-6 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                           <span className="material-symbols-outlined text-sm">send</span>
                                           답장 전송
                                         </button>
                                       </div>
-                                   </div>
-                                 ) : (
-                                   <div className="mt-6 flex justify-end">
-                                     <button 
-                                       onClick={(e) => { 
-                                         e.stopPropagation(); // Prevent accordion toggle
-                                         setReplyingInquiryId(inq.id); 
-                                         setReplyMessage(''); 
-                                       }}
-                                       className="px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 group"
-                                     >
-                                       <span className="material-symbols-outlined text-lg group-hover:-rotate-12 transition-transform">reply</span>
-                                       이 문의에 답장하기
-                                     </button>
                                    </div>
                                  )}
                             </div>
@@ -2015,28 +2292,32 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         />
                      </div>
                   </div>
+                  <div className="flex gap-2">
+                     <button
+                        onClick={() => setIsAddMemberModalOpen(true)}
+                        className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-colors text-xs flex items-center gap-1"
+                     >
+                        <span className="material-symbols-outlined text-sm">person_add</span>
+                        개별 추가
+                     </button>
+                  </div>
                   <div className="overflow-x-auto">
                      <table className="w-full text-left border-collapse min-w-[900px]">
                         <thead>
                            <tr className="border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 uppercase bg-slate-50/50 dark:bg-slate-800/50">
-                              <th onClick={() => handleMemberSort('name')} className="px-4 py-3 font-bold w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
-                                 <div className="flex items-center gap-1">회원 {memberSortConfig.key === 'name' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              <th onClick={() => handleMemberSort('name')} className="px-4 py-3 font-bold w-[25%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center gap-1">회원 이름 {memberSortConfig.key === 'name' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
                               </th>
                               <th onClick={() => handleMemberSort('tier')} className="px-4 py-3 font-bold w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
-                                 <div className="flex items-center gap-1">현재 등급 {memberSortConfig.key === 'tier' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                                 <div className="flex items-center gap-1">등급 {memberSortConfig.key === 'tier' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
                               </th>
-                              <th onClick={() => handleMemberSort('tierDuration')} className="px-4 py-3 font-bold text-center w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
-                                 <div className="flex items-center justify-center gap-1">등급 유지 기간 {memberSortConfig.key === 'tierDuration' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              <th onClick={() => handleMemberSort('totalDuration')} className="px-4 py-3 font-bold w-[20%] text-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex items-center justify-center gap-1">멤버십 유지기간 {memberSortConfig.key === 'totalDuration' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
                               </th>
-                              <th onClick={() => handleMemberSort('totalDuration')} className="px-4 py-3 font-bold text-center w-[15%] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
-                                 <div className="flex items-center justify-center gap-1">총 활동 기간 {memberSortConfig.key === 'totalDuration' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
+                              <th onClick={() => handleMemberSort('lastUpdate')} className="px-4 py-3 font-bold w-[25%] text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
+                                 <div className="flex justify-end items-center gap-1">업데이트 {memberSortConfig.key === 'lastUpdate' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
                               </th>
-                              <th onClick={() => handleMemberSort('lastUpdate')} className="px-4 py-3 font-bold w-[20%] text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
-                                 <div className="flex items-center justify-end gap-1">멤버십 상태 {memberSortConfig.key === 'lastUpdate' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
-                              </th>
-                              <th onClick={() => handleMemberSort('id')} className="px-4 py-3 font-bold w-[20%] text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none">
-                                 <div className="flex items-center justify-end gap-1">Channel ID {memberSortConfig.key === 'id' && <span className="text-[10px]">{memberSortConfig.direction === 'asc' ? '▲' : '▼'}</span>}</div>
-                              </th>
+                              <th className="px-4 py-3 font-bold w-[15%] text-right">관리</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2053,17 +2334,15 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                    </div>
                                  </td>
                                  <td className="px-4 py-3">
-                                    <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold border ${m.tier?.includes('VIP') ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}>
+                                    <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold border ${
+                                       (m.tier?.includes('골드') || m.tier?.includes('Gold') || m.tier?.includes('VIP')) 
+                                       ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800' 
+                                       : (m.tier?.includes('실버') || m.tier?.includes('Silver')) 
+                                       ? 'bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
+                                       : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
+                                    }`}>
                                        {m.tier || '-'}
                                     </span>
-                                 </td>
-                                 <td className="px-4 py-3 text-xs text-slate-500 text-center font-medium">
-                                    {(() => {
-                                       const val = m.tierDuration;
-                                       if (!val || val === '-') return '-';
-                                       const num = parseFloat(val);
-                                       return isNaN(num) ? val : `${num.toFixed(1)}개월`;
-                                    })()}
                                  </td>
                                  <td className="px-4 py-3 text-center">
                                     <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/10 px-2 py-1 rounded-lg">
@@ -2088,7 +2367,6 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                            const anchorDay = anchorDate.getDate(); // 매월 갱신일 (예: 20일)
 
                                            // 1. 다음 갱신일(Next Renewal) 찾기
-                                           // 기본: 이번 달의 anchorDay
                                            const now = new Date();
                                            let nextRenewal = new Date(now.getFullYear(), now.getMonth(), anchorDay);
                                            
@@ -2101,8 +2379,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                            const diffMs = nextRenewal.getTime() - now.getTime();
                                            const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
                                            
-                                           // 3. 상태 표시 (적극적 방어 로직: 리스트에 있으면 무조건 Active)
-                                           // daysLeft가 음수가 나올 수 없음 (로직상 항상 미래). 0이면 오늘.
+                                           // 3. 상태 표시
                                            const isDDay = daysLeft === 0;
                                            const isUrgent = daysLeft <= 3;
 
@@ -2126,13 +2403,22 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                     })()}
                                  </td>
                                  <td className="px-4 py-3 text-right">
-                                    <button 
-                                      className="text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 px-2 py-1 rounded font-mono transition-colors"
-                                      onClick={() => navigator.clipboard.writeText(m.id)}
-                                      title="클릭하여 ID 복사"
-                                    >
-                                       {m.id}
-                                    </button>
+                                    <div className="flex items-center justify-end gap-2">
+                                       <button 
+                                          className="text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 px-2 py-1 rounded font-mono transition-colors truncate max-w-[120px]"
+                                          onClick={() => navigator.clipboard.writeText(m.id)}
+                                          title="클릭하여 ID 복사"
+                                       >
+                                          {m.id}
+                                       </button>
+                                       <button 
+                                          onClick={() => handleDeleteMember(m.id, m.name)}
+                                          className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 p-1 rounded transition-colors"
+                                          title="명단에서 삭제 및 등급 해제"
+                                       >
+                                          <span className="material-symbols-outlined text-sm">delete</span>
+                                       </button>
+                                    </div>
                                  </td>
                               </tr>
                            ))}
@@ -2183,7 +2469,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {filteredItems.length === 0 ? (
                     <div className="col-span-full py-20 text-center text-slate-400 text-sm">
                         해당하는 {activeTab === 'topics' ? '소재' : '패키지'}가 없습니다.
@@ -2282,24 +2568,24 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    </div>
                  </div>
 
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">구독 플랜 (Plan)</label>
-                    <div className="flex gap-2">
-                      {['free', 'monthly', 'yearly'].map((p) => (
-                        <button
-                          key={p}
-                          onClick={() => setEditPlan(p)}
-                          className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
-                            editPlan === p 
-                              ? 'bg-primary text-white border-primary' 
-                              : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                          }`}
-                        >
-                          {p === 'free' ? '무료' : p === 'monthly' ? '월간' : '연간'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-slate-500 mb-1">등급 (Grade)</label>
+                     <div className="flex gap-2">
+                       {['general', 'silver', 'gold'].map((p) => (
+                         <button
+                           key={p}
+                           onClick={() => setEditPlan(p)}
+                           className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
+                             editPlan === p 
+                               ? 'bg-primary text-white border-primary' 
+                               : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+                           }`}
+                         >
+                           {p === 'general' ? '일반' : p === 'silver' ? '실버' : '골드'}
+                         </button>
+                       ))}
+                     </div>
+                   </div>
 
                  <div>
                    <label className="block text-xs font-bold text-slate-500 mb-1">이용 기간 연장</label>
@@ -2654,6 +2940,75 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
              </div>
            </div>
         )}
-    </div>
+         {/* Add Member Modal */}
+         {isAddMemberModalOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+               <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95">
+                  <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">멤버십 회원 수동 추가</h3>
+                  
+                  <div className="space-y-4">
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">회원명 (닉네임)</label>
+                        <input 
+                           type="text" 
+                           value={newMemberData.name}
+                           onChange={e => setNewMemberData({...newMemberData, name: e.target.value})}
+                           className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                           placeholder="홍길동"
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">ID (채널 ID 또는 이메일)</label>
+                        <input 
+                           type="text" 
+                           value={newMemberData.id}
+                           onChange={e => setNewMemberData({...newMemberData, id: e.target.value})}
+                           className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-mono"
+                           placeholder="UC... 또는 email@example.com"
+                        />
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 mb-1">등급</label>
+                           <select
+                              value={newMemberData.tier}
+                              onChange={e => setNewMemberData({...newMemberData, tier: e.target.value})}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                           >
+                              <option value="실버 버튼">실버 버튼</option>
+                              <option value="골드 버튼">골드 버튼</option>
+                           </select>
+                        </div>
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 mb-1">잔여 기간 (일)</label>
+                           <input 
+                              type="number" 
+                              value={newMemberData.remainingDays}
+                              onChange={e => setNewMemberData({...newMemberData, remainingDays: e.target.value})}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                           />
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 mt-6">
+                     <button 
+                        onClick={() => setIsAddMemberModalOpen(false)}
+                        className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm font-bold"
+                     >
+                        취소
+                     </button>
+                     <button 
+                        onClick={handleAddMember}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold"
+                     >
+                        추가하기
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+         
+      </div>
   );
 };

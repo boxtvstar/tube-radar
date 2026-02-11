@@ -4,18 +4,20 @@ import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { fetchMyChannelId } from '../../services/youtubeService';
 
-export type UserRole = 'admin' | 'approved' | 'pending';
+export type UserRole = 'admin' | 'approved' | 'pending' | 'regular' | 'pro' | 'guest';
 
 interface AuthContextType {
   user: User | null;
   role: UserRole | null;
+  plan: string | null;
+  membershipTier: string | null;
   expiresAt: string | null;
   loading: boolean;
   hiddenItemIds: string[];
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  membershipJustApproved: { matches: boolean; daysLeft: number; name: string } | null;
-  setMembershipJustApproved: (val: { matches: boolean; daysLeft: number; name: string } | null) => void;
+  membershipJustApproved: { matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null;
+  setMembershipJustApproved: (val: { matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null) => void;
   dismissItem: (itemId: string) => Promise<void>;
 }
 
@@ -26,16 +28,20 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
+  const [plan, setPlan] = useState<string | null>(null);
+  const [membershipTier, setMembershipTier] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hiddenItemIds, setHiddenItemIds] = useState<string[]>([]);
-  const [membershipJustApproved, setMembershipJustApproved] = useState<{ matches: boolean; daysLeft: number; name: string } | null>(null);
+  const [membershipJustApproved, setMembershipJustApproved] = useState<{ matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null>(null);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
         setRole(null);
+        setPlan(null);
+        setMembershipTier(null);
         setExpiresAt(null);
         setHiddenItemIds([]);
         setLoading(false);
@@ -91,11 +97,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const data = docSnap.data();
         const currentRole = data.role as UserRole;
         const currentPlan = data.plan || 'free';
+        const currentTier = data.membershipTier || null;
         const storedChannelId = data.channelId;
         const currentExpiresAt = data.expiresAt;
         const currentHiddenItemIds = data.hiddenItemIds || [];
 
         setRole(currentRole);
+        setPlan(currentPlan);
+        setMembershipTier(currentTier);
         setExpiresAt(currentExpiresAt || null);
         setHiddenItemIds(currentHiddenItemIds);
         
@@ -114,6 +123,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     const match = details.find(m => m.id === storedChannelId);
                     
                     if (match) {
+                       // Determine Target Plan/Role based on Tier
+                       // Role is always 'approved' for members. Separation is via 'plan'.
+                       let targetRole: UserRole = 'approved';
+                       let targetPlan = 'free';
+
+                       const tier = (match.tier || '').toLowerCase();
+                       if (tier.includes('gold') || tier.includes('pro') || tier.includes('골드')) {
+                           targetPlan = 'gold'; // Gold Plan
+                       }
+                       else if (tier.includes('silver') || tier.includes('regular') || tier.includes('실버')) {
+                           targetPlan = 'silver'; // Silver Plan
+                       }
+                       
                        // LOGIC: Calculate Expiry
                        let newExpiry = '';
                        const now = new Date(); 
@@ -122,7 +144,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        if (match.remainingDays) {
                            const parsedDays = parseInt(String(match.remainingDays).replace(/[^0-9]/g, ''));
                            if (!isNaN(parsedDays)) {
-                              newExpiry = new Date(now.getTime() + parsedDays * 24 * 60 * 60 * 1000).toISOString();
+                              const exp = new Date(now.getTime() + parsedDays * 24 * 60 * 60 * 1000);
+                              newExpiry = exp.toISOString();
                            }
                        } 
                        
@@ -143,60 +166,102 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        // 3. Fallback
                        if (!newExpiry) {
                            const baseDate = match.lastUpdate ? new Date(match.lastUpdate) : new Date();
-                           newExpiry = new Date(baseDate.getTime() + 32 * 24 * 60 * 60 * 1000).toISOString();
+                           const exp = new Date(baseDate.getTime() + 32 * 24 * 60 * 60 * 1000);
+                           newExpiry = exp.toISOString();
                        }
 
                        const expiryTime = new Date(newExpiry).getTime();
                        const currentExpiryTime = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0;
                        
                        // Conditions to Update
-                       const isRoleUpgrade = currentRole !== 'approved' && currentRole !== 'admin';
-                       const isPlanUpgrade = currentPlan !== 'membership';
-                       const isExtension = expiryTime > (currentExpiryTime + 24 * 60 * 60 * 1000); 
+                       const finalRole = currentRole === 'admin' ? 'admin' : targetRole;
+                       const currentPlanSafe = currentPlan || 'free';
 
-                       if (isRoleUpgrade || isPlanUpgrade || isExtension) {
-                           console.log(`[Membership] Auto-approving/Extending user by ID match: ${match.id}`);
-                           
-                           const updates: any = {
-                              role: currentRole === 'admin' ? 'admin' : 'approved',
-                              plan: 'membership',
-                              expiresAt: newExpiry,
-                              matchedAt: new Date().toISOString(),
-                              membershipTier: match.tier
-                           };
+                             // Check for Popup Trigger (Session based)
+                             // Show if: New upgrade/change OR First time seen in this session
+                             const popupKey = `membership_welcome_${user.uid}_${targetPlan}_${finalRole}`;
+                             const hasShown = sessionStorage.getItem(popupKey);
+                             
+                             // Logic:
+                             // 1. If Update Needed (Change detected) -> Show (unless suppressed)
+                             // 2. OR If Valid Member & Not Shown in Session -> Show
+                             // We unify this: If (Valid Member) AND (!hasShown), Show.
+                             
+                             if (!hasShown) {
+                                const diffInMs = expiryTime - new Date().getTime();
+                                const daysLeftVal = Math.max(Math.ceil(diffInMs / (1000 * 60 * 60 * 24)), 0);
+                                
+                                let limit = 1000;
+                                if (targetPlan === 'silver') limit = 2000;
+                                if (targetPlan === 'gold') limit = 5000;
+                                if (finalRole === 'admin') limit = 10000;
 
-                           const diffInMs = expiryTime - new Date().getTime();
-                           const daysLeftVal = Math.max(Math.ceil(diffInMs / (1000 * 60 * 60 * 24)), 0);
+                                setMembershipJustApproved({ 
+                                    matches: true, 
+                                    daysLeft: daysLeftVal, 
+                                    name: user.displayName || 'Member',
+                                    plan: targetPlan,
+                                    limit: limit
+                                });
+                                sessionStorage.setItem(popupKey, 'true');
+                             }
 
-                           // Prevent infinite loop: Only update if something actually changed
-                           // Compare 'currentExpiresAt' vs 'newExpiry' string equality? No, simple role check is safer.
-                           // Or check if currentExpiresAt is different enough.
-                           // IMPORTANT: updateDoc will trigger onSnapshot AGAIN. 
-                           // We must ensure we don't loop.
-                           // isExtension check helps. 
-                           // isRoleUpgrade helps.
-                           
-                           await updateDoc(userRef, updates);
-                           
-                           // Log History (Only if we updated)
-                           try {
-                              const { addDoc, collection } = await import('firebase/firestore');
-                              await addDoc(collection(db, 'users', user.uid, 'history'), {
-                                 action: 'membership_sync',
-                                 details: `Membership synced via Whitelist (ID: ${storedChannelId}). Tier: ${match.tier}`,
-                                 date: new Date().toISOString(),
-                                 previousExpiry: currentExpiresAt,
-                                 newExpiry: newExpiry
-                              });
-                           } catch(e) {}
+                             // Update DB if: Role changed, Plan changed, OR Expiry extended
+                             if (finalRole !== currentRole || currentPlanSafe !== targetPlan || expiryTime > (currentExpiryTime + 86400000)) {
+                                  await updateDoc(userRef, {
+                                      role: finalRole,
+                                      plan: targetPlan,
+                                      membershipTier: match.tier,
+                                      expiresAt: newExpiry,
+                                      lastUpdate: new Date().toISOString()
+                                  });
+                                  
+                                  // Log History
+                                  try {
+                                     const { addDoc, collection } = await import('firebase/firestore');
+                                     await addDoc(collection(db, 'users', user.uid, 'history'), {
+                                        action: 'membership_sync',
+                                        details: `Membership synced via Whitelist (ID: ${storedChannelId}). Tier: ${match.tier} -> Plan: ${targetPlan}`,
+                                        date: new Date().toISOString(),
+                                        previousExpiry: currentExpiresAt,
+                                        newExpiry: newExpiry
+                                     });
+                                  } catch(e) {}
 
-                           // Local State Update for Popup (Optional, since snapshot handles role/expiry)
-                           setMembershipJustApproved({ 
-                             matches: true, 
-                             daysLeft: daysLeftVal, 
-                             name: user.displayName || 'Member' 
-                           });
-                       }
+                                  // Notify Admin of New Approval or Upgrade
+                                  try {
+                                     const { query, where, getDocs, collection } = await import('firebase/firestore');
+                                     const { sendNotification } = await import('../../services/dbService');
+                                     
+                                     // Get all admin users
+                                     const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
+                                     const adminSnapshot = await getDocs(adminQuery);
+                                     
+                                     const isNewApproval = currentRole === 'pending';
+                                     const isUpgrade = currentRole === 'approved' && currentPlanSafe !== targetPlan;
+                                     
+                                     let notificationMessage = '';
+                                     if (isNewApproval) {
+                                        notificationMessage = `새로운 회원이 승인되었습니다: ${user.displayName || user.email} (${match.tier})`;
+                                     } else if (isUpgrade) {
+                                        notificationMessage = `회원 등급이 변경되었습니다: ${user.displayName || user.email} (${currentPlanSafe} → ${targetPlan})`;
+                                     }
+                                     
+                                     if (notificationMessage) {
+                                        // Send notification to each admin
+                                        for (const adminDoc of adminSnapshot.docs) {
+                                           await sendNotification(adminDoc.id, {
+                                              userId: adminDoc.id,
+                                              title: isNewApproval ? '새 회원 승인' : '회원 등급 변경',
+                                              message: notificationMessage,
+                                              type: 'info'
+                                           });
+                                        }
+                                     }
+                                  } catch(e) {
+                                     console.error('Failed to notify admin:', e);
+                                  }
+                             }
                     }
                  }
              } catch (e) {
@@ -272,7 +337,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, role, expiresAt, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
+    <AuthContext.Provider value={{ user, role, plan, membershipTier, expiresAt, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
       {children}
     </AuthContext.Provider>
   );

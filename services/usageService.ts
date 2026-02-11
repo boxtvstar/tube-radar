@@ -1,5 +1,7 @@
 
 import { ApiUsage } from "../types";
+import { auth } from '../src/lib/firebase';
+import { updateUsageInDb } from './dbService';
 
 const DAILY_QUOTA = 10000;
 
@@ -119,10 +121,25 @@ export const resetQuota = (apiKey: string) => {
   return usage;
 };
 
-export const trackUsage = (apiKey: string, type: 'search' | 'list', units: number = 1, details?: string) => {
+export const trackUsage = async (apiKey: string, type: 'search' | 'list' | 'script', units: number = 1, details?: string) => {
+  const cost = type === 'search' ? 100 : units;
+  const currentDetails = details || (type === 'search' ? '키워드 검색' : '영상/채널 데이터 요청');
+
+  // 1. DB Log (Logged User)
+  const user = auth.currentUser;
+  if (user) {
+     try {
+        const newUsage = await updateUsageInDb(user.uid, undefined, cost, type, currentDetails);
+        window.dispatchEvent(new CustomEvent('yt-api-usage-updated', { detail: newUsage }));
+        return;
+     } catch (e) {
+        console.error("DB Usage Update Failed", e);
+     }
+  }
+
+  // 2. Local Storage (Guest / Fallback)
   const storageKey = getStorageKey(apiKey);
   const usage = getApiUsage(apiKey);
-  const cost = type === 'search' ? 100 : units;
 
   usage.used += cost;
   if (type === 'search') usage.details.search += cost;
@@ -133,8 +150,7 @@ export const trackUsage = (apiKey: string, type: 'search' | 'list', units: numbe
 
   const now = new Date();
   const latestLog = usage.logs[0];
-  const currentDetails = details || (type === 'search' ? '키워드 검색' : '영상/채널 데이터 요청');
-
+  
   // 2초 이내의 동일 타입/내용 호출은 하나로 합침
   if (latestLog &&
       latestLog.type === type &&

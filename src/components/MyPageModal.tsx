@@ -11,6 +11,8 @@ interface MyPageModalProps {
   usage: ApiUsage;
   notifications: Notification[];
   role: string;
+  plan?: string | null;
+  membershipTier?: string | null;
   expiresAt: string | null;
   onLogout: () => void;
   onMarkRead: (id: string) => void;
@@ -22,17 +24,7 @@ interface MyPageModalProps {
   onOpenUsage: () => void;
 }
 
-const calculateDDay = (expiresAt: string | null) => {
-  if (!expiresAt) return '무제한';
-  const now = new Date();
-  const expiry = new Date(expiresAt);
-  const diffTime = expiry.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
-  if (diffDays < 0) return '만료됨';
-  if (diffDays === 0) return 'D-Day';
-  return `D-${diffDays}`;
-};
+// ... existing helper functions ...
 
 export const MyPageModal: React.FC<MyPageModalProps> = ({  
   onClose, 
@@ -40,6 +32,8 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   usage, 
   notifications, 
   role, 
+  plan,
+  membershipTier,
   expiresAt,
   onLogout,
   onMarkRead,
@@ -50,6 +44,38 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   isApiKeyMissing,
   onOpenUsage
 }) => {
+  // ... existing hooks ...
+
+  // Determine Badge Label & Style
+  let badgeLabel = 'GUEST';
+  let badgeStyle = 'bg-slate-50 text-slate-500';
+
+  if (role === 'admin') {
+      badgeLabel = 'ADMIN';
+      badgeStyle = 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300';
+  } else if (role === 'approved') {
+      // Use membershipTier or Plan
+      if (membershipTier) {
+          badgeLabel = membershipTier.toUpperCase(); // e.g., '실버 버튼' -> '실버 버튼'
+          if (badgeLabel.includes('GOLD') || badgeLabel.includes('골드')) {
+             badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
+          } else {
+             badgeStyle = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
+          }
+      } else if (plan === 'gold') {
+          badgeLabel = 'GOLD BUTTON';
+          badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
+      } else if (plan === 'silver') {
+          badgeLabel = 'SILVER BUTTON';
+          badgeStyle = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
+      } else {
+          badgeLabel = 'APPROVED';
+          badgeStyle = 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300';
+      }
+  }
+
+  // ... rest of component ...
+
 // ... (Top of file remains same until state)
   const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>(initialTab as any);
   // ...
@@ -265,28 +291,15 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                          <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
                             {user.displayName || user.email?.split('@')[0]}
                          </span>
-                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wide ${role === 'admin' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300'}`}>
-                            {role === 'admin' ? 'ADMIN' : 'PRO'}
+                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wide ${badgeStyle}`}>
+                            {badgeLabel}
                          </span>
                       </div>
                       <span className="text-[10px] text-slate-400 font-medium tracking-tight">{user.email}</span>
                    </div>
                 </div>
 
-                {/* Vertical Divider */}
-                <div className="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
 
-                {/* D-Day Section */}
-                {role !== 'pending' && expiresAt && (
-                    <div className="flex flex-col items-end justify-center min-w-[4.5rem]">
-                       <span className={`text-xl font-black leading-none mb-0.5 ${String(calculateDDay(expiresAt)).includes('만료') ? 'text-rose-500' : 'text-emerald-500'}`}>
-                          {String(calculateDDay(expiresAt))}
-                       </span>
-                       <span className="text-[10px] font-bold text-slate-400 tracking-tight font-mono">
-                            {new Date(expiresAt).toLocaleDateString()}
-                       </span>
-                    </div>
-                )}
              </div>
 
              <button 
@@ -335,7 +348,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${activeTab === 'usage' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-500' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               <span className="material-symbols-outlined text-[20px]">analytics</span>
-              API 사용량
+              포인트 사용량
             </button>
             
             <div className="mt-auto">
@@ -356,7 +369,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                { id: 'activity', icon: 'history_edu', label: '활동내역' },
                { id: 'notifications', icon: 'notifications', label: '알림' },
                { id: 'support', icon: 'support_agent', label: '문의' },
-               { id: 'usage', icon: 'analytics', label: 'API' },
+               { id: 'usage', icon: 'analytics', label: '포인트' },
              ].map(tab => (
                <button
                  key={tab.id}
@@ -868,7 +881,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             {/* 5. Usage Tab */}
             {activeTab === 'usage' && (
               <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">API 사용량 분석</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">포인트 사용량 분석</h3>
                 
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 flex flex-col items-center justify-center text-center shadow-sm">
                    <div className="relative size-48 mb-8">
@@ -896,8 +909,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                    {/* Disclaimer Notice */}
                    <div className="w-full max-w-md mb-6 px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
                       <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed text-center">
-                        표시되는 사용량은 참고용으로, 실제 사용량과 다를 수 있습니다.<br/>
-                        매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다.
+                        홈페이지에서 사용할수 있는 포인트를 나타낸것으로 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급의 경우 매일 2천포인트가 지급되고 골드등급의 경우 매일 5천포인트가 지급이 됩니다.
                       </p>
                    </div>
 
@@ -907,7 +919,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                          <div className="text-xl font-black text-slate-900 dark:text-white">{usage.used.toLocaleString()}</div>
                       </div>
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                         <div className="text-xs text-slate-400 font-bold uppercase mb-1">전체 할당량</div>
+                         <div className="text-xs text-slate-400 font-bold uppercase mb-1">전체 포인트</div>
                          <div className="text-xl font-black text-slate-900 dark:text-white">{usage.total.toLocaleString()}</div>
                       </div>
                    </div>

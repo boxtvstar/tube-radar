@@ -81,30 +81,32 @@ export const PendingApproval = () => {
           isMatched = details.some(m => m.id === cleanId);
        }
 
+       // 2. CHECK DUPLICATE (Global Security)
+       // Ensure NO OTHER USER is using this ID, regardless of whitelist status.
+       const usersRef = collection(db, 'users');
+       const q = query(usersRef, where('channelId', '==', cleanId));
+       const querySnapshot = await getDocs(q);
+       
+       // Filter out current user (in case they saved it before)
+       const otherUsers = querySnapshot.docs.filter(d => d.id !== user?.uid);
+       
+       if (otherUsers.length > 0) {
+          setInputStatus('invalid');
+          setResultModal({
+              type: 'error',
+              title: '이미 등록된 채널 ID입니다.', // Clearer message
+              message: (
+                 <>
+                    <p>입력하신 채널 ID(<b>{cleanId}</b>)는<br/>이미 다른 계정과 연동되어 있습니다.</p>
+                    <p className="mt-2 text-slate-400">본인의 채널이 맞다면 관리자에게 문의해주세요.</p>
+                 </>
+              )
+          });
+          return; 
+       }
+
        if (isMatched) {
-           // 2. CHECK DUPLICATE (Security)
-           // If whitelist is matched, we must ensure NO OTHER USER is using this ID.
-           const usersRef = collection(db, 'users');
-           const q = query(usersRef, where('channelId', '==', cleanId));
-           const querySnapshot = await getDocs(q);
-           
-           // Filter out current user (in case they saved it before)
-           const otherUsers = querySnapshot.docs.filter(d => d.id !== user?.uid);
-           
-           if (otherUsers.length > 0) {
-              setInputStatus('invalid');
-              setResultModal({
-                  type: 'error',
-                  title: '이미 가입된 사용자입니다.',
-                  message: (
-                     <>
-                        <p>입력하신 채널 ID(<b>{cleanId}</b>)는<br/>이미 다른 계정에서 사용 중입니다.</p>
-                        <p className="mt-2 text-slate-400">본인의 채널이 맞다면 관리자에게 문의해주세요.</p>
-                     </>
-                  )
-              });
-              return; // STOP HERE. Do not save to profile if duplicate (or maybe save but don't approve).
-           }
+           // (Duplicate check already done above)
        }
 
        // 3. Save ID to profile (Safe to save now if matched and unique, or if not matched)
@@ -145,9 +147,35 @@ export const PendingApproval = () => {
      }
   };
 
+  // Fetch Inquiries Query
+  const [inquiries, setInquiries] = useState<any[]>([]);
+  const [loadingInquiries, setLoadingInquiries] = useState(false);
+  const [showInquiries, setShowInquiries] = useState(false); // Toggle state
+
+  const fetchInquiries = async () => {
+    if (!user?.uid) return;
+    setLoadingInquiries(true);
+    try {
+      const q = query(collection(db, 'inquiries'), where('userId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a: any, b: any) => b.createdAt - a.createdAt);
+      setInquiries(data);
+    } catch (e) {
+      console.error("Failed to fetch inquiries", e);
+    } finally {
+      setLoadingInquiries(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchInquiries();
+  }, [user]);
+
+  const answeredCount = inquiries.filter(i => i.isAnswered).length;
+
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4 relative">
-      <div className="max-w-md w-full bg-gray-900 rounded-2xl p-8 border border-gray-800 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4 relative overflow-y-auto">
+      <div className="max-w-md w-full bg-gray-900 rounded-2xl p-8 border border-gray-800 text-center shadow-2xl animate-in fade-in zoom-in duration-300 my-10">
         <div className="mb-6 flex justify-center">
           <div className="size-16 bg-yellow-500/10 rounded-full flex items-center justify-center border border-yellow-500/20">
             <span className="material-symbols-outlined text-3xl text-yellow-500">hourglass_top</span>
@@ -194,7 +222,7 @@ export const PendingApproval = () => {
               </button>
            </div>
            <p className="text-[10px] text-slate-500 mt-2 text-left leading-relaxed">
-             * 위 링크에서 <b>'채널 ID'</b>를 복사하여 붙여넣고 [확인]을 눌러주세요.<br/>
+             * 위 링크에서 <span className="text-emerald-500 font-bold">'채널 ID'</span>를 복사하여 붙여넣고 [확인]을 눌러주세요.<br/>
              멤버십 명단과 대조하여 즉시 승인됩니다.
            </p>
         </div>
@@ -233,7 +261,7 @@ export const PendingApproval = () => {
                    취소
                  </button>
                  <button 
-                   onClick={handleSendMessage}
+                   onClick={() => { handleSendMessage().then(fetchInquiries); }}
                    disabled={isSending}
                    className="flex-1 py-2 bg-yellow-600 text-white font-bold rounded-lg text-xs hover:bg-yellow-500 transition-colors disabled:opacity-50"
                  >
@@ -244,13 +272,94 @@ export const PendingApproval = () => {
         ) : (
            <button 
              onClick={() => setIsMessaging(true)}
-             className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-yellow-500 font-bold rounded-xl transition-all mb-8 flex items-center justify-center gap-2 text-sm border border-transparent hover:border-yellow-500/30"
+             className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-yellow-500 font-bold rounded-xl transition-all mb-4 flex items-center justify-center gap-2 text-sm border border-transparent hover:border-yellow-500/30"
            >
               <span className="material-symbols-outlined text-lg">mail</span>
               승인 요청 / 문의하기
            </button>
         )}
         
+        {/* Inquiry History Toggle Button (Modified) */}
+        {inquiries.length > 0 && (
+           <div className="mb-4 text-left w-full">
+              {!showInquiries ? (
+                 <button 
+                   onClick={() => setShowInquiries(true)}
+                   className={`w-full p-4 rounded-xl flex items-center justify-between transition-all ${
+                      answeredCount > 0 
+                      ? 'bg-gradient-to-r from-emerald-600/20 to-emerald-900/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-600/30' 
+                      : 'bg-slate-800 border border-slate-700 text-slate-400 hover:bg-slate-700'
+                   }`}
+                 >
+                    <div className="flex items-center gap-3">
+                       <div className={`size-8 rounded-full flex items-center justify-center ${answeredCount > 0 ? 'bg-emerald-500 text-white animate-pulse' : 'bg-slate-700 text-slate-400'}`}>
+                          <span className="material-symbols-outlined text-lg">
+                             {answeredCount > 0 ? 'mark_email_unread' : 'history'}
+                          </span>
+                       </div>
+                       <div className="text-left">
+                          <div className={`text-sm font-bold ${answeredCount > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                             {answeredCount > 0 ? '답변이 도착했습니다!' : '보낸 문의 내역'}
+                          </div>
+                          <div className="text-[10px] opacity-70">
+                             {answeredCount > 0 ? `새로운 메세지가 ${answeredCount}개 있습니다` : `총 ${inquiries.length}건의 문의가 있습니다`}
+                          </div>
+                       </div>
+                    </div>
+                    <span className="material-symbols-outlined">expand_more</span>
+                 </button>
+              ) : (
+                 <div className="bg-slate-800/30 rounded-xl border border-slate-700 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-800/50">
+                       <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-sm">list_alt</span>
+                          문의 내역 ({inquiries.length})
+                       </span>
+                       <div className="flex items-center gap-2">
+                          <button onClick={fetchInquiries} className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2 py-1 rounded">
+                             <span className="material-symbols-outlined text-[10px]">refresh</span>
+                             새로고침
+                          </button>
+                          <button onClick={() => setShowInquiries(false)} className="text-slate-400 hover:text-white p-1">
+                             <span className="material-symbols-outlined text-lg">close</span>
+                          </button>
+                       </div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto custom-scrollbar p-2 space-y-2">
+                       {inquiries.map((inquiry) => (
+                          <div key={inquiry.id} className={`p-3 rounded-lg border ${inquiry.isAnswered ? 'bg-emerald-900/10 border-emerald-500/20' : 'bg-slate-900 border-slate-800'}`}>
+                             <div className="flex justify-between items-start mb-2">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                   inquiry.isAnswered 
+                                   ? 'bg-emerald-500/20 text-emerald-400' 
+                                   : 'bg-slate-700 text-slate-400'
+                                }`}>
+                                   {inquiry.isAnswered ? '답변 완료' : '대기 중'}
+                                </span>
+                                <span className="text-[10px] text-slate-500">{new Date(inquiry.createdAt).toLocaleDateString()}</span>
+                             </div>
+                             <p className="text-xs text-slate-300 font-medium whitespace-pre-wrap mb-2 leading-relaxed">
+                                Q. {inquiry.content}
+                             </p>
+                             {inquiry.isAnswered && inquiry.answer && (
+                                <div className="mt-2 pt-2 border-t border-slate-700/50">
+                                   <div className="flex items-center gap-1.5 mb-1">
+                                      <span className="material-symbols-outlined text-[12px] text-yellow-500">subdirectory_arrow_right</span>
+                                      <span className="text-[10px] font-bold text-yellow-500">관리자 답변</span>
+                                   </div>
+                                   <p className="text-xs text-white bg-slate-800 p-2 rounded-lg leading-relaxed whitespace-pre-wrap border border-slate-700">
+                                      {inquiry.answer}
+                                   </p>
+                                </div>
+                             )}
+                          </div>
+                       ))}
+                    </div>
+                 </div>
+              )}
+           </div>
+        )}
+
         {!isMessaging && (
            <div className="bg-gray-800/50 rounded-lg p-4 mb-4 text-xs text-gray-500">
              승인이 완료되면 서비스를 정상적으로 이용하실 수 있습니다.<br/>
