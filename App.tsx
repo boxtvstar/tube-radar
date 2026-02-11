@@ -1591,17 +1591,19 @@ export default function App() {
 
     const runAutoUpdate = async () => {
       hasRunAutoUpdate.current = true;
-      const MAX_AUTO_UPDATE = 3; // Limit to 3 channels per session to save Quota
-      const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+      const MAX_AUTO_UPDATE = 5; // Limit to 5 channels per session to save Quota
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
       const now = new Date().getTime();
 
       const staleChannels = savedChannels.filter(ch => {
         // 구독자/영상 수 누락된 채널 우선 업데이트
         if (!ch.subscriberCount || !ch.videoCount) return true;
+        // customAvgViews가 바닥값(100 이하)이면 재계산 필요
+        if (!ch.customAvgViews || ch.customAvgViews <= 100) return true;
         // Use lastUpdated if available, otherwise fallback to addedAt
         const lastDate = ch.lastUpdated || ch.addedAt;
         if (!lastDate) return true; // Treat missing date as stale
-        return (now - lastDate) > SIX_MONTHS_MS;
+        return (now - lastDate) > THIRTY_DAYS_MS;
       });
 
       if (staleChannels.length > 0) {
@@ -1755,6 +1757,18 @@ export default function App() {
   }, [ytKey, region, selectedCategory, isMyMode, activeGroupId, ytApiStatus, isExplorerMode, isTopicMode, isNationalTrendMode, isCategoryTrendMode]);
 
   const handleOpenAutoDetectDetail = (result: AutoDetectResult) => {
+    // 채널 전체 평균 조회수 계산 (totalViews / videoCount)
+    const channelAvg = result.stats.videoCount > 0
+      ? Math.max(Math.round(result.stats.viewCount / result.stats.videoCount), 100)
+      : result.stats.avgViews || 1000;
+
+    // 시간 보정 부스터 계산
+    const pubDate = result.representativeVideo.publishedAt || result.stats.publishedAt;
+    const hoursSince = Math.max((Date.now() - new Date(pubDate).getTime()) / (1000 * 60 * 60), 1);
+    const timeFactor = Math.max(Math.min(Math.pow(hoursSince / 168, 0.5), 1), 0.3);
+    const expectedViews = Math.max(channelAvg * timeFactor, 100);
+    const booster = result.representativeVideo.views / expectedViews;
+
     // Convert AutoDetectResult to VideoData for the modal
     const videoData: VideoData = {
       id: result.representativeVideo.id,
@@ -1764,16 +1778,16 @@ export default function App() {
       thumbnailUrl: result.representativeVideo.thumbnail,
       duration: "Shorts", // Fallback
       views: formatNumber(result.representativeVideo.views),
-      avgViews: "0", // Not available in this context yet
+      avgViews: formatNumber(channelAvg),
       subscribers: formatNumber(result.stats.subscribers),
-      viralScore: `${result.viralScore?.toFixed(1) || '0.0'}x`,
-      uploadTime: getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt),
+      viralScore: `${booster.toFixed(1)}x`,
+      uploadTime: getTimeAgo(pubDate),
       category: "Shorts",
-      reachPercentage: 0,
+      reachPercentage: Math.min(Math.round((result.representativeVideo.views / channelAvg) * 100), 999),
       tags: [],
-      channelTotalViews: formatNumber(result.stats.viewCount), // Using channel total views
+      channelTotalViews: formatNumber(result.stats.viewCount),
       channelJoinDate: result.stats.publishedAt,
-      channelCountry: "", // Not available in simple result
+      channelCountry: "",
     };
     setDetailedVideo(videoData);
   };
@@ -2539,7 +2553,11 @@ export default function App() {
     if (isApiKeyMissing) return alert("유효한 YouTube API 키를 먼저 설정하세요.");
     setAnalyzingVideoId(result.id);
     setAnalysisResult(null);
-    
+
+    const channelAvg = result.stats.videoCount > 0
+      ? Math.max(Math.round(result.stats.viewCount / result.stats.videoCount), 100)
+      : result.stats.avgViews || 1000;
+
     const videoData: VideoData = {
       id: result.representativeVideo.id,
       title: result.representativeVideo.title,
@@ -2547,12 +2565,12 @@ export default function App() {
       thumbnailUrl: result.representativeVideo.thumbnail,
       duration: "Shorts",
       views: formatNumber(result.representativeVideo.views),
-      avgViews: "Unknown",
+      avgViews: formatNumber(channelAvg),
       subscribers: formatNumber(result.stats.subscribers),
       viralScore: result.viralScore.toFixed(1) + "x",
-      uploadTime: "Recent",
+      uploadTime: getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt),
       category: "Shorts",
-      reachPercentage: 0,
+      reachPercentage: Math.min(Math.round((result.representativeVideo.views / channelAvg) * 100), 999),
       tags: []
     };
 
@@ -3026,18 +3044,26 @@ export default function App() {
                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2 md:gap-3">
                    {shortsDetectorResults.map((result, idx) => {
                       const isAdded = savedChannels.some(sc => sc.id === result.id);
+                      // 시간 보정 부스터 계산 (카드 표시용)
+                      const _chAvg = result.stats.videoCount > 0
+                        ? Math.max(Math.round(result.stats.viewCount / result.stats.videoCount), 100) : 1000;
+                      const _pubDate = result.representativeVideo.publishedAt || result.stats.publishedAt;
+                      const _hrs = Math.max((Date.now() - new Date(_pubDate).getTime()) / 3600000, 1);
+                      const _tf = Math.max(Math.min(Math.pow(_hrs / 168, 0.5), 1), 0.3);
+                      const cardBooster = result.representativeVideo.views / Math.max(_chAvg * _tf, 100);
+
                       return (
                         <div key={`${result.id}-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group relative">
                            {/* Rank Badge (Optional) */}
                            <div className="absolute top-1.5 left-1.5 z-10 bg-black/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-md border border-white/10">
                              #{idx + 1}
                            </div>
-                           
+
                            {/* Booster Score Badge */}
-                           {result.viralScore >= 1.5 && (
+                           {cardBooster >= 1.5 && (
                               <div className="absolute top-1.5 right-1.5 z-10 bg-indigo-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded backdrop-blur-md shadow-lg shadow-indigo-500/50 flex items-center gap-0.5 animate-in zoom-in spin-in-3 duration-500">
                                  <span className="material-symbols-outlined text-[10px] animate-pulse">local_fire_department</span>
-                                 {result.viralScore}x
+                                 {cardBooster.toFixed(1)}x
                               </div>
                            )}
 
@@ -3229,6 +3255,11 @@ export default function App() {
                 onClose={() => setIsRadarMode(false)}
                 initialQuery={radarInitialQuery}
                 onVideoClick={(video) => {
+                  // 시간 보정 부스터 계산: 업로드 경과 시간 대비 성과 반영
+                  const hoursSince = Math.max((Date.now() - new Date(video.publishedAt).getTime()) / (1000 * 60 * 60), 1);
+                  const timeFactor = Math.max(Math.min(Math.pow(hoursSince / 168, 0.5), 1), 0.3);
+                  const timeAdjustedBooster = video.performanceRatio / timeFactor;
+
                   setDetailedVideo({
                     id: video.id,
                     title: video.title,
@@ -3239,11 +3270,11 @@ export default function App() {
                     views: video.views,
                     avgViews: video.avgViews,
                     subscribers: video.subscribers,
-                    viralScore: typeof video.spikeScore === 'number' ? video.spikeScore.toFixed(1) + 'x' : video.viralScore || '0x',
+                    viralScore: timeAdjustedBooster.toFixed(1) + 'x',
                     publishedAt: video.publishedAt,
                     uploadTime: video.uploadTime,
                     category: video.category,
-                    reachPercentage: video.performanceRatio,
+                    reachPercentage: Math.min(Math.round(video.performanceRatio * 100), 999),
                     tags: video.tags || []
                   });
                 }}

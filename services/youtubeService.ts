@@ -573,13 +573,25 @@ export const fetchRealVideos = async (
     const dbAvgMap = new Map<string, number>();
     
     savedChannels.forEach(ch => {
-       if (ch.customAvgViews) dbAvgMap.set(ch.id, ch.customAvgViews);
-       
+       // customAvgViews가 바닥값(100) 초과일 때만 신뢰할 수 있는 DB 값으로 사용
+       if (ch.customAvgViews && ch.customAvgViews > 100) {
+          dbAvgMap.set(ch.id, ch.customAvgViews);
+       }
+
+       // customAvgViews가 바닥값(100 이하)이면 totalViews/videoCount로 재추정
+       let avgViews = ch.customAvgViews || 0;
+       if (avgViews <= 100 && ch.totalViews && ch.videoCount) {
+          const parsedTotal = parseInt((ch.totalViews).replace(/,/g, '') || "0");
+          const parsedCount = Math.max(parseInt((ch.videoCount).replace(/,/g, '') || "1"), 1);
+          avgViews = Math.max(Math.floor(parsedTotal / parsedCount), 100);
+       }
+       if (!avgViews || avgViews <= 0) avgViews = 10000; // 최종 fallback
+
        channelMap.set(ch.id, {
-          avgViews: ch.customAvgViews || 10000, 
+          avgViews: avgViews,
           subscribers: ch.subscriberCount,
-          totalViews: ch.totalViews || "0", 
-          joinDate: ch.joinDate || new Date().toISOString(), 
+          totalViews: ch.totalViews || "0",
+          joinDate: ch.joinDate || new Date().toISOString(),
           country: ch.country || "KR"
        });
     });
@@ -641,8 +653,9 @@ export const fetchRealVideos = async (
       const videoCountNum = Math.max(parseInt(c.statistics.videoCount || "1"), 1);
       const globalAvg = Math.max(Math.floor(totalViewsNum / videoCountNum), 100);
       const dbAvg = dbAvgMap.get(c.id);
-      
-      const finalAvg = Math.max(dbAvg || globalAvg, 100);
+
+      // dbAvg가 바닥값(100 이하)이면 실제 계산된 globalAvg 사용 (stale 데이터 방지)
+      const finalAvg = (dbAvg && dbAvg > 100) ? dbAvg : globalAvg;
       
       channelMap.set(c.id, { 
         avgViews: finalAvg, 

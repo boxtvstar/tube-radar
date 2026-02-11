@@ -36,6 +36,7 @@ interface RadarVideo {
   category: string;
   reachPercentage: number;
   tags: string[];
+  channelTotalViews?: string;
 }
 
 // Helper for Category Names
@@ -56,7 +57,7 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
 
   // Dashboard Data State
   const [trendingChannels, setTrendingChannels] = useState<{
-    id: string; title: string; subs: string; growth: string; thumbnail: string; category: string; publishedAt: string; tags: string[];
+    id: string; title: string; subs: string; growth: string; thumbnail: string; category: string; publishedAt: string; tags: string[]; totalViews: number; videoCount: number;
   }[]>([]);
   const [popularKeywords, setPopularKeywords] = useState<string[]>([]);
   const [categoryStats, setCategoryStats] = useState<{cat: string, engagement: string, score: number}[]>([]);
@@ -189,10 +190,12 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
              return {
                 ...base,
                 thumbnail: ch.snippet.thumbnails.high?.url || ch.snippet.thumbnails.medium?.url || ch.snippet.thumbnails.default.url,
-                subs: subs, 
+                subs: subs,
                 growth: growth,
-                publishedAt: validDate, 
-                tags: tags
+                publishedAt: validDate,
+                tags: tags,
+                totalViews: parseInt(ch.statistics.viewCount || '0'),
+                videoCount: parseInt(ch.statistics.videoCount || '1')
              };
           });
 
@@ -303,14 +306,16 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
                 {trendingChannels.map((ch, idx) => (
                    <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl p-3 md:p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/30 transition-all cursor-pointer" 
-                     onClick={() => onVideoClick?.({
+                     onClick={() => {
+                        const chAvg = ch.videoCount > 0 ? Math.round(ch.totalViews / ch.videoCount) : 0;
+                        const fmt = (n: number) => n >= 100000000 ? (n/100000000).toFixed(1)+'억' : n >= 10000 ? (n/10000).toFixed(1)+'만' : n.toLocaleString();
+                        onVideoClick?.({
                         id: `dashboard_${ch.id}`,
                         title: ch.title,
                         channelId: ch.id,
                         channelName: ch.title,
                         thumbnailUrl: ch.thumbnail,
                         channelThumbnail: ch.thumbnail,
-                        // Dummy required fields
                         views: '0',
                         publishedAt: ch.publishedAt || new Date().toISOString(),
                         velocity: 0,
@@ -318,13 +323,14 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
                         performanceRatio: 0,
                         duration: '0:00',
                          subscribers: ch.subs,
-                         avgViews: '0',
-                         viralScore: '0',
+                         avgViews: chAvg > 0 ? fmt(chAvg) : '0',
+                         viralScore: '0x',
                          uploadTime: '',
                          category: ch.category,
                          reachPercentage: 0,
-                         tags: ch.tags
-                      })}
+                         tags: ch.tags,
+                         channelTotalViews: fmt(ch.totalViews),
+                      })}}
                    >
                       <div className="flex justify-between items-start mb-3 md:mb-4">
                          <div className="flex gap-2 md:gap-3 min-w-0">

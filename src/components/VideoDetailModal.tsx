@@ -515,15 +515,6 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   </div>
                 )}
 
-                {video.viralScore && video.viralScore !== '0x' && (
-                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <span className="material-symbols-outlined text-purple-400 text-base">local_fire_department</span>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">성장 지수</span>
-                    </div>
-                    <div className="text-xl font-black text-purple-400 leading-none">{video.viralScore}</div>
-                  </div>
-                )}
               </div>
 
               {(video.channelJoinDate || video.publishedAt) && (
