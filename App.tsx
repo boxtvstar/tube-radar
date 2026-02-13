@@ -38,7 +38,6 @@ import {
   markNotificationAsRead,
   sendNotification,
   deleteNotification,
-  getUsageFromDb,
   subscribeToUsage,
   updateUsageInDb
 } from './services/dbService';
@@ -1417,14 +1416,6 @@ export default function App() {
     localStorage.setItem('yt_pending_sync', hasPendingSync.toString());
   }, [hasPendingSync]);
 
-  // Load usage from DB
-  useEffect(() => {
-    if (user && role !== 'pending') {
-      const plan = role === 'pro' ? 'gold' : role === 'admin' ? 'admin' : role === 'guest' ? 'general' : 'silver';
-      getUsageFromDb(user.uid, plan).then(setUsage).catch(console.error);
-    }
-  }, [user, role]);
-
   // Listen to realtime usage updates
   useEffect(() => {
     const handleUsageUpdate = (event: Event) => {
@@ -1871,12 +1862,13 @@ export default function App() {
 
     // Track start time for minimum loading duration
     const startTime = Date.now();
+    
+    let targetChannelIds: string[] = [];
 
     try {
       // Clear previous videos to prevent stale/mixed data from different groups
       setVideos([]);
 
-      let targetChannelIds: string[] = [];
       if (isMyMode) {
         // Use override if available (e.g. during update), otherwise use current group
         const sourceForIds = channelsOverride || currentGroupChannels;
@@ -1912,6 +1904,9 @@ export default function App() {
       const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 60000));
 
       // Pass query as 2nd arg (keywords), categoryId, force, useSearchApi, AND savedChannels
+      if (isMyMode && targetChannelIds.length > 0) {
+        setProgress({ current: 0, total: targetChannelIds.length, message: '채널 데이터를 불러오는 중...', isInline: true });
+      }
       const fetchPromise = fetchRealVideos(
           ytKey,
           query,
@@ -1921,39 +1916,61 @@ export default function App() {
           targetCategoryId,
           force,
           useSearch,
-          channelsOverride || savedChannels // Critical fix: Pass DB data for Avg Views
+          channelsOverride || savedChannels, // Critical fix: Pass DB data for Avg Views
+          isMyMode ? (current, total, channelName) => {
+            setProgress({ current, total, message: channelName, isInline: true });
+          } : undefined
       );
 
       const data = await Promise.race([fetchPromise, timeoutPromise]);
 
-      // Ensure minimum loading time for better UX feedback (400ms)
-      const elapsed = Date.now() - startTime;
-      const minLoadingTime = 400;
-      if (elapsed < minLoadingTime) {
-        await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsed));
+      // 로딩 완료 직전: 영상 분석 메시지 노출 (UI 개선)
+      if (data && data.length > 0) {
+          setProgress({ 
+             current: targetChannelIds.length, 
+             total: targetChannelIds.length, 
+             message: `${data.length}개 영상 확보, 성과 지표 계산 중...`,
+             isInline: true 
+          });
+          // 사용자가 메시지를 볼 수 있도록 잠시 대기
+          await new Promise(resolve => setTimeout(resolve, 1200));
+      } else {
+          // 데이터가 없어도 최소 로딩 시간 보장
+          const elapsed = Date.now() - startTime;
+          const minLoadingTime = 400;
+          if (elapsed < minLoadingTime) {
+            await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsed));
+          }
       }
 
       // ✅ 빈 배열 체크: API는 성공했지만 데이터가 없는 경우 캐시 사용
       if (!data || data.length === 0) {
         console.warn('API 응답이 빈 배열입니다. 캐시 확인 중...');
-        
-        // 모든 캐시 검색 (채널 해시 무시 - 너무 엄격함)
+
+        // 현재 그룹의 channelHash 생성 (youtubeService와 동일한 로직)
+        let currentHash = 'all';
+        if (targetChannelIds.length > 0) {
+          const sorted = [...targetChannelIds].sort();
+          currentHash = `${sorted[0].slice(-4)}_${sorted.length}_${sorted[sorted.length - 1].slice(-4)}`;
+        }
+
+        // 같은 그룹(channelHash)의 캐시만 검색
         const allCacheKeys = Object.keys(localStorage)
           .filter(k => k.startsWith('yt_v7_cache'))
-          .filter(k => isMyMode ? k.includes('_m:false') : true); // 내 모드 캐시만
-        
-        console.log('전체 캐시 개수:', allCacheKeys.length);
-        
+          .filter(k => k.includes(`_h:${currentHash}_`));
+
+        console.log('그룹 캐시 개수:', allCacheKeys.length, '(hash:', currentHash, ')');
+
         let cachedData = null;
         let newestTimestamp = 0;
-        
+
         // 가장 최근 캐시 찾기
         for (const key of allCacheKeys) {
           try {
             const cache = JSON.parse(localStorage.getItem(key) || '{}');
             if (cache.data && Array.isArray(cache.data) && cache.data.length > 0) {
               const cacheAge = Date.now() - (cache.timestamp || 0);
-              
+
               // 7일 이내의 가장 최근 캐시 사용
               if (cacheAge < 7 * 24 * 60 * 60 * 1000 && cache.timestamp > newestTimestamp) {
                 cachedData = cache.data;
@@ -2008,11 +2025,20 @@ export default function App() {
     } catch (e: any) {
       // ✅ 에러 발생 시 캐시 사용 시도
       console.warn('API 에러 발생, 캐시 확인 중...', e.message);
-      
-      // 캐시에서 데이터 찾기
-      const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('yt_v7_cache'));
+
+      // 현재 그룹의 channelHash 생성
+      let errorHash = 'all';
+      if (targetChannelIds.length > 0) {
+        const sorted = [...targetChannelIds].sort();
+        errorHash = `${sorted[0].slice(-4)}_${sorted.length}_${sorted[sorted.length - 1].slice(-4)}`;
+      }
+
+      // 같은 그룹(channelHash)의 캐시만 검색
+      const cacheKeys = Object.keys(localStorage)
+        .filter(k => k.startsWith('yt_v7_cache'))
+        .filter(k => k.includes(`_h:${errorHash}_`));
       let cachedData = null;
-      
+
       for (const key of cacheKeys) {
         try {
           const cache = JSON.parse(localStorage.getItem(key) || '{}');
@@ -2058,6 +2084,7 @@ export default function App() {
       }
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -2096,9 +2123,9 @@ export default function App() {
         setProgress({ current: 100, total: 100, message: "복원 완료!" });
         await new Promise(r => setTimeout(r, 500));
         
-        alert("성공적으로 복원되었습니다.");
+        showToast("성공적으로 복원되었습니다.");
       } catch (err) {
-        alert("올바르지 않은 파일 형식입니다.");
+        showToast("올바르지 않은 파일 형식입니다.", 'error');
       } finally {
         setProgress(null);
         setLoading(false);
@@ -2109,7 +2136,7 @@ export default function App() {
   };
 
   const isReadOnly = role === 'pending';
-  const [progress, setProgress] = useState<{ current: number; total: number; message: string } | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number; message: string; isInline?: boolean } | null>(null);
   
   // --- Bulk Update Channel Stats (For Avg Views) ---
   const handleUpdateChannelStats = () => {
@@ -4040,22 +4067,33 @@ export default function App() {
                 ) : (
                   <>
                     {loading && !batchStatus ? (
-                      <div className="py-32 flex flex-col items-center justify-center gap-5 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900/5 shadow-sm">
-                        <div className="size-12 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                        {progress ? (
-                          <>
-                            <p className="text-slate-700 dark:text-slate-300 text-sm font-bold">{progress.message}</p>
-                            <div className="w-64 h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
-                                style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                              ></div>
-                            </div>
-                            <p className="text-slate-400 text-xs font-medium">{progress.current} / {progress.total}</p>
-                          </>
-                        ) : (
-                          <p className="text-slate-400 dark:text-slate-600 text-xs font-black uppercase tracking-widest animate-pulse">데이터 로딩 중...</p>
-                        )}
+                      <div className="w-full animate-in fade-in slide-in-from-top-4 duration-500 mb-8 px-1">
+                          <div className="bg-slate-900 rounded-xl p-5 md:p-6 border border-slate-800 shadow-2xl relative overflow-hidden">
+                              {/* Background Glow */}
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 opacity-50"></div>
+                              
+                              <div className="flex justify-between items-end mb-3">
+                                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">DATA UPDATE IN PROGRESS</span>
+                                  <span className="text-2xl font-black text-white tabular-nums">
+                                      {progress && progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0}%
+                                  </span>
+                              </div>
+                              
+                              {/* Progress Track */}
+                              <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden mb-4">
+                                  <div 
+                                      className="h-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)] transition-all duration-300 ease-out relative" 
+                                      style={{width: `${progress && progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%`}}
+                                  >
+                                      <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-r from-transparent to-white/30 skew-x-12 animate-shimmer"></div>
+                                  </div>
+                              </div>
+                              
+                              <p className="text-sm font-bold text-emerald-400 flex items-center gap-2 animate-pulse">
+                                  <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                                  {progress?.message || '데이터를 불러오는 중...'}
+                              </p>
+                          </div>
                       </div>
                     ) : videos.length > 0 ? (
                       <>
@@ -4411,7 +4449,7 @@ export default function App() {
       )}
 
       {/* Progress Modal (Energy Bar) */}
-      {progress && (
+      {progress && !progress.isInline && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6 text-center animate-in zoom-in-95 duration-300">
             <div className="size-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4 ring-4 ring-primary/5">

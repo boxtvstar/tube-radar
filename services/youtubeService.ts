@@ -268,7 +268,8 @@ export const fetchRealVideos = async (
   categoryId: string = "",
   forceRefresh: boolean = false,
   useSearchApi: boolean = false,
-  savedChannels: SavedChannel[] = []
+  savedChannels: SavedChannel[] = [],
+  onProgress?: (current: number, total: number, channelName: string) => void
 ): Promise<VideoData[]> => {
   const isMyChannelsMode = channelIds.length > 0;
 
@@ -388,7 +389,10 @@ export const fetchRealVideos = async (
       else maxResultsPerChannel = 30; // 30일
       
       const playlistResults = [];
-      
+      const channelNameMap = new Map<string, string>();
+      savedChannels.forEach(ch => channelNameMap.set(ch.id, ch.title));
+      let processedCount = 0;
+
       for (let i = 0; i < activeChannelIds.length; i += BATCH_SIZE) {
         const chunk = activeChannelIds.slice(i, i + BATCH_SIZE);
         const chunkPromises = chunk.map(async (cid) => {
@@ -424,7 +428,14 @@ export const fetchRealVideos = async (
         // Wait for this batch to finish before starting next
         const chunkResults = await Promise.all(chunkPromises);
         playlistResults.push(...chunkResults);
-        
+        processedCount += chunk.length;
+
+        // Report progress
+        if (onProgress) {
+          const lastName = channelNameMap.get(chunk[chunk.length - 1]) || chunk[chunk.length - 1];
+          onProgress(processedCount, activeChannelIds.length, lastName);
+        }
+
         // Balanced delay between batches (300ms)
         await new Promise(r => setTimeout(r, 300));
       }
@@ -436,7 +447,12 @@ export const fetchRealVideos = async (
         .map((item: any) => item.snippet.resourceId.videoId);
       
       if (validVideoIds.length === 0) return [];
-      
+
+      // Report: playlist phase done, starting video details
+      if (onProgress) {
+        onProgress(activeChannelIds.length, activeChannelIds.length, `영상 ${validVideoIds.length}개 분석 중...`);
+      }
+
       // Batch Fetch Stats for ALL candidate videos (Chunk by 50)
       const chunks = [];
       for (let i = 0; i < validVideoIds.length; i += 50) {

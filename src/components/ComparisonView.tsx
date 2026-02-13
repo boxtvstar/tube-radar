@@ -90,6 +90,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   // State for hydrated data
   const [enrichedChannels, setEnrichedChannels] = React.useState<SavedChannel[]>(channels);
   const [loading, setLoading] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
+  const [progressLabel, setProgressLabel] = React.useState("");
 
   // Sync state with prop to prevent blank screen on transition
   // If lengths differ, it means prop updated but hydration/state hasn't caught up. Use prop.
@@ -107,10 +109,26 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
       }
 
       setLoading(true);
+      setProgress(0);
+      setProgressLabel("분석 대기 중...");
+      
       try {
+        let completedCount = 0;
+        const total = channels.length;
+        
         const hydrated = await Promise.all(channels.map(async (ch) => {
+          // 상태 업데이트: 현재 처리 시작 채널 표시 (병렬이라 빠르게 지나갈 수 있음)
+          // setProgressLabel(`${ch.title} 데이터 수집 중...`); // 생략: 너무 빠름
+
           // If we have data, skip fetching to save quota
-          if (ch.subscriberCount && ch.topVideos && ch.topVideos.length > 0) return ch;
+          if (ch.subscriberCount && ch.topVideos && ch.topVideos.length > 0) {
+             completedCount++;
+             const pct = Math.floor((completedCount / total) * 100);
+             setProgress(pct);
+             // 텍스트 업데이트
+             setProgressLabel(`${ch.title} 확인 완료 (${completedCount}/${total})`);
+             return ch;
+          }
 
           // Fetch only what's missing
           const promises: Promise<any>[] = [];
@@ -128,6 +146,11 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
           }
 
           const [info, videos] = await Promise.all(promises);
+          
+          completedCount++;
+          const pct = Math.floor((completedCount / total) * 100);
+          setProgress(pct);
+          setProgressLabel(`${ch.title} 분석 완료 (${completedCount}/${total})`);
 
           return {
             ...ch,
@@ -136,6 +159,15 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
             topVideos: videos || ch.topVideos || []
           };
         }));
+        
+        // 최종 단계: 영상 통계 계산 메시지 노출
+        const totalVideos = hydrated.reduce((acc, c) => acc + (c.topVideos?.length || 0), 0);
+        setProgress(100);
+        setProgressLabel(`${totalVideos}개 영상 확보, 성과 지표 계산 중...`);
+        
+        // 사용자가 볼 수 있도록 잠시 대기
+        await new Promise(r => setTimeout(r, 1200));
+
         setEnrichedChannels(hydrated);
       } catch (e) {
         console.error("Hydration failed", e);
@@ -321,7 +353,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
           <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
             <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
             채널 비교 분석 <span className="text-indigo-500">PICK</span>
-            {loading && <span className="text-[10px] md:text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg animate-pulse normal-case not-italic font-bold tracking-normal">최신화 중...</span>}
+            {/* loading badge removed */}
           </h2>
           <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
             선택한 <span className="text-indigo-600 dark:text-indigo-400 font-bold">{channels.length}개 채널의 핵심 지표</span>를 한눈에 비교하세요.<br />
@@ -342,6 +374,35 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
            <span>다시 선택</span>
         </button>
       </div>
+
+      {loading && (
+        <div className="w-full animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="bg-slate-900 rounded-xl p-5 md:p-6 border border-slate-800 shadow-2xl relative overflow-hidden">
+                {/* Background Glow */}
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-50"></div>
+                
+                <div className="flex justify-between items-end mb-3">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Analysis in Progress</span>
+                    <span className="text-2xl font-black text-white tabular-nums">{progress}%</span>
+                </div>
+                
+                {/* Progress Track */}
+                <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden mb-4">
+                    <div 
+                        className="h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-300 ease-out relative" 
+                        style={{width: `${progress}%`}}
+                    >
+                        <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-r from-transparent to-white/30 skew-x-12 animate-shimmer"></div>
+                    </div>
+                </div>
+                
+                <p className="text-sm font-bold text-indigo-400 flex items-center gap-2 animate-pulse">
+                    <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                    {progressLabel}
+                </p>
+            </div>
+        </div>
+      )}
 
       <div className="space-y-6 md:space-y-8">
 
