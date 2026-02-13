@@ -2729,10 +2729,22 @@ export default function App() {
     return <Login />;
   }
 
-  // [RBAC] 승인 대기 상태 체크 -> 둘러보기 모드로 전환 (차단 해제)
   // [RBAC] 승인 대기 상태 체크 -> 전용 대기 화면 표시
-  if (role === 'pending') {
+  // 멤버십 승인 팝업이 떠 있으면 사용자가 확인할 때까지 대기
+  if (role === 'pending' && !membershipJustApproved) {
     return <PendingApproval />;
+  }
+  // pending이지만 팝업이 있으면 → 팝업 먼저 보여주고 확인 후 메인으로 진입
+  if (role === 'pending' && membershipJustApproved) {
+    return (
+      <MembershipWelcomeModal
+        onClose={() => setMembershipJustApproved(null)}
+        userName={membershipJustApproved.name}
+        daysLeft={membershipJustApproved.daysLeft}
+        plan={membershipJustApproved.plan}
+        limit={membershipJustApproved.limit}
+      />
+    );
   }
 
   // [RBAC] 승인 대기 상태 체크 -> 둘러보기 모드로 전환 (차단 해제)
