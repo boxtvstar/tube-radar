@@ -773,6 +773,7 @@ export interface AutoDetectResult extends SavedChannel {
     views: number;
     thumbnail: string;
     publishedAt?: string;
+    categoryId?: string;
   };
 }
 
@@ -784,7 +785,7 @@ const TARGET_CATEGORY_IDS = ['1', '2', '10', '15', '17', '19', '20', '22', '23',
 // Updated Auto Detect: Scan Popular Videos by Category (Cost Efficient: ~15 Quota)
 export const autoDetectShortsChannels = async (apiKey: string, regionCode: string = 'KR'): Promise<AutoDetectResult[]> => {
   console.log(`Starting Auto Detect for Region: ${regionCode} using Category Scan...`);
-  const cacheKey = `yt_shorts_autodetect_v2_${regionCode}_${new Date().toDateString()}`;
+  const cacheKey = `yt_shorts_autodetect_v3_${regionCode}_${new Date().toDateString()}`;
   const cached = localStorage.getItem(cacheKey);
 
   if (cached) {
@@ -937,7 +938,8 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
               title: bestVideo.snippet.title,
               views: views,
               thumbnail: bestVideo.snippet.thumbnails.maxres?.url || bestVideo.snippet.thumbnails.standard?.url || bestVideo.snippet.thumbnails.high?.url || bestVideo.snippet.thumbnails.medium?.url || bestVideo.snippet.thumbnails.default?.url,
-              publishedAt: bestVideo.snippet.publishedAt
+              publishedAt: bestVideo.snippet.publishedAt,
+              categoryId: bestVideo.snippet.categoryId
           }
       };
     });
@@ -1284,10 +1286,11 @@ export const performRadarScan = async (
            // Metric 1: Velocity (Views per Hour)
            const velocity = views / hoursSince;
            
-           // Metric 2: Performance Ratio (vs Channel Avg)
-           // If channel avg is 0 or very low, baseline it to 100 to avoid crazy multiples
-           const baseline = Math.max(chInfo.avgViewsEstimate, 100); 
-           const ratio = views / baseline;
+           // Metric 2: Performance Ratio (vs Channel Avg) with Time Weighting
+           // Consistent with Auto Detect & My List logic
+           const timeFactor = Math.max(Math.min(Math.pow(hoursSince / 168, 0.5), 1), 0.3);
+           const expectedViews = Math.max(chInfo.avgViewsEstimate * timeFactor, 100); 
+           const ratio = views / expectedViews;
 
            // Metric 3: Spike Score
            // Weighted combination: Velocity is raw power, Ratio is relative surprise.
@@ -1310,7 +1313,7 @@ export const performRadarScan = async (
                subscribers: formatNumber(chInfo.subCount),
                viralScore: `${(velocity/100).toFixed(1)}p`, // Display score differently
                uploadTime: getTimeAgo(publishedAt),
-               category: "Radar",
+               category: getCategoryName(v.snippet.categoryId),
                reachPercentage: Math.min(ratio * 10, 100), // Visual bar based on ratio
                tags: v.snippet.tags || [],
              },
@@ -1347,7 +1350,7 @@ export const performRadarScan = async (
   }
 };
 
-function getCategoryName(id: string): string {
+export function getCategoryName(id: string): string {
   const categories: Record<string, string> = {
     '1': 'Film & Animation',
     '2': 'Autos & Vehicles',

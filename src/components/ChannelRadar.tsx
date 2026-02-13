@@ -111,7 +111,12 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
          performanceRatio: r.performanceRatio,
          channelThumbnail: '',
          channelId: r.video.channelId || '',
-         publishedAt: r.video.publishedAt || ''
+         publishedAt: r.video.publishedAt || '',
+         // Fix: VideoDetailModal expects 'x' suffix format for Booster (Multiplier)
+         // Map performanceRatio directly to viralScore to show "N times average"
+         viralScore: (r.performanceRatio && !isNaN(r.performanceRatio)) 
+            ? `${r.performanceRatio.toFixed(1)}x` 
+            : '0.0x'
       }));
 
       addLog(`최종 ${radarVideos.length}개 급등 영상 추출 완료`);
@@ -433,8 +438,9 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
                         >
                             <div className="aspect-video relative overflow-hidden">
                                 <img src={video.thumbnailUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                <div className="absolute top-2 right-2 bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-lg">
-                                  {video.spikeScore.toFixed(1)} P
+                                <div className="absolute top-2 right-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] font-black px-2 py-1 rounded-md shadow-lg flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                                  {video.viralScore}
                                 </div>
                                 <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
                                   {video.duration}

@@ -17,7 +17,8 @@ import {
   fetchRealVideos,
   searchChannelsByKeyword,
   autoDetectShortsChannels,
-  cleanupOldCaches
+  cleanupOldCaches,
+  getCategoryName
 } from './services/youtubeService';
 import { analyzeVideoVirality } from './services/geminiService';
 import { MembershipPage } from './src/components/MembershipPage';
@@ -1165,7 +1166,7 @@ export default function App() {
 
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [visibleVideoCount, setVisibleVideoCount] = useState(20); // Pagination: Show 20 videos initially
-  const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error'; showSubscribeButton?: boolean } | null>(null);
+  const [alertMessage, setAlertMessage] = useState<{ title: string; message: string; type?: 'info' | 'error'; showSubscribeButton?: boolean; onSubscribe?: () => void } | null>(null);
   
   // Toast Notification System
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -1782,7 +1783,7 @@ export default function App() {
       subscribers: formatNumber(result.stats.subscribers),
       viralScore: `${booster.toFixed(1)}x`,
       uploadTime: getTimeAgo(pubDate),
-      category: "Shorts",
+      category: getCategoryName(result.representativeVideo.categoryId || '42'),
       reachPercentage: Math.min(Math.round((result.representativeVideo.views / channelAvg) * 100), 999),
       tags: [],
       channelTotalViews: formatNumber(result.stats.viewCount),
@@ -2912,11 +2913,9 @@ export default function App() {
               setIsCategoryTrendMode(false);
               setIsMaterialsExplorerMode(false);
               setIsScriptMode(false);
-            }}
+            }} 
           />
-        )}
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+      )}  <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
         {isMembershipMode ? (
           <MembershipPage />
         ) : isScriptMode ? (
@@ -4258,14 +4257,25 @@ export default function App() {
             type={alertMessage.type} 
             showSubscribeButton={alertMessage.showSubscribeButton}
             onSubscribe={() => {
-               setAlertMessage(null);
-               setIsMembershipMode(true);
-               setIsUsageMode(false);
-               setIsExplorerMode(false);
-               setIsPackageMode(false);
-               setIsShortsDetectorMode(false);
-               setIsTopicMode(false);
-               setIsMyMode(false);
+               if (alertMessage.onSubscribe) {
+                  alertMessage.onSubscribe();
+                  setAlertMessage(null);
+               } else {
+                  setAlertMessage(null);
+                  setIsMembershipMode(true);
+                  setIsUsageMode(false);
+                  setIsExplorerMode(false);
+                  setIsPackageMode(false);
+                  setIsShortsDetectorMode(false);
+                  setIsTopicMode(false);
+                  setIsMyMode(false);
+                  setIsComparisonMode(false);
+                  setIsRadarMode(false);
+                  setIsNationalTrendMode(false);
+                  setIsCategoryTrendMode(false);
+                  setIsMaterialsExplorerMode(false);
+                  setIsScriptMode(false);
+               }
             }}
             onClose={() => setAlertMessage(null)} 
           />

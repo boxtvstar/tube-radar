@@ -78,9 +78,24 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   const stats = useMemo(() => {
     const views = parseCount(video.views);
     const avgViews = parseCount(video.avgViews);
-    const hours = getHoursSinceUpload(video.uploadTime);
+    // Improved Hours calculation for accurate Booster
+    let hours = getHoursSinceUpload(video.uploadTime);
+    if (video.publishedAt) {
+       hours = Math.max((Date.now() - new Date(video.publishedAt).getTime()) / (1000 * 60 * 60), 0.1);
+    }
     
     let outlier = parseFloat(video.viralScore.replace('x', ''));
+    
+    // Fallback: Recalculate if invalid, applying Time Factor (Same as Auto Detect / My List)
+    if ((isNaN(outlier) || outlier === 0) && views > 0 && avgViews > 0) {
+      // Time Factor: Views grow over time. We expect 'avgViews' only after ~1 week (168h).
+      // Early on, we expect less. Factor = sqrt(hours/168).
+      const timeFactor = Math.max(Math.min(Math.pow(hours / 168, 0.5), 1), 0.3);
+      const expected = Math.max(avgViews * timeFactor, 100); // Min expectation 100 views
+      outlier = views / expected;
+    }
+    
+    if (isNaN(outlier)) outlier = 0.0;
     outlier = parseFloat(outlier.toFixed(1));
 
     const vph = hours > 0 ? Math.round(views / hours) : 0;
