@@ -2,8 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, where, addDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { RecommendedPackage, SavedChannel } from '../../types';
-import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry } from '../../services/dbService';
+import { RecommendedPackage, SavedChannel, ApiUsage } from '../../types';
+import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import { generateChannelRecommendation } from '../../services/geminiService';
 import DatePicker, { registerLocale } from 'react-datepicker';
@@ -84,6 +84,8 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   const { user } = useAuth();
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userPointData, setUserPointData] = useState<Record<string, ApiUsage>>({});
+  const [pointDataLoading, setPointDataLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'approved' | 'pending'>('all'); // Filter state
   const [sortConfig, setSortConfig] = useState<{ key: 'expiresAt' | 'role' | 'lastLoginAt' | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'desc' });
   
@@ -1021,6 +1023,36 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     fetchUsers();
   }, []);
 
+  // Fetch point data for all users
+  useEffect(() => {
+    if (users.length === 0) return;
+    const fetchAllPointData = async () => {
+      setPointDataLoading(true);
+      try {
+        const pointMap: Record<string, ApiUsage> = {};
+        const chunkSize = 10;
+        for (let i = 0; i < users.length; i += chunkSize) {
+          const chunk = users.slice(i, i + chunkSize);
+          const results = await Promise.all(
+            chunk.map(async (u) => {
+              try {
+                const p = u.role === 'admin' ? 'admin'
+                  : (u.plan === 'gold' || u.role === 'pro') ? 'gold'
+                  : (u.plan === 'silver') ? 'silver' : 'general';
+                const usage = await getUsageFromDb(u.uid, p);
+                return { uid: u.uid, usage };
+              } catch { return { uid: u.uid, usage: null }; }
+            })
+          );
+          results.forEach(r => { if (r.usage) pointMap[r.uid] = r.usage; });
+        }
+        setUserPointData(pointMap);
+      } catch (e) { console.error("Error fetching point data:", e); }
+      finally { setPointDataLoading(false); }
+    };
+    fetchAllPointData();
+  }, [users]);
+
   // Bulk Actions
   const toggleSelectAll = () => {
     if (selectedIds.size === filteredUsers.length) {
@@ -1656,14 +1688,14 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-xs font-bold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                    <th className="px-6 py-4 w-10">
+                    <th className="px-2 py-3 w-10">
                       <input type="checkbox" checked={selectedIds.size === filteredUsers.length && filteredUsers.length > 0} onChange={toggleSelectAll} className="rounded text-primary focus:ring-primary" />
                     </th>
-                    <th className="px-6 py-4">사용자</th>
-                    <th className="px-6 py-4 hidden md:table-cell">관리자 메모</th>
-                    <th className="px-6 py-4 hidden md:table-cell">이메일</th>
-                    <th className="px-6 py-4 hidden md:table-cell">등급</th>
-                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('lastLoginAt')}>
+                    <th className="px-2 py-3">사용자</th>
+                    <th className="px-2 py-3 hidden md:table-cell">관리자 메모</th>
+                    <th className="px-2 py-3 hidden md:table-cell">이메일</th>
+                    <th className="px-2 py-3 hidden md:table-cell">등급</th>
+                    <th className="px-2 py-3 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('lastLoginAt')}>
                       <div className="flex items-center gap-1">
                         최근 접속
                         <span className="material-symbols-outlined text-[14px]">
@@ -1671,7 +1703,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </span>
                       </div>
                     </th>
-                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('expiresAt')}>
+                    <th className="px-2 py-3 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors hidden md:table-cell" onClick={() => handleSort('expiresAt')}>
                       <div className="flex items-center gap-1">
                         만료일
                         <span className="material-symbols-outlined text-[14px]">
@@ -1679,7 +1711,13 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </span>
                       </div>
                     </th>
-                    <th className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors" onClick={() => handleSort('role')}>
+                    <th className="px-2 py-3 hidden md:table-cell">
+                      <div className="flex items-center gap-1">
+                        포인트
+                        {pointDataLoading && <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>}
+                      </div>
+                    </th>
+                    <th className="px-2 py-3 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300 transition-colors" onClick={() => handleSort('role')}>
                       <div className="flex items-center gap-1">
                         상태
                         <span className="material-symbols-outlined text-[14px]">
@@ -1687,29 +1725,29 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </span>
                       </div>
                     </th>
-                    <th className="px-6 py-4">기록</th>
-                    <th className="px-6 py-4 text-right">관리</th>
+                    <th className="px-2 py-3">기록</th>
+                    <th className="px-2 py-3 text-right">관리</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-20 text-center text-slate-400 font-bold">
+                      <td colSpan={12} className="px-6 py-20 text-center text-slate-400 font-bold">
                         해당하는 사용자가 없습니다.
                       </td>
                     </tr>
                   ) : filteredUsers.map((u) => (
                   <tr key={u.uid} className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(u.uid) ? 'bg-slate-50 dark:bg-slate-800/50' : ''}`}>
-                    <td className="px-6 py-4 pl-6">
+                    <td className="px-2 py-3 pl-2">
                       <input type="checkbox" checked={selectedIds.has(u.uid)} onChange={() => toggleSelectUser(u.uid)} className="rounded text-primary focus:ring-primary" />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                         <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="size-8 rounded-full bg-slate-200 ring-2 ring-white dark:ring-slate-800" alt="" />
-                         <span className="font-bold text-xs dark:text-slate-200 whitespace-nowrap">{u.displayName}</span>
+                    <td className="px-2 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                         <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="size-7 rounded-full bg-slate-200 ring-2 ring-white dark:ring-slate-800" alt="" />
+                         <span className="font-bold text-xs dark:text-slate-200 whitespace-nowrap" title={u.displayName}>{u.displayName?.length > 15 ? u.displayName.slice(0, 15) + '...' : u.displayName}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 hidden md:table-cell">
+                    <td className="px-2 py-3 hidden md:table-cell">
                             {/* Memo Edit Input */}
                             {editingMemoId === u.uid ? (
                               <div className="flex items-center gap-1 mt-1 animate-in fade-in">
@@ -1735,9 +1773,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                </button>
                             )}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400 hidden md:table-cell">{u.email}</td>
+                    <td className="px-2 py-3 text-xs text-slate-600 dark:text-slate-400 hidden md:table-cell">{u.email}</td>
 
-                    <td className="px-6 py-4 hidden md:table-cell">
+                    <td className="px-2 py-3 hidden md:table-cell">
                       {(() => {
                          let tier = '';
                          // 1. Check Whitelist (Robust Matching: ID first, then Email)
@@ -1781,7 +1819,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          );
                       })()}
                     </td>
-                    <td className="px-6 py-4 text-xs font-mono text-slate-500 whitespace-nowrap hidden md:table-cell">
+                    <td className="px-2 py-3 text-xs font-mono text-slate-500 whitespace-nowrap hidden md:table-cell">
                       {u.lastLoginAt ? (
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-700 dark:text-slate-300">
@@ -1794,7 +1832,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </div>
                       ) : '-'}
                     </td>
-                    <td className="px-6 py-4 text-xs font-mono whitespace-nowrap hidden md:table-cell">
+                    <td className="px-2 py-3 text-xs font-mono whitespace-nowrap hidden md:table-cell">
                       {u.expiresAt ? (
                         <div className="flex flex-col">
                           <span className="text-slate-600 dark:text-slate-400 font-bold">
@@ -1814,7 +1852,29 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         <span className="text-slate-400">무제한</span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-2 py-3 hidden md:table-cell">
+                      {(() => {
+                        const pt = userPointData[u.uid];
+                        if (!pt) return <span className="text-slate-300 text-xs">-</span>;
+                        const remaining = pt.total - pt.used + (pt.bonusPoints || 0);
+                        const totalPool = pt.total + (pt.bonusPoints || 0);
+                        const pct = totalPool > 0 ? (remaining / totalPool) * 100 : 0;
+                        const color = pct <= 10 ? 'text-rose-500' : pct <= 30 ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400';
+                        return (
+                          <div className="flex flex-col">
+                            <span className={`text-xs font-bold ${color}`}>
+                              {remaining.toLocaleString()} / {pt.total.toLocaleString()}
+                            </span>
+                            {(pt.bonusPoints || 0) > 0 && (
+                              <span className="text-[10px] text-indigo-500 font-bold">
+                                +{pt.bonusPoints!.toLocaleString()} 보너스
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-2 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide border ${
                         u.role === 'admin' ? 'bg-purple-100 text-purple-600 border-purple-200' :
                         (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
@@ -1824,7 +1884,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       </span>
 
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-2 py-3">
                        <div className="flex gap-2">
                          <button onClick={() => setViewingHistoryUser(u)} className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 font-bold px-2 py-1 rounded text-[10px] transition-colors">
                             <span className="material-symbols-outlined text-[14px]">history</span>
@@ -1840,8 +1900,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          </button>
                        </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-2 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <button 
                           onClick={() => handleResetUser(u.uid)}
                           className="text-xs font-bold text-amber-500 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/10 dark:hover:bg-amber-900/30 px-3 py-1.5 rounded-lg transition-colors border border-amber-200 dark:border-amber-800"
