@@ -454,8 +454,8 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                              <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">info</span>
                              <span>개인 API 키를 사용하면 공용 할당량 제한 없이 더 안정적인 분석이 가능합니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
                            </p>
-                           <button 
-                             onClick={() => setIsVideoModalOpen(true)}
+                           <button
+                             onClick={() => window.open('https://www.youtube.com/watch?v=Z7WJ2ND5424', '_blank')}
                              className="flex items-center gap-1.5 py-1.5 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold transition-colors shadow-lg shadow-red-500/20 whitespace-nowrap"
                            >
                               <span className="material-symbols-outlined text-[14px]">play_circle</span>
