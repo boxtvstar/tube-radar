@@ -519,3 +519,92 @@ export const grantBonusPoints = async (userId: string, points: number, reason: s
     console.error('Failed to log bonus grant:', e);
   }
 };
+
+export interface AnalyticsOverview {
+  days: number;
+  totalSessions: number;
+  uniqueVisitors: number;
+  loggedInVisitors: number;
+  guestVisitors: number;
+  avgDurationSec: number;
+  totalPageViews: number;
+  topPages: { page: string; views: number }[];
+  dailyVisitors: { date: string; visitors: number; sessions: number; pageViews: number }[];
+}
+
+export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsOverview> => {
+  const safeDays = Math.max(1, Math.min(days, 90));
+  const cutoff = Date.now() - safeDays * 24 * 60 * 60 * 1000;
+
+  const [sessionsSnap, pageViewsSnap] = await Promise.all([
+    getDocs(query(collection(db, "analytics_sessions"), where("startedAt", ">=", cutoff))),
+    getDocs(query(collection(db, "analytics_pageviews"), where("at", ">=", cutoff)))
+  ]);
+
+  const sessions = sessionsSnap.docs.map(d => d.data() as any);
+  const pageViews = pageViewsSnap.docs.map(d => d.data() as any);
+
+  const visitorSet = new Set<string>();
+  const loggedInSet = new Set<string>();
+  const guestSet = new Set<string>();
+  let totalDurationSec = 0;
+
+  const dailyVisitorsMap = new Map<string, Set<string>>();
+  const dailySessionsMap = new Map<string, number>();
+  const dailyPageViewsMap = new Map<string, number>();
+
+  sessions.forEach((s) => {
+    const visitorKey = s.userId ? `u:${s.userId}` : `a:${s.anonId || 'unknown'}`;
+    visitorSet.add(visitorKey);
+    if (s.userId) loggedInSet.add(String(s.userId));
+    else guestSet.add(String(s.anonId || 'unknown'));
+
+    totalDurationSec += Number(s.durationSec || 0);
+
+    const dateKey = new Date(Number(s.startedAt || Date.now())).toISOString().slice(0, 10);
+    if (!dailyVisitorsMap.has(dateKey)) dailyVisitorsMap.set(dateKey, new Set<string>());
+    dailyVisitorsMap.get(dateKey)!.add(visitorKey);
+    dailySessionsMap.set(dateKey, (dailySessionsMap.get(dateKey) || 0) + 1);
+  });
+
+  const pageCountMap = new Map<string, number>();
+  pageViews.forEach((p) => {
+    const page = String(p.page || "unknown");
+    pageCountMap.set(page, (pageCountMap.get(page) || 0) + 1);
+
+    const dateKey = new Date(Number(p.at || Date.now())).toISOString().slice(0, 10);
+    dailyPageViewsMap.set(dateKey, (dailyPageViewsMap.get(dateKey) || 0) + 1);
+  });
+
+  const topPages = Array.from(pageCountMap.entries())
+    .map(([page, views]) => ({ page, views }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 8);
+
+  const dates = new Set<string>([
+    ...Array.from(dailyVisitorsMap.keys()),
+    ...Array.from(dailySessionsMap.keys()),
+    ...Array.from(dailyPageViewsMap.keys())
+  ]);
+
+  const dailyVisitors = Array.from(dates)
+    .sort()
+    .map((date) => ({
+      date,
+      visitors: dailyVisitorsMap.get(date)?.size || 0,
+      sessions: dailySessionsMap.get(date) || 0,
+      pageViews: dailyPageViewsMap.get(date) || 0
+    }));
+
+  return {
+    days: safeDays,
+    totalSessions: sessions.length,
+    uniqueVisitors: visitorSet.size,
+    loggedInVisitors: loggedInSet.size,
+    guestVisitors: guestSet.size,
+    avgDurationSec: sessions.length > 0 ? Math.round(totalDurationSec / sessions.length) : 0,
+    totalPageViews: pageViews.length,
+    topPages,
+    dailyVisitors
+  };
+};

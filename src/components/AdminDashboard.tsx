@@ -3,7 +3,7 @@ import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, 
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel, ApiUsage } from '../../types';
-import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb } from '../../services/dbService';
+import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb, getAnalyticsOverview, AnalyticsOverview } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import { generateChannelRecommendation } from '../../services/geminiService';
 import DatePicker, { registerLocale } from 'react-datepicker';
@@ -78,6 +78,16 @@ const getStatusLabel = (status?: string) => {
     case 'pending': return '대기중';
     default: return '대기중';
   }
+};
+
+const formatDuration = (seconds: number) => {
+  if (!seconds || seconds <= 0) return '0초';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}시간 ${m}분`;
+  if (m > 0) return `${m}분 ${s}초`;
+  return `${s}초`;
 };
 
 export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKey?: string }) => {
@@ -593,7 +603,10 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   };
 
   // --- Recommended Packages & Topics State ---
-const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership' | 'notices'>('users');
+const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership' | 'notices' | 'analytics'>('users');
+  const [analyticsDays, setAnalyticsDays] = useState<7 | 30>(7);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
   const [topics, setTopics] = useState<RecommendedPackage[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
@@ -674,6 +687,19 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     }
   };
 
+  const fetchAnalyticsData = async (days: number = analyticsDays) => {
+    try {
+      setAnalyticsLoading(true);
+      const result = await getAnalyticsOverview(days);
+      setAnalyticsOverview(result);
+    } catch (e) {
+      console.error("Error fetching analytics", e);
+      alert("통계 데이터를 불러오지 못했습니다.");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'packages') {
       fetchPackages();
@@ -681,8 +707,10 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
       fetchTopics();
     } else if (activeTab === 'inquiries') {
       fetchInquiriesData();
+    } else if (activeTab === 'analytics') {
+      fetchAnalyticsData();
     }
-  }, [activeTab]);
+  }, [activeTab, analyticsDays]);
 
   const handleAddChannelToPkg = async () => {
     if (!pkgChannelInput) return alert("채널 입력이 필요합니다.");
@@ -1615,6 +1643,15 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       {activeTab !== 'notices' && <span className="bg-green-500 size-2 rounded-full"></span>}
                    </div>
                  </button>
+                 <button
+                   onClick={() => setActiveTab('analytics')}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'analytics' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                 >
+                   <div className="flex items-center gap-1">
+                     <span>통계</span>
+                     {activeTab !== 'analytics' && <span className="bg-cyan-500 size-2 rounded-full"></span>}
+                   </div>
+                 </button>
               </div>
           </div>
 
@@ -1671,6 +1708,31 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    </button>
                 </div>
               </>
+            )}
+            {activeTab === 'analytics' && (
+              <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setAnalyticsDays(7)}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${analyticsDays === 7 ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                  >
+                    최근 7일
+                  </button>
+                  <button
+                    onClick={() => setAnalyticsDays(30)}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${analyticsDays === 30 ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                  >
+                    최근 30일
+                  </button>
+                </div>
+                <button
+                  onClick={() => fetchAnalyticsData()}
+                  className="px-4 py-1.5 rounded-md text-xs font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90 transition-opacity flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-sm">refresh</span>
+                  새로고침
+                </button>
+              </div>
             )}
            </div>
         </div>
@@ -2293,6 +2355,106 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                  </div>
                )}
              </div>
+          ) : activeTab === 'analytics' ? (
+            <div className="space-y-6 animate-in fade-in max-w-6xl mx-auto w-full">
+              {analyticsLoading ? (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 flex items-center justify-center">
+                  <div className="size-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                      <div className="text-[11px] uppercase font-bold text-slate-500">방문 세션</div>
+                      <div className="text-3xl font-black text-cyan-600 dark:text-cyan-400 mt-2">{(analyticsOverview?.totalSessions || 0).toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                      <div className="text-[11px] uppercase font-bold text-slate-500">고유 방문자</div>
+                      <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 mt-2">{(analyticsOverview?.uniqueVisitors || 0).toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                      <div className="text-[11px] uppercase font-bold text-slate-500">평균 체류시간</div>
+                      <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">{formatDuration(analyticsOverview?.avgDurationSec || 0)}</div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                      <div className="text-[11px] uppercase font-bold text-slate-500">총 페이지뷰</div>
+                      <div className="text-3xl font-black text-amber-600 dark:text-amber-400 mt-2">{(analyticsOverview?.totalPageViews || 0).toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-black text-slate-900 dark:text-white">상위 페이지</h4>
+                        <span className="text-[11px] text-slate-500">최근 {analyticsDays}일</span>
+                      </div>
+                      {analyticsOverview?.topPages?.length ? (
+                        <div className="space-y-2">
+                          {analyticsOverview.topPages.map((item) => (
+                            <div key={item.page} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2">{item.page}</span>
+                              <span className="text-xs font-black text-cyan-600 dark:text-cyan-400">{item.views.toLocaleString()}회</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-400 py-6 text-center">데이터 없음</div>
+                      )}
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-black text-slate-900 dark:text-white">방문자 구성</h4>
+                        <span className="text-[11px] text-slate-500">최근 {analyticsDays}일</span>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
+                          <span className="text-xs font-bold text-slate-600">로그인 사용자</span>
+                          <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{(analyticsOverview?.loggedInVisitors || 0).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
+                          <span className="text-xs font-bold text-slate-600">게스트/익명</span>
+                          <span className="text-sm font-black text-amber-600 dark:text-amber-400">{(analyticsOverview?.guestVisitors || 0).toLocaleString()}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 pt-1">
+                          고유 방문자 = 로그인 사용자 + 익명 방문자(브라우저 단위)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                    <h4 className="font-black text-slate-900 dark:text-white mb-4">일자별 추이</h4>
+                    {analyticsOverview?.dailyVisitors?.length ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="text-[11px] uppercase text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                            <tr>
+                              <th className="py-2">날짜</th>
+                              <th className="py-2 text-right">고유 방문자</th>
+                              <th className="py-2 text-right">세션</th>
+                              <th className="py-2 text-right">페이지뷰</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analyticsOverview.dailyVisitors.map((d) => (
+                              <tr key={d.date} className="border-b border-slate-100 dark:border-slate-800">
+                                <td className="py-2 font-mono text-xs">{d.date}</td>
+                                <td className="py-2 text-right font-bold">{d.visitors.toLocaleString()}</td>
+                                <td className="py-2 text-right">{d.sessions.toLocaleString()}</td>
+                                <td className="py-2 text-right">{d.pageViews.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-400 py-6 text-center">일자별 데이터 없음</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           ) : (activeTab === 'membership' ? (
             <div className="space-y-6 animate-in fade-in max-w-6xl mx-auto w-full">
                {/* Stats & Actions Card */}

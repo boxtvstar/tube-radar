@@ -21,6 +21,7 @@ import {
   getCategoryName
 } from './services/youtubeService';
 import { analyzeVideoVirality } from './services/geminiService';
+import { createAnalyticsSession, heartbeatAnalyticsSession, trackAnalyticsPageView } from './services/analyticsService';
 import { MembershipPage } from './src/components/MembershipPage';
 import { RecommendedPackageList } from './src/components/RecommendedPackageList';
 import { 
@@ -1292,6 +1293,9 @@ export default function App() {
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+  const analyticsSessionIdRef = useRef<string | null>(null);
+  const analyticsLastHeartbeatRef = useRef<number>(Date.now());
+  const analyticsLastPageRef = useRef<string>('');
   
   // Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -1338,6 +1342,46 @@ export default function App() {
 
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  const analyticsPage = useMemo(() => {
+    if (isAdminOpen) return 'admin_dashboard';
+    if (isMyPageOpen) return `mypage_${myPageInitialTab}`;
+    if (isPaymentResultMode) return 'payment_result';
+    if (isScriptMode) return 'script_extractor';
+    if (isMaterialsExplorerMode) return 'materials_explorer';
+    if (isRadarMode) return 'channel_radar';
+    if (isExplorerMode) return 'channel_explorer';
+    if (isShortsDetectorMode) return 'shorts_detector';
+    if (isTopicMode) return 'recommended_topics';
+    if (isPackageMode) return 'recommended_packages';
+    if (isComparisonMode) return 'comparison';
+    if (isMembershipMode) return 'membership';
+    if (isNationalTrendMode) return 'national_trend';
+    if (isCategoryTrendMode) return `category_trend_${selectedCategory || 'all'}`;
+    if (isUsageMode) return 'usage';
+    if (isMyMode) return `my_mode_${activeGroupId || 'all'}`;
+    return selectedCategory ? `trend_${selectedCategory}` : 'home';
+  }, [
+    isAdminOpen,
+    isMyPageOpen,
+    myPageInitialTab,
+    isPaymentResultMode,
+    isScriptMode,
+    isMaterialsExplorerMode,
+    isRadarMode,
+    isExplorerMode,
+    isShortsDetectorMode,
+    isTopicMode,
+    isPackageMode,
+    isComparisonMode,
+    isMembershipMode,
+    isNationalTrendMode,
+    isCategoryTrendMode,
+    isUsageMode,
+    isMyMode,
+    activeGroupId,
+    selectedCategory
+  ]);
+
   // Load usage from DB (Real-time)
   useEffect(() => {
     if (user && role !== 'pending') {
@@ -1348,6 +1392,63 @@ export default function App() {
       return () => unsubscribe();
     }
   }, [user, role, plan]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const initAnalytics = async () => {
+      if (analyticsSessionIdRef.current) return;
+      const sessionId = await createAnalyticsSession({
+        userId: user?.uid || null,
+        role: role || null,
+        plan: plan || null,
+        page: analyticsPage
+      });
+      if (!isMounted || !sessionId) return;
+      analyticsSessionIdRef.current = sessionId;
+      analyticsLastHeartbeatRef.current = Date.now();
+      analyticsLastPageRef.current = analyticsPage;
+    };
+    initAnalytics();
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.uid, role, plan, analyticsPage]);
+
+  useEffect(() => {
+    const sessionId = analyticsSessionIdRef.current;
+    if (!sessionId) return;
+    if (analyticsLastPageRef.current === analyticsPage) return;
+    analyticsLastPageRef.current = analyticsPage;
+    trackAnalyticsPageView(sessionId, { page: analyticsPage, userId: user?.uid || null });
+  }, [analyticsPage, user?.uid]);
+
+  useEffect(() => {
+    const tick = async () => {
+      const sessionId = analyticsSessionIdRef.current;
+      if (!sessionId) return;
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      const diffSec = Math.max(1, Math.round((now - analyticsLastHeartbeatRef.current) / 1000));
+      analyticsLastHeartbeatRef.current = now;
+      await heartbeatAnalyticsSession(sessionId, diffSec, analyticsPage);
+    };
+
+    const interval = setInterval(tick, 30000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        analyticsLastHeartbeatRef.current = Date.now();
+      } else {
+        tick();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [analyticsPage]);
 
   const handleOpenMyPage = (tab: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage' = 'dashboard') => {
     setMyPageInitialTab(tab);
