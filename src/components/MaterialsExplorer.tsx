@@ -36,7 +36,7 @@ const convertCategoryIdToName = (video: VideoData): VideoData => {
   return video;
 };
 
-export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, groups, onSave, onClose, onAddChannel }) => {
+export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, groups, onSave, onClose, onAddChannel, onExtractTranscript, onAnalyzeChannel }) => {
   // Search State
   const [query, setQuery] = useState(() => sessionStorage.getItem('me_last_query') || '');
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
