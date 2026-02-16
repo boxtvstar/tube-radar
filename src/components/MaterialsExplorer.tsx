@@ -9,6 +9,8 @@ interface MaterialsExplorerProps {
   onSave: (videos: VideoData[], groupId: string, newGroupName?: string) => Promise<void>;
   onClose: () => void;
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
+  onExtractTranscript?: (videoUrl: string) => void;
+  onAnalyzeChannel?: (channelId: string) => void;
 }
 
 type FilterDays = 1 | 7 | 30;
@@ -532,6 +534,8 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
           onClose={() => setDetailedVideo(null)}
           channelGroups={groups}
           onAddChannel={onAddChannel}
+          onExtractTranscript={onExtractTranscript}
+          onAnalyzeChannel={onAnalyzeChannel}
         />
       )}
     </div>

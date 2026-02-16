@@ -3083,14 +3083,50 @@ export default function App() {
           </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
-              <MaterialsExplorer
-                apiKey={ytKey}
-                groups={groups}
-                onSave={handleSaveMaterials}
-                onClose={() => setIsMaterialsExplorerMode(false)}
-                onAddChannel={handleAddChannelFromVideo}
-              />
-            </div>
+        <MaterialsExplorer
+          apiKey={ytKey}
+          groups={groups}
+          onSave={handleSaveMaterials}
+          onClose={() => setIsMaterialsExplorerMode(false)}
+          onAddChannel={handleAddChannelFromVideo}
+          onExtractTranscript={(url) => {
+            setIsMaterialsExplorerMode(false);
+            setDetailedVideo(null);
+            setIsScriptMode(true);
+            setScriptModeUrl(url);
+
+            setIsMembershipMode(false);
+            setIsUsageMode(false);
+            setIsExplorerMode(false);
+            setIsPackageMode(false);
+            setIsShortsDetectorMode(false);
+            setIsTopicMode(false);
+            setIsMyMode(false);
+            setIsComparisonMode(false);
+            setIsRadarMode(false);
+            setIsNationalTrendMode(false);
+            setIsCategoryTrendMode(false);
+          }}
+          onAnalyzeChannel={(channelId) => {
+            setIsMaterialsExplorerMode(false);
+            setDetailedVideo(null);
+            setRadarInitialQuery(channelId);
+            setIsRadarMode(true);
+
+            setIsScriptMode(false);
+            setIsMembershipMode(false);
+            setIsUsageMode(false);
+            setIsExplorerMode(false);
+            setIsPackageMode(false);
+            setIsShortsDetectorMode(false);
+            setIsTopicMode(false);
+            setIsMyMode(false);
+            setIsComparisonMode(false);
+            setIsNationalTrendMode(false);
+            setIsCategoryTrendMode(false);
+          }}
+        />
+      </div>
         ) : isComparisonMode ? (
             <div className="w-full">
               <ComparisonView
