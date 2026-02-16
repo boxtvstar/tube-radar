@@ -288,7 +288,7 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
                <p className="text-slate-400 font-bold text-sm animate-pulse">{days === 1 ? '지난 24시간 동안의' : `지난 ${days}일간의`} 데이터를 분석 중입니다...</p>
             </div>
          ) : filteredVideos.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                {filteredVideos.map((video) => {
                   const isSelected = selectedIds.has(video.id);
                   const isShorts = (video.durationSec || 0) <= 60 && (video.durationSec || 0) > 0;
@@ -297,32 +297,36 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
                      <div 
                         key={video.id} 
                         onClick={() => setDetailedVideo(video)}
-                        className={`group bg-white dark:bg-slate-900 border ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 dark:border-slate-800'} rounded-xl overflow-hidden hover:shadow-lg transition-all cursor-pointer relative min-h-[360px]`}
+                        className={`group bg-white dark:bg-slate-900 border ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 dark:border-slate-800'} rounded-xl overflow-hidden hover:shadow-lg transition-all cursor-pointer relative`}
                      >  
-                        <div className="aspect-video relative bg-black">
+                        <div className="aspect-[9/16] relative bg-black">
                            <img src={video.thumbnailUrl} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" loading="lazy" />
                            {/* Checkbox Overlay */}
-                           <div className="absolute top-2 left-2 z-10" onClick={(e) => { e.stopPropagation(); toggleSelection(video.id); }}>
+                           <div className="absolute top-2 right-2 z-10" onClick={(e) => { e.stopPropagation(); toggleSelection(video.id); }}>
                               <div className={`size-6 rounded-md border-2 ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-black/40 border-white/70'} flex items-center justify-center transition-colors`}>
                                  {isSelected && <span className="material-symbols-outlined text-white text-base">check</span>}
                               </div>
                            </div>
-                           {/* Badges */}
-                           <div className="absolute bottom-2 right-2 flex gap-1">
+                           <div className="absolute top-2 left-2 z-10 bg-indigo-600/90 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
+                              <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                              {video.viralScore || '0x'}
+                           </div>
+                          {/* Badges */}
+                           <div className="absolute bottom-2 left-2 flex gap-1">
                               <span className="bg-black/80 text-white text-[10px] font-black px-1.5 py-0.5 rounded">{video.duration}</span>
                               {isShorts && <span className="bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded flex items-center"><span className="material-symbols-outlined text-[10px] mr-0.5">bolt</span>Shorts</span>}
                            </div>
                         </div>
                         
-                        <div className="p-4">
-                           <h3 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight mb-2 h-10">{video.title}</h3>
+                        <div className="p-3">
+                           <h3 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight mb-1 h-8">{video.title}</h3>
                            
-                           <div className="flex items-center gap-2 mb-3">
+                           <div className="flex items-center gap-2 mb-2">
                               <span className="text-xs text-slate-500 font-medium truncate flex-1">{video.channelName}</span>
                               <span className="text-[10px] text-slate-400">{video.uploadTime}</span>
                            </div>
 
-                           <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
+                           <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg p-1.5">
                               <div className="flex flex-col">
                                  <span className="text-[10px] text-slate-400 font-bold uppercase">조회수</span>
                                  <span className="text-xs font-black text-slate-700 dark:text-slate-300">{video.views}</span>
