@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { ApiUsage } from '../../types';
 
 interface ScriptExtractorProps {
@@ -9,6 +10,7 @@ interface ScriptExtractorProps {
 }
 
 export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initialUrl, usage, onUsageUpdate }) => {
+  const { plan, role } = useAuth();
   const [url, setUrl] = useState(initialUrl || '');
   const [loading, setLoading] = useState(false);
   
@@ -39,6 +41,12 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
 
     if (usage.used + 200 > usage.total) {
       setError('일일 API 사용 한도가 초과되었습니다. (필요: 200 Unit)');
+      return;
+    }
+
+    // 등급 제한: 골드 이상 또는 관리자만 가능
+    if (plan !== 'gold' && role !== 'admin') {
+      setError('대본 추출 기능은 골드(Gold) 등급 이상 회원만 사용 가능합니다.');
       return;
     }
 
