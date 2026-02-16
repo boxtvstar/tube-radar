@@ -297,7 +297,7 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
                      <div 
                         key={video.id} 
                         onClick={() => setDetailedVideo(video)}
-                        className={`group bg-white dark:bg-slate-900 border ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 dark:border-slate-800'} rounded-xl overflow-hidden hover:shadow-lg transition-all cursor-pointer relative`}
+                        className={`group bg-white dark:bg-slate-900 border ${isSelected ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-slate-200 dark:border-slate-800'} rounded-xl overflow-hidden hover:shadow-lg transition-all cursor-pointer relative min-h-[360px]`}
                      >  
                         <div className="aspect-video relative bg-black">
                            <img src={video.thumbnailUrl} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" loading="lazy" />
