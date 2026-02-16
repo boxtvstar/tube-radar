@@ -242,7 +242,7 @@ const SidebarItem = ({
 }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-xl text-xs font-bold transition-all ${
+    className={`w-full flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-1.5 rounded-xl text-xs font-bold transition-all ${
       active
         ? 'shadow-sm scale-[1.02]' 
         : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
@@ -402,10 +402,10 @@ const Sidebar = ({
         )}
       </div>
       
-        <nav className="flex-1 px-4 pb-4 space-y-1 overflow-y-auto custom-scrollbar flex flex-col">
+        <nav className="flex-1 px-4 pb-4 space-y-0.5 overflow-y-auto custom-scrollbar flex flex-col">
         {/* 1. 채널 관리 */}
         {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-2 animate-in fade-in">채널 관리</div>}
-        <div className={`px-2 space-y-1 ${isCollapsed ? 'mt-4' : ''}`}>
+        <div className={`px-2 space-y-0.5 ${isCollapsed ? 'mt-4' : ''}`}>
           <button
             onClick={() => { 
               onToggleMyMode(true);
@@ -455,7 +455,7 @@ const Sidebar = ({
 
         {/* 2. 키워드 탐색 */}
         {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">키워드 탐색</div>}
-        <div className="px-2 space-y-1">
+        <div className="px-2 space-y-0.5">
           <SidebarItem 
              icon="travel_explore" 
              label="키워드 소재 탐색" 
@@ -482,7 +482,7 @@ const Sidebar = ({
 
         {/* 3. 아이디어·추천 */}
         {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">아이디어·추천</div>}
-        <div className="px-2 space-y-1">
+        <div className="px-2 space-y-0.5">
           <SidebarItem 
             icon="lightbulb" 
             label={
@@ -582,18 +582,26 @@ const Sidebar = ({
                    }
                    return;
                 }
-                onToggleScriptMode(true);
-                if (onCloseMobileMenu) onCloseMobileMenu();
-              }}
-              className={`${isScriptMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
-              isCollapsed={isCollapsed}
-            />
+              onToggleScriptMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isScriptMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
+            isCollapsed={isCollapsed}
+          />
+          <SidebarItem
+            icon="download"
+            label="영상 다운로드 (준비중)"
+            active={false}
+            onClick={() => {}}
+            className="text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 opacity-70 cursor-not-allowed pointer-events-none"
+            isCollapsed={isCollapsed}
+          />
         </div>
 
         {/* 4. 국가별 트렌드 (유지) */}
         {/* 4. 트렌드 분석 */}
         {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">트렌드 분석</div>}
-        <div className="px-2 space-y-1">
+        <div className="px-2 space-y-0.5">
           <SidebarItem 
             icon="bolt" 
             label="자동 탐색 (Shorts)" 
@@ -2598,6 +2606,12 @@ export default function App() {
 
 
   const [detectRegion, setDetectRegion] = useState<'KR'|'US'|'JP'>('KR');
+  const SHORTS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const isRecentShort = (result: AutoDetectResult) => {
+    const publishedAt = result.representativeVideo.publishedAt || result.stats.publishedAt;
+    if (!publishedAt) return true;
+    return Date.now() - new Date(publishedAt).getTime() <= SHORTS_MAX_AGE_MS;
+  };
 
   const handleAutoDetectShorts = async (overrideRegion?: 'KR'|'US'|'JP') => {
     if (isReadOnly) return handleActionRestricted(() => {});
@@ -2615,7 +2629,7 @@ export default function App() {
     try {
       const results = await autoDetectShortsChannels(ytKey, targetRegion);
       
-      setShortsDetectorResults(results);
+      setShortsDetectorResults(results.filter(isRecentShort));
       
       if(results.length === 0) {
         alert("최근 7일간의 추천 영상을 찾지 못했습니다. 잠시 후 다시 시도해주세요.");

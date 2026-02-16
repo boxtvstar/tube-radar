@@ -42,9 +42,31 @@ interface RadarVideo {
 // Helper for Category Names
 const CATEGORY_NAMES: Record<string, string> = {
   '1': '영화/애니', '2': '자동차', '10': '음악', '15': '동물', '17': '스포츠',
-  '18': '단편영화', '19': '여행', '20': '게임', '22': '브이로그/인물', '23': '코미디',
+     '18': '단편영화', '19': '여행', '20': '게임', '22': '브이로그/인물', '23': '코미디',
   '24': '엔터테인먼트', '25': '뉴스/정치', '26': '노하우/스타일', '27': '교육',
   '28': '과학/기술', '29': '비영리/사회'
+};
+
+const formatCount = (num: number) => {
+  if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
+  if (num >= 10000) return (num / 10000).toFixed(1) + "만";
+  return num.toLocaleString();
+};
+
+const getTimeAgo = (date: string) => {
+  if (!date) return '방금 전';
+  const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
+  let interval = seconds / 31536000;
+  if (interval > 1) return Math.floor(interval) + "년 전";
+  interval = seconds / 2592000;
+  if (interval > 1) return Math.floor(interval) + "달 전";
+  interval = seconds / 86400;
+  if (interval > 1) return Math.floor(interval) + "일 전";
+  interval = seconds / 3600;
+  if (interval > 1) return Math.floor(interval) + "시간 전";
+  interval = seconds / 60;
+  if (interval > 1) return Math.floor(interval) + "분 전";
+  return "방금 전";
 };
 
 export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: ChannelRadarProps) => {
@@ -57,7 +79,24 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
 
   // Dashboard Data State
   const [trendingChannels, setTrendingChannels] = useState<{
-    id: string; title: string; subs: string; growth: string; thumbnail: string; category: string; publishedAt: string; tags: string[]; totalViews: number; videoCount: number;
+    id: string;
+    title: string;
+    subs: string;
+    growth: string;
+    thumbnail: string;
+    category: string;
+    publishedAt: string;
+    tags: string[];
+    totalViews: number;
+    videoCount: number;
+    topVideo?: {
+      id: string;
+      title: string;
+      views: number;
+      thumbnail: string;
+      publishedAt: string;
+      categoryId?: string;
+    };
   }[]>([]);
   const [popularKeywords, setPopularKeywords] = useState<string[]>([]);
   const [categoryStats, setCategoryStats] = useState<{cat: string, engagement: string, score: number}[]>([]);
@@ -152,7 +191,15 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
                    title: v.snippet.channelTitle,
                    thumbnail: v.snippet.thumbnails.high?.url || v.snippet.thumbnails.medium?.url || v.snippet.thumbnails.default.url,
                    category: CATEGORY_NAMES[v.snippet.categoryId] || '엔터테인먼트',
-                   velocity: (parseInt(v.statistics.viewCount) / (Math.max(1, (Date.now() - new Date(v.snippet.publishedAt).getTime()) / (1000 * 60 * 60)))).toFixed(0)
+                   velocity: (parseInt(v.statistics.viewCount) / (Math.max(1, (Date.now() - new Date(v.snippet.publishedAt).getTime()) / (1000 * 60 * 60)))).toFixed(0),
+                   topVideo: {
+                     id: v.id,
+                     title: v.snippet.title,
+                     views: parseInt(v.statistics.viewCount || '0'),
+                     thumbnail: v.snippet.thumbnails.maxres?.url || v.snippet.thumbnails.high?.url || v.snippet.thumbnails.medium?.url || v.snippet.thumbnails.default?.url,
+                     publishedAt: v.snippet.publishedAt,
+                     categoryId: v.snippet.categoryId
+                   }
                 });
              }
              if (uniqueChannels.size >= 12) break;
@@ -308,35 +355,40 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
                 </div>
              </div>
              
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-                {trendingChannels.map((ch, idx) => (
-                   <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl p-3 md:p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/30 transition-all cursor-pointer" 
-                     onClick={() => {
-                        const chAvg = ch.videoCount > 0 ? Math.round(ch.totalViews / ch.videoCount) : 0;
-                        const fmt = (n: number) => n >= 100000000 ? (n/100000000).toFixed(1)+'억' : n >= 10000 ? (n/10000).toFixed(1)+'만' : n.toLocaleString();
-                        onVideoClick?.({
-                        id: `dashboard_${ch.id}`,
-                        title: ch.title,
-                        channelId: ch.id,
-                        channelName: ch.title,
-                        thumbnailUrl: ch.thumbnail,
-                        channelThumbnail: ch.thumbnail,
-                        views: '0',
-                        publishedAt: ch.publishedAt || new Date().toISOString(),
-                        velocity: 0,
-                        spikeScore: 0,
-                        performanceRatio: 0,
-                        duration: '0:00',
-                         subscribers: ch.subs,
-                         avgViews: chAvg > 0 ? fmt(chAvg) : '0',
-                         viralScore: '0x',
-                         uploadTime: '',
-                         category: ch.category,
-                         reachPercentage: 0,
-                         tags: ch.tags,
-                         channelTotalViews: fmt(ch.totalViews),
-                      })}}
-                   >
+                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+                     {trendingChannels.map((ch, idx) => (
+                        <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl p-3 md:p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:border-indigo-500/30 transition-all cursor-pointer" 
+                           onClick={() => {
+                              const topVideo = ch.topVideo;
+                              if (!topVideo) return;
+                              const avgViews = ch.videoCount > 0 ? Math.round(ch.totalViews / ch.videoCount) : 0;
+                              const avgViewsLabel = avgViews > 0 ? formatCount(avgViews) : '0';
+                              const viewsLabel = formatCount(topVideo.views);
+                              const viralScoreValue = avgViews > 0 ? `${(topVideo.views / Math.max(avgViews, 1)).toFixed(1)}x` : '0.0x';
+                              const reachPercent = avgViews > 0 ? Math.min(Math.round((topVideo.views / avgViews) * 100), 999) : 0;
+                              onVideoClick?.({
+                              id: topVideo.id,
+                              title: topVideo.title,
+                              channelId: ch.id,
+                              channelName: ch.title,
+                              thumbnailUrl: topVideo.thumbnail,
+                              channelThumbnail: ch.thumbnail,
+                              views: viewsLabel,
+                              publishedAt: topVideo.publishedAt || new Date().toISOString(),
+                              velocity: 0,
+                              spikeScore: 0,
+                              performanceRatio: 0,
+                              duration: 'Shorts',
+                                subscribers: ch.subs,
+                                avgViews: avgViewsLabel,
+                                viralScore: viralScoreValue,
+                                uploadTime: getTimeAgo(topVideo.publishedAt || ch.publishedAt),
+                                category: ch.category,
+                                reachPercentage: reachPercent,
+                                tags: ch.tags,
+                                channelTotalViews: formatCount(ch.totalViews),
+                             })}}
+                       >
                       <div className="flex justify-between items-start mb-3 md:mb-4">
                          <div className="flex gap-2 md:gap-3 min-w-0">
                             <img src={ch.thumbnail} className="size-10 md:size-12 rounded-full border border-slate-100 dark:border-slate-800 shrink-0" />
