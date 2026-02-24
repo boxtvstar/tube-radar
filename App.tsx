@@ -40,7 +40,9 @@ import {
   sendNotification,
   deleteNotification,
   subscribeToUsage,
-  updateUsageInDb
+  updateUsageInDb,
+  getUserPreferences,
+  saveUserPreferences
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 import type { AutoDetectResult } from './services/youtubeService';
@@ -155,7 +157,7 @@ const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video
       >
 
         <img 
-          className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700" 
+          className="absolute inset-0 w-full h-full object-contain opacity-90 group-hover:opacity-100 transform group-hover:scale-105 transition-all duration-500" 
           src={video.thumbnailUrl} 
           alt={video.title} 
           loading="lazy" 
@@ -1206,6 +1208,8 @@ export default function App() {
   });
   const [isSyncNoticeDismissed, setIsSyncNoticeDismissed] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [pendingImportData, setPendingImportData] = useState<{ savedChannels?: SavedChannel[]; groups?: ChannelGroup[] } | null>(null);
+  const [importModeModal, setImportModeModal] = useState(false);
   
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
   const [myPageInitialTab, setMyPageInitialTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>('dashboard');
@@ -1747,16 +1751,48 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      // Load settings specific to this user
-      const savedKey = localStorage.getItem(`yt_api_key_${user.uid}`);
-      const savedRegion = localStorage.getItem(`yt_region_${user.uid}`);
-      
-      if (savedKey) setYtKey(savedKey);
-      else setYtKey(''); // Reset if new user has no key
-      
-      if (savedRegion) setRegion(savedRegion);
-      
-      setIsKeyLoaded(true); // Mark as loaded to enable saving
+      let cancelled = false;
+
+      const loadUserSettings = async () => {
+        const localKey = localStorage.getItem(`yt_api_key_${user.uid}`);
+        const localRegion = localStorage.getItem(`yt_region_${user.uid}`);
+
+        if (localKey) setYtKey(localKey);
+        if (localRegion) setRegion(localRegion);
+
+        try {
+          const remotePreferences = await getUserPreferences(user.uid);
+          if (cancelled || !remotePreferences) {
+            return;
+          }
+
+          const resolvedKey = localKey ?? remotePreferences.youtubeApiKey ?? '';
+          const resolvedRegion = localRegion ?? remotePreferences.region ?? 'KR';
+
+          setYtKey(resolvedKey);
+          setRegion(resolvedRegion);
+
+          if (resolvedKey) {
+            localStorage.setItem(`yt_api_key_${user.uid}`, resolvedKey);
+          }
+          if (resolvedRegion) {
+            localStorage.setItem(`yt_region_${user.uid}`, resolvedRegion);
+          }
+        } catch (error) {
+          console.error('Failed to load user preferences:', error);
+        } finally {
+          if (!cancelled) {
+            setIsKeyLoaded(true);
+          }
+        }
+      };
+
+      setIsKeyLoaded(false);
+      void loadUserSettings();
+
+      return () => {
+        cancelled = true;
+      };
     } else {
       // Clear sensitive data on logout
       setYtKey('');
@@ -1772,6 +1808,11 @@ export default function App() {
       else localStorage.removeItem(`yt_api_key_${user.uid}`);
       
       if (region) localStorage.setItem(`yt_region_${user.uid}`, region);
+
+      void saveUserPreferences(user.uid, {
+        youtubeApiKey: ytKey,
+        region
+      });
     }
   }, [ytKey, region, user, isKeyLoaded]);
 
@@ -2212,36 +2253,141 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    setLoading(true);
-    setProgress({ current: 1, total: 100, message: "백업 파일을 분석하고 있습니다..." });
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        // Visual delay for better UX
-        await new Promise(r => setTimeout(r, 600));
-        
         const json = JSON.parse(event.target?.result as string);
-        setProgress({ current: 60, total: 100, message: "데이터베이스 복원 중..." });
-        
-        await new Promise(r => setTimeout(r, 600));
-
-        if (json.savedChannels) setSavedChannels(json.savedChannels);
-        if (json.groups) setGroups(json.groups);
-        
-        setProgress({ current: 100, total: 100, message: "복원 완료!" });
-        await new Promise(r => setTimeout(r, 500));
-        
-        showToast("성공적으로 복원되었습니다.");
+        if (!json.savedChannels && !json.groups) {
+          showToast("올바르지 않은 파일 형식입니다.", 'error');
+          return;
+        }
+        setPendingImportData(json);
+        setImportModeModal(true);
       } catch (err) {
         showToast("올바르지 않은 파일 형식입니다.", 'error');
-      } finally {
-        setProgress(null);
-        setLoading(false);
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const executeImport = async (mode: 'overwrite' | 'merge') => {
+    if (!pendingImportData) return;
+    setImportModeModal(false);
+    setLoading(true);
+    setProgress({ current: 1, total: 100, message: "백업 파일을 분석하고 있습니다..." });
+
+    try {
+      await new Promise(r => setTimeout(r, 600));
+      setProgress({ current: 60, total: 100, message: "데이터베이스 복원 중..." });
+      await new Promise(r => setTimeout(r, 600));
+
+      if (mode === 'overwrite') {
+        if (pendingImportData.savedChannels) setSavedChannels(pendingImportData.savedChannels);
+        if (pendingImportData.groups) setGroups(pendingImportData.groups);
+      } else {
+        const importGroups = pendingImportData.groups || [];
+        const importChannels = pendingImportData.savedChannels || [];
+        const normalizeGroupName = (name: string) => name.trim().toLowerCase();
+
+        const mergedGroups = [...groups];
+        const existingIds = new Set(mergedGroups.map(g => g.id));
+        const existingNameToId = new Map(mergedGroups.map(g => [normalizeGroupName(g.name), g.id]));
+        const usedNames = new Set(mergedGroups.map(g => normalizeGroupName(g.name)));
+        const groupIdMap = new Map<string, string>();
+
+        let mergedByNameCount = 0;
+        let renamedCount = 0;
+
+        for (const importedGroup of importGroups) {
+          const importedNameNormalized = normalizeGroupName(importedGroup.name);
+          const sameNameGroupId = existingNameToId.get(importedNameNormalized);
+
+          if (sameNameGroupId && sameNameGroupId !== importedGroup.id) {
+            groupIdMap.set(importedGroup.id, sameNameGroupId);
+            mergedByNameCount++;
+            continue;
+          }
+
+          if (existingIds.has(importedGroup.id)) {
+            const sameIdGroup = mergedGroups.find(g => g.id === importedGroup.id);
+            const isSameName = sameIdGroup && normalizeGroupName(sameIdGroup.name) === importedNameNormalized;
+
+            if (isSameName) {
+              groupIdMap.set(importedGroup.id, importedGroup.id);
+              continue;
+            }
+
+            const baseName = importedGroup.name.trim() || '가져온 그룹';
+            let renamedName = `${baseName} (가져오기)`;
+            let suffix = 2;
+            while (usedNames.has(normalizeGroupName(renamedName))) {
+              renamedName = `${baseName} (가져오기 ${suffix})`;
+              suffix++;
+            }
+
+            const renamedId = `import_${importedGroup.id}_${Date.now()}_${renamedCount}`;
+            mergedGroups.push({ ...importedGroup, id: renamedId, name: renamedName });
+            existingIds.add(renamedId);
+            usedNames.add(normalizeGroupName(renamedName));
+            existingNameToId.set(normalizeGroupName(renamedName), renamedId);
+            groupIdMap.set(importedGroup.id, renamedId);
+            renamedCount++;
+            continue;
+          }
+
+          mergedGroups.push(importedGroup);
+          existingIds.add(importedGroup.id);
+          existingNameToId.set(importedNameNormalized, importedGroup.id);
+          usedNames.add(importedNameNormalized);
+          groupIdMap.set(importedGroup.id, importedGroup.id);
+        }
+
+        const mergedChannels = [...savedChannels];
+        const existingChannelIds = new Set(mergedChannels.map(c => c.id));
+
+        for (const importedChannel of importChannels) {
+          if (existingChannelIds.has(importedChannel.id)) continue;
+
+          const mappedGroupId = importedChannel.groupId
+            ? (groupIdMap.get(importedChannel.groupId) || (existingIds.has(importedChannel.groupId) ? importedChannel.groupId : 'unassigned'))
+            : 'unassigned';
+
+          mergedChannels.push({
+            ...importedChannel,
+            groupId: mappedGroupId === 'all' ? 'unassigned' : mappedGroupId
+          });
+          existingChannelIds.add(importedChannel.id);
+        }
+
+        setGroups(mergedGroups);
+        setSavedChannels(mergedChannels);
+
+        const detailParts: string[] = [];
+        if (mergedByNameCount > 0) detailParts.push(`이름 기준 병합 ${mergedByNameCount}개`);
+        if (renamedCount > 0) detailParts.push(`자동 리네임 ${renamedCount}개`);
+        if (detailParts.length > 0) {
+          showToast(`추가 복원 완료 (${detailParts.join(', ')})`);
+        }
+      }
+
+      setProgress({ current: 100, total: 100, message: "복원 완료!" });
+      await new Promise(r => setTimeout(r, 500));
+
+      if (mode === 'overwrite') {
+        showToast('덮어쓰기 방식으로 복원되었습니다.');
+      } else {
+        showToast('추가 방식으로 복원되었습니다.');
+      }
+      setHasPendingSync(true);
+      setIsSyncNoticeDismissed(false);
+    } catch (err) {
+      showToast("복원 중 오류가 발생했습니다.", 'error');
+    } finally {
+      setProgress(null);
+      setLoading(false);
+      setPendingImportData(null);
+    }
   };
 
   const isReadOnly = role === 'pending';
@@ -4637,6 +4783,61 @@ export default function App() {
            plan={membershipJustApproved.plan}
            limit={membershipJustApproved.limit}
          />
+      )}
+
+      {importModeModal && pendingImportData && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+          onClick={() => { setImportModeModal(false); setPendingImportData(null); }}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2.5rem] p-8 max-w-[400px] w-full shadow-[0_20px_50px_rgba(0,0,0,0.2)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)] relative overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300" 
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-400 to-purple-600" />
+            
+            <div className="flex flex-col items-center text-center space-y-5">
+              <div className="size-16 rounded-3xl flex items-center justify-center mb-1 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 shadow-lg shadow-indigo-500/10">
+                <span className="material-symbols-outlined text-3xl font-bold">upload_file</span>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                  데이터 가져오기
+                </h3>
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {pendingImportData.savedChannels?.length || 0}개 채널, {pendingImportData.groups?.length || 0}개 그룹이 포함된 백업 파일입니다.
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                  기존 데이터를 어떻게 처리할까요?
+                </p>
+              </div>
+              
+              <div className="flex flex-col w-full gap-2 pt-2">
+                <button 
+                  onClick={() => executeImport('merge')}
+                  className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-white transition-all transform active:scale-95 shadow-xl bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20 flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-lg">add_circle</span>
+                  기존 데이터에 추가
+                </button>
+                <button 
+                  onClick={() => executeImport('overwrite')}
+                  className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-wider text-white transition-all transform active:scale-95 shadow-xl bg-rose-500 hover:bg-rose-600 shadow-rose-500/20 flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-lg">sync</span>
+                  전체 덮어쓰기
+                </button>
+                <button 
+                  onClick={() => { setImportModeModal(false); setPendingImportData(null); }}
+                  className="w-full py-3.5 rounded-2xl text-sm font-bold text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmModal.isOpen && (

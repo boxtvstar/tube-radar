@@ -474,6 +474,34 @@ export const updateUsageInDb = async (userId: string, plan: string | undefined, 
   return usage;
 };
 
+export interface UserPreferences {
+  youtubeApiKey?: string;
+  region?: string;
+  updatedAt?: string;
+}
+
+export const getUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
+  const userRef = doc(db, "users", userId);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) return null;
+
+  const data = snap.data() as Record<string, unknown>;
+  return {
+    youtubeApiKey: typeof data.youtubeApiKey === 'string' ? data.youtubeApiKey : undefined,
+    region: typeof data.region === 'string' ? data.region : undefined,
+    updatedAt: typeof data.preferencesUpdatedAt === 'string' ? data.preferencesUpdatedAt : undefined
+  };
+};
+
+export const saveUserPreferences = async (userId: string, preferences: { youtubeApiKey?: string; region?: string }) => {
+  const payload = removeUndefinedFields({
+    youtubeApiKey: preferences.youtubeApiKey,
+    region: preferences.region,
+    preferencesUpdatedAt: new Date().toISOString()
+  });
+  await setDoc(doc(db, "users", userId), payload, { merge: true });
+};
+
 // Grant Bonus Points to User
 export const grantBonusPoints = async (userId: string, points: number, reason: string = 'Admin Reward') => {
   const docRef = doc(db, "users", userId, "usage", "daily");
