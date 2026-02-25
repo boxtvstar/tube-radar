@@ -121,8 +121,9 @@ export const preCheckQuota = async (estimatedCost: number, userRole?: string): P
 };
 
 export const markQuotaExceeded = (apiKey: string) => {
-  // ⚠️ YouTube API 쿼터 초과 감지 로그 (포인트 차단과 별개)
-  console.warn('⚠️ API returned quotaExceeded (logged only)');
+  console.warn('⚠️ YouTube API 실제 할당량 초과 감지');
+  // 전역 이벤트 발생 → App.tsx에서 감지하여 UI 안내
+  window.dispatchEvent(new CustomEvent('yt-api-quota-exceeded'));
 };
 
 export const resetQuota = (apiKey: string) => {

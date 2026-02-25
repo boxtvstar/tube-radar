@@ -55,6 +55,7 @@ import { MaterialsExplorer } from './src/components/MaterialsExplorer';
 import { ScriptExtractor } from './src/components/ScriptExtractor';
 import { VideoDownloader } from './src/components/VideoDownloader';
 import { SourceFinder } from './src/components/SourceFinder';
+import UploadTimeAnalysis from './src/components/UploadTimeAnalysis';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -309,6 +310,8 @@ const Sidebar = ({
   onToggleVideoDownloadMode,
   isSourceFinderMode,
   onToggleSourceFinderMode,
+  isUploadTimeMode,
+  onToggleUploadTimeMode,
   userGrade, // Added userGrade
   onShowAlert, // Added onShowAlert
   isAdmin // Added isAdmin
@@ -361,6 +364,8 @@ const Sidebar = ({
   onToggleVideoDownloadMode: (val: boolean) => void;
   isSourceFinderMode: boolean;
   onToggleSourceFinderMode: (val: boolean) => void;
+  isUploadTimeMode: boolean;
+  onToggleUploadTimeMode: (val: boolean) => void;
   userGrade?: string;
   onShowAlert?: (alert: { title: string, message: string, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => void;
   isAdmin?: boolean;
@@ -424,7 +429,7 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && !isUploadTimeMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -460,6 +465,17 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isRadarMode ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-indigo-500'}`}
+            isCollapsed={isCollapsed}
+          />
+          <SidebarItem
+            icon="schedule"
+            label="업로드 시간 분석"
+            active={isUploadTimeMode}
+            onClick={() => {
+              onToggleUploadTimeMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isUploadTimeMode ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-indigo-500'}`}
             isCollapsed={isCollapsed}
           />
 
@@ -803,7 +819,7 @@ const calculateDDay = (expiresAt: string) => {
   return `D-${diffDays}`;
 };
 
-const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyMissing, onDismissSync,
+const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyMissing, isApiQuotaExceeded, onDismissSync,
   onSync,
   user,
   role,
@@ -823,6 +839,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onToggleTheme: () => void,
   hasPendingSync: boolean,
   isApiKeyMissing: boolean,
+  isApiQuotaExceeded?: boolean,
   onDismissSync: () => void,
   onSync: () => void,
   user?: any,
@@ -956,7 +973,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
       
       <span className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-[0.2em] hidden md:block">통계 제어 판넬</span>
       {isApiKeyMissing ? (
-        <button 
+        <button
           onClick={() => onOpenMyPage?.('dashboard')}
           className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full animate-in fade-in slide-in-from-left-2 shadow-[0_0_12px_rgba(244,63,94,0.1)] hover:bg-rose-500/20 transition-colors cursor-pointer group"
         >
@@ -966,6 +983,16 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
             <span className="hidden md:inline">YouTube API 키 설정이 필요합니다 (클릭)</span>
           </span>
         </button>
+      ) : isApiQuotaExceeded ? (
+        <div
+          className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full animate-in fade-in slide-in-from-left-2"
+        >
+          <span className="size-1.5 bg-amber-500 rounded-full animate-pulse"></span>
+          <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-tighter">
+            <span className="md:hidden">할당량 초과</span>
+            <span className="hidden md:inline">YouTube API 일일 할당량이 초과되었습니다 · 매일 오후 5시(KST) 자동 충전</span>
+          </span>
+        </div>
       ) : hasPendingSync && (
         <div className="flex items-center gap-2 px-3 py-1 bg-accent-hot/10 border border-accent-hot/20 rounded-full animate-in fade-in slide-in-from-left-2">
           <span className="size-1.5 bg-accent-hot rounded-full animate-pulse"></span>
@@ -1288,6 +1315,7 @@ export default function App() {
   // Topic Mode State
   const [isTopicMode, setIsTopicMode] = useState(false);
   const [isMembershipMode, setIsMembershipMode] = useState(false);
+  const [isUploadTimeMode, setIsUploadTimeMode] = useState(false);
 
   // Payment Result Routing
   const [isPaymentResultMode, setIsPaymentResultMode] = useState(false);
@@ -1379,6 +1407,7 @@ export default function App() {
   
   const [isNationalTrendMode, setIsNationalTrendMode] = useState(false);
   const [isCategoryTrendMode, setIsCategoryTrendMode] = useState(false);
+  const [isApiQuotaExceeded, setIsApiQuotaExceeded] = useState(false);
 
   // Removed isUsageMode state (integrated into MyPage)
   // const [isUsageMode, setIsUsageMode] = useState(false);
@@ -1580,6 +1609,13 @@ export default function App() {
     };
     window.addEventListener('yt-api-usage-updated', handleUsageUpdate);
     return () => window.removeEventListener('yt-api-usage-updated', handleUsageUpdate);
+  }, []);
+
+  // Listen to YouTube API quota exceeded event
+  useEffect(() => {
+    const handleQuotaExceeded = () => setIsApiQuotaExceeded(true);
+    window.addEventListener('yt-api-quota-exceeded', handleQuotaExceeded);
+    return () => window.removeEventListener('yt-api-quota-exceeded', handleQuotaExceeded);
   }, []);
 
   useEffect(() => {
@@ -2093,9 +2129,12 @@ export default function App() {
 
       // 포인트 사전 체크 — 부족하면 API 호출 차단
       const activeCount = isMyMode ? Math.min(targetChannelIds.length, 50) : 0;
-      const estimatedCost = isMyMode
+      const isTrendMode = isNationalTrendMode || isCategoryTrendMode;
+      const baseCost = isMyMode
         ? activeCount + Math.ceil(activeCount * 50 / 50) + Math.ceil(activeCount / 50)
         : useSearch ? 102 : 1;
+      // 트렌드 분석 메뉴는 10배 과금
+      const estimatedCost = isTrendMode ? baseCost * 10 : baseCost;
       await preCheckQuota(estimatedCost, role);
 
       // 15 seconds timeout to prevent infinite loading
@@ -2121,6 +2160,13 @@ export default function App() {
       );
 
       const data = await Promise.race([fetchPromise, timeoutPromise]);
+
+      // 트렌드 분석 메뉴 10배 과금: 실제 API 1포인트 → 추가 9포인트 차감 (총 10포인트)
+      if ((isNationalTrendMode || isCategoryTrendMode) && data && data.length > 0) {
+        const actualCost = useSearch ? 102 : 1; // fetchRealVideos 내부에서 이미 차감된 실제 비용
+        const extraCost = actualCost * 9; // 9배분 추가 → 총 10배
+        await trackUsage(ytKey, 'list', extraCost, isNationalTrendMode ? '실시간 국가 트렌드 추가 포인트 (10배)' : '실시간 카테고리 트렌드 추가 포인트 (10배)');
+      }
 
       // 로딩 완료 직전: 영상 분석 메시지 노출 (UI 개선)
       if (data && data.length > 0) {
@@ -2277,7 +2323,14 @@ export default function App() {
             message: "남은 포인트가 부족합니다.\n내일 오후 5시(KST)에 충전됩니다.",
             type: 'error'
           });
-        } else if (e.message !== "TIMEOUT" && e.message !== "QUOTA_EXCEEDED") {
+        } else if (e.message === "QUOTA_EXCEEDED") {
+          setIsApiQuotaExceeded(true);
+          setAlertMessage({
+            title: "YouTube API 할당량 초과",
+            message: "입력하신 API 키의 일일 할당량을 모두 사용했습니다.\n매일 오후 5시(KST)에 자동으로 충전됩니다.\n\n* 사이트 포인트와 별개로, YouTube에서 제공하는 실제 API 할당량이 소진된 상태입니다.",
+            type: 'error'
+          });
+        } else if (e.message !== "TIMEOUT") {
           let displayError = e.message || "Unknown Error";
           if (!displayError.toLowerCase().includes("quota")) {
              setApiError(displayError);
@@ -2878,10 +2931,13 @@ export default function App() {
     setShortsDetectorResults([]);
     
     try {
-      // 포인트 사전 체크 (Shorts 탐색: ~14 유닛)
-      await preCheckQuota(14, role);
+      // 포인트 사전 체크 (Shorts 탐색: 실제 ~14 유닛 × 10배 = 140)
+      await preCheckQuota(140, role);
 
       const results = await autoDetectShortsChannels(ytKey, targetRegion);
+
+      // 트렌드 분석 메뉴 10배 과금: 실제 14포인트(내부 차감) + 추가 126포인트 = 총 140포인트
+      await trackUsage(ytKey, 'list', 126, '자동 탐색 (Shorts) 추가 포인트 (10배)');
 
       setShortsDetectorResults(results.filter(isRecentShort));
 
@@ -3193,15 +3249,15 @@ export default function App() {
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -3215,17 +3271,19 @@ export default function App() {
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
         isMaterialsExplorerMode={isMaterialsExplorerMode}
-        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
+        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
         isScriptMode={isScriptMode}
-        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
         isVideoDownloadMode={isVideoDownloadMode}
         onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
         isSourceFinderMode={isSourceFinderMode}
-        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
+        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
+        isUploadTimeMode={isUploadTimeMode}
+        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
         userGrade={plan || 'general'}
         isAdmin={role === 'admin'}
         onShowAlert={setAlertMessage}
@@ -3240,6 +3298,7 @@ export default function App() {
           onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
           hasPendingSync={hasPendingSync}
           isApiKeyMissing={isApiKeyMissing}
+          isApiQuotaExceeded={isApiQuotaExceeded}
           onDismissSync={() => setIsSyncNoticeDismissed(true)}
           onSync={() => loadVideos(true)}
           user={user}
@@ -3333,7 +3392,8 @@ export default function App() {
               setIsScriptMode(false);
               setIsVideoDownloadMode(false);
               setIsSourceFinderMode(false);
-            }} 
+              setIsUploadTimeMode(false);
+            }}
           />
       )}  <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
         {isMembershipMode ? (
@@ -3355,6 +3415,20 @@ export default function App() {
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <SourceFinder apiKey={ytKey} />
           </div>
+        ) : isUploadTimeMode ? (
+          <div className="w-full">
+            <UploadTimeAnalysis
+              videos={videos}
+              savedChannels={savedChannels}
+              groups={groups}
+              apiKey={ytKey}
+              onClose={() => setIsUploadTimeMode(false)}
+              onGoToMonitoring={() => {
+                setIsUploadTimeMode(false);
+                setIsMyMode(true);
+              }}
+            />
+          </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
         <MaterialsExplorer
@@ -3369,6 +3443,7 @@ export default function App() {
             setIsScriptMode(true);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
+            setIsUploadTimeMode(false);
             setScriptModeUrl(url);
 
             setIsMembershipMode(false);
@@ -3392,6 +3467,7 @@ export default function App() {
             setIsScriptMode(false);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
+            setIsUploadTimeMode(false);
             setIsMembershipMode(false);
             setIsUsageMode(false);
             setIsExplorerMode(false);
@@ -4757,6 +4833,7 @@ export default function App() {
                   setIsScriptMode(false);
                   setIsVideoDownloadMode(false);
                   setIsSourceFinderMode(false);
+                  setIsUploadTimeMode(false);
                }
             }}
             onClose={() => setAlertMessage(null)} 
@@ -4844,8 +4921,9 @@ export default function App() {
             setIsScriptMode(true);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
+            setIsUploadTimeMode(false);
             setScriptModeUrl(url);
-            
+
             // 다른 메뉴 상태 초기화
             setIsMembershipMode(false);
             setIsUsageMode(false);
@@ -4869,6 +4947,7 @@ export default function App() {
             setIsScriptMode(false);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
+            setIsUploadTimeMode(false);
             setIsMembershipMode(false);
             setIsUsageMode(false);
             setIsExplorerMode(false);

@@ -407,27 +407,33 @@ export const fetchRealVideos = async (
                const reason = data.error.errors?.[0]?.reason;
                const code = data.error.code;
                
-               // 실제 quotaExceeded만 로그에 기록 (throw하지 않음)
+               // 실제 quotaExceeded → throw하여 상위에서 감지
                if (code === 403 && reason === 'quotaExceeded') {
                  console.warn(`⚠️ API Quota 초과 감지: ${cid}`);
                  markQuotaExceeded(apiKey);
-                 // throw 하지 않고 빈 배열 반환
-                 return [];
+                 throw new Error("QUOTA_EXCEEDED");
                }
                
                // Rate Limit, 404, 기타 모든 에러는 조용히 스킵
                return [];
             }
             return data.items || [];
-          } catch (e) {
-            // 네트워크 에러 등 모든 예외도 조용히 처리
+          } catch (e: any) {
+            if (e.message === 'QUOTA_EXCEEDED') throw e;
+            // 네트워크 에러 등 기타 예외는 조용히 처리
             return [];
           }
         });
-        
+
         // Wait for this batch to finish before starting next
-        const chunkResults = await Promise.all(chunkPromises);
-        playlistResults.push(...chunkResults);
+        const chunkResults = await Promise.allSettled(chunkPromises);
+        // QUOTA_EXCEEDED가 발생했으면 재throw
+        for (const r of chunkResults) {
+          if (r.status === 'rejected' && r.reason?.message === 'QUOTA_EXCEEDED') {
+            throw new Error("QUOTA_EXCEEDED");
+          }
+        }
+        playlistResults.push(...chunkResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<any>).value));
         processedCount += chunk.length;
 
         // Report progress
@@ -469,18 +475,19 @@ export const fetchRealVideos = async (
                           if (data.error) {
                   const reason = data.error.errors?.[0]?.reason;
                   
-                  // Quota 초과는 로그만 남기고 계속 (throw 하지 않음)
+                  // Quota 초과 → throw
                   if (data.error.code === 403 && reason === 'quotaExceeded') {
-                    console.warn('⚠️ API Quota 초과 - 일부 비디오 스킵');
+                    console.warn('⚠️ API Quota 초과 감지');
                     markQuotaExceeded(apiKey);
-                    // throw 하지 않고 계속
+                    throw new Error("QUOTA_EXCEEDED");
                   }
-                  // 모든 에러는 조용히 무시하고 계속
+                  // 기타 에러는 조용히 무시하고 계속
               } else {
                  if (data.items) detailResults.push(...data.items);
              }
-          } catch(e) {
-             // 네트워크 에러도 조용히 처리
+          } catch(e: any) {
+             if (e.message === 'QUOTA_EXCEEDED') throw e;
+             // 네트워크 에러 등 기타는 조용히 처리
           }
           // Small delay to be safe
           await new Promise(r => setTimeout(r, 50));
