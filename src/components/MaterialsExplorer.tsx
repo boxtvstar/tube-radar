@@ -11,6 +11,7 @@ interface MaterialsExplorerProps {
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
   onExtractTranscript?: (videoUrl: string) => void;
   onAnalyzeChannel?: (channelId: string) => void;
+  onPreCheckQuota?: (estimatedCost: number) => Promise<void>;
 }
 
 type FilterDays = 1 | 7 | 30;
@@ -36,7 +37,7 @@ const convertCategoryIdToName = (video: VideoData): VideoData => {
   return video;
 };
 
-export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, groups, onSave, onClose, onAddChannel, onExtractTranscript, onAnalyzeChannel }) => {
+export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, groups, onSave, onClose, onAddChannel, onExtractTranscript, onAnalyzeChannel, onPreCheckQuota }) => {
   // Search State
   const [query, setQuery] = useState(() => sessionStorage.getItem('me_last_query') || '');
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -90,21 +91,23 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
     setLoading(true);
     setSelectedIds(new Set()); // Reset selection
     try {
-      // API call
-      // User asked for "View Count" or "Velocity" sort. 
-      // API 'order' param supports 'viewCount', 'date', 'relevance'. 
-      // Velocity sort is client-side usually if we search by date to get recent trends?
-      // Or search by viewCount?
-      // User requirement: "Search via keyword for recent videos". 
-      // Usually date sort is better for "Recent", then client sort by Velocity.
-      const results = await searchVideosForMaterials(apiKey, query, days, 'date'); 
+      // 포인트 사전 체크 (소재 탐색: ~103 유닛)
+      if (onPreCheckQuota) {
+        await onPreCheckQuota(103);
+      }
+
+      const results = await searchVideosForMaterials(apiKey, query, days, 'date');
       setRawResults(results);
       
       // Cache results to Session Storage
       sessionStorage.setItem('me_last_query', query);
       sessionStorage.setItem('me_last_results', JSON.stringify(results));
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      if (e.message?.startsWith('QUOTA_INSUFFICIENT')) {
+        alert('포인트가 부족합니다. 내일 오후 5시(KST)에 충전됩니다.');
+      } else {
+        console.error(e);
+      }
       setRawResults([]);
     } finally {
       setLoading(false);

@@ -1,7 +1,7 @@
 
 import { ApiUsage } from "../types";
 import { auth } from '../src/lib/firebase';
-import { updateUsageInDb } from './dbService';
+import { updateUsageInDb, getUsageFromDb } from './dbService';
 
 const DAILY_QUOTA = 10000;
 
@@ -95,11 +95,34 @@ export const getRemainingQuota = (apiKey: string): number => {
   return Math.max(0, usage.total - usage.used);
 };
 
+/**
+ * DB 기반 포인트 사전 체크 (로그인 유저 전용)
+ * API 호출 전에 잔여 포인트가 충분한지 확인
+ * 부족하면 에러를 throw하여 API 호출 자체를 차단
+ */
+export const preCheckQuota = async (estimatedCost: number, userRole?: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) return; // 비로그인 유저는 패스 (localStorage 기반 추적만)
+
+  try {
+    const plan = userRole === 'pro' ? 'gold' : userRole === 'admin' ? 'admin' : userRole === 'regular' ? 'silver' : 'general';
+    const usage = await getUsageFromDb(user.uid, plan);
+    const bonusPoints = usage.bonusPoints || 0;
+    const remaining = (usage.total - usage.used) + bonusPoints;
+
+    if (remaining < estimatedCost) {
+      throw new Error(`QUOTA_INSUFFICIENT: 남은 포인트(${remaining.toLocaleString()})가 필요한 포인트(${estimatedCost.toLocaleString()})보다 부족합니다.`);
+    }
+  } catch (e: any) {
+    if (e.message?.startsWith('QUOTA_INSUFFICIENT')) throw e;
+    // DB 조회 실패 시 차단하지 않음 (graceful degradation)
+    console.warn('⚠️ 포인트 사전 체크 실패 (무시하고 진행):', e.message);
+  }
+};
+
 export const markQuotaExceeded = (apiKey: string) => {
-  // ⚠️ 완전히 비활성화 - 거짓 양성이 너무 많아서 신뢰할 수 없음
-  // 실제 API 에러만 사용자에게 표시됨
-  console.warn('⚠️ API returned quotaExceeded (logged only, not blocking)');
-  // 아무것도 하지 않음 - 로컬스토리지 업데이트 안 함
+  // ⚠️ YouTube API 쿼터 초과 감지 로그 (포인트 차단과 별개)
+  console.warn('⚠️ API returned quotaExceeded (logged only)');
 };
 
 export const resetQuota = (apiKey: string) => {

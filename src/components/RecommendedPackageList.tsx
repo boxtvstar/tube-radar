@@ -4,7 +4,7 @@ import { RecommendedPackage } from '../../types';
 import { useAuth } from '../contexts/AuthContext';
 import { ChannelGroup, SavedChannel } from '../../types';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
-import { saveTopicToDb, savePackageToDb } from '../../services/dbService';
+import { saveTopicToDb, savePackageToDb, incrementPackageViewCount } from '../../services/dbService';
 
 interface RecommendedPackageListProps {
   packages: RecommendedPackage[];
@@ -363,7 +363,12 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                 return (
                   <div 
                     key={pkg.id} 
-                    onClick={() => !isScheduled && setSelectedPackage(pkg)}
+                    onClick={() => {
+                      if (!isScheduled) {
+                        setSelectedPackage(pkg);
+                        incrementPackageViewCount(pkg.id, mode === 'topic' ? 'topic' : 'package');
+                      }
+                    }}
                     className={`group bg-white dark:bg-slate-900 rounded-[2rem] p-6 border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 transition-all duration-300 relative flex flex-col h-full ${
                        isScheduled ? 'cursor-not-allowed select-none' : 'hover:shadow-2xl hover:shadow-indigo-500/10 cursor-pointer hover:-translate-y-1'
                     }`}
@@ -452,7 +457,10 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                        <button 
                          onClick={(e) => {
                            e.stopPropagation();
-                           !isScheduled && setSelectedPackage(pkg);
+                           if (!isScheduled) {
+                             setSelectedPackage(pkg);
+                             incrementPackageViewCount(pkg.id, mode === 'topic' ? 'topic' : 'package');
+                           }
                          }}
                          disabled={isAdding || isScheduled}
                          className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3 rounded-xl text-xs font-black uppercase hover:bg-indigo-600 dark:hover:bg-indigo-400 dark:hover:text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50 mt-4"

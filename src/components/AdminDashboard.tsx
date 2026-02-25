@@ -2745,6 +2745,10 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                )}
                             </div>
                             <span className="text-xs text-slate-400">총 {pkg.channelCount}개 채널</span>
+                            <span className="ml-auto flex items-center gap-1 text-xs text-slate-400">
+                              <span className="material-symbols-outlined text-sm">visibility</span>
+                              {(pkg.viewCount || 0).toLocaleString()}
+                            </span>
                          </div>
 
                          <div className="flex gap-2">

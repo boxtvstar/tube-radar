@@ -8,7 +8,6 @@ from youtube_transcript_api._errors import (
     TranscriptsDisabled,
     NoTranscriptFound,
     VideoUnavailable,
-    NoTranscriptAvailable,
 )
 
 
@@ -105,7 +104,7 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
         result["error"] = "이 영상은 자막이 비활성화되어 있습니다."
     except VideoUnavailable:
         result["error"] = "영상을 찾을 수 없거나 비공개 상태입니다."
-    except NoTranscriptAvailable:
+    except NoTranscriptFound:
         result["error"] = "이 영상에 사용 가능한 자막이 없습니다."
     except Exception as e:
         result["error"] = f"자막 추출 중 오류 발생: {str(e)}"

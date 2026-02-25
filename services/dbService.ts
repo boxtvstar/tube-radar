@@ -10,7 +10,8 @@ import {
   query,
   where,
   addDoc,
-  updateDoc
+  updateDoc,
+  increment
 } from "firebase/firestore";
 import { db } from "../src/lib/firebase";
 import { SavedChannel, ChannelGroup, RecommendedPackage, Notification, ApiUsage } from "../types";
@@ -113,6 +114,18 @@ export const getTopicsFromDb = async (): Promise<RecommendedPackage[]> => {
   return querySnapshot.docs
     .map(doc => doc.data() as RecommendedPackage)
     .sort((a, b) => b.createdAt - a.createdAt);
+};
+
+// --- View Count ---
+
+export const incrementPackageViewCount = async (pkgId: string, type: 'package' | 'topic') => {
+  const collectionName = type === 'topic' ? 'recommended_topics' : 'recommended_packages';
+  const docRef = doc(db, collectionName, pkgId);
+  try {
+    await updateDoc(docRef, { viewCount: increment(1) });
+  } catch (e) {
+    console.warn('조회수 업데이트 실패:', e);
+  }
 };
 
 // --- Notifications ---

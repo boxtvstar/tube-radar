@@ -103,6 +103,7 @@ export interface RecommendedPackage {
   creatorId?: string;
   targetGroupName?: string;
   scheduledAt?: string; // 공개 예정일 (ISO String)
+  viewCount?: number; // 조회수
 }
 
 export interface Notification {

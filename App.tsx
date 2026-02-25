@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit } from 'firebase/firestore'; 
 import { MOCK_VIDEOS, MOCK_STATS, NETWORK_VELOCITY_DATA } from './constants';
-import { getApiUsage, resetQuota, trackUsage } from './services/usageService';
+import { getApiUsage, resetQuota, trackUsage, preCheckQuota } from './services/usageService';
 import { db } from './src/lib/firebase';
 import { useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
@@ -53,6 +53,8 @@ import { ChannelRadar } from './src/components/ChannelRadar';
 import { Footer } from './src/components/Footer';
 import { MaterialsExplorer } from './src/components/MaterialsExplorer';
 import { ScriptExtractor } from './src/components/ScriptExtractor';
+import { VideoDownloader } from './src/components/VideoDownloader';
+import { SourceFinder } from './src/components/SourceFinder';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -303,6 +305,10 @@ const Sidebar = ({
   theme, // Added theme prop
   isScriptMode,
   onToggleScriptMode,
+  isVideoDownloadMode,
+  onToggleVideoDownloadMode,
+  isSourceFinderMode,
+  onToggleSourceFinderMode,
   userGrade, // Added userGrade
   onShowAlert, // Added onShowAlert
   isAdmin // Added isAdmin
@@ -351,6 +357,10 @@ const Sidebar = ({
   onToggleMaterialsExplorerMode: (val: boolean) => void;
   isScriptMode: boolean;
   onToggleScriptMode: (val: boolean) => void;
+  isVideoDownloadMode: boolean;
+  onToggleVideoDownloadMode: (val: boolean) => void;
+  isSourceFinderMode: boolean;
+  onToggleSourceFinderMode: (val: boolean) => void;
   userGrade?: string;
   onShowAlert?: (alert: { title: string, message: string, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => void;
   isAdmin?: boolean;
@@ -592,10 +602,37 @@ const Sidebar = ({
           />
           <SidebarItem
             icon="download"
-            label="영상 다운로드 (준비중)"
-            active={false}
-            onClick={() => {}}
-            className="text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 opacity-70 cursor-not-allowed pointer-events-none"
+            label={
+              <span className="flex items-center gap-1.5">
+                유사 썸네일 찾기
+                <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                  <span className="material-symbols-outlined text-[10px]">
+                    {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                  </span>
+                  GOLD
+                </span>
+              </span>
+            }
+            active={isVideoDownloadMode}
+            onClick={() => {
+              if (!isAdmin && userGrade !== 'gold') {
+                if (onShowAlert) {
+                  onShowAlert({
+                    title: "권한 제한",
+                    message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                    type: 'error',
+                    showSubscribeButton: true,
+                    onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                  });
+                } else {
+                  alert("🚫 이 기능은 골드 등급 전용입니다.");
+                }
+                return;
+              }
+              onToggleVideoDownloadMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isVideoDownloadMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
             isCollapsed={isCollapsed}
           />
         </div>
@@ -1236,6 +1273,8 @@ export default function App() {
   const [radarInitialQuery, setRadarInitialQuery] = useState('');
   const [isMaterialsExplorerMode, setIsMaterialsExplorerMode] = useState(false);
   const [isScriptMode, setIsScriptMode] = useState(false);
+  const [isVideoDownloadMode, setIsVideoDownloadMode] = useState(false);
+  const [isSourceFinderMode, setIsSourceFinderMode] = useState(false);
   const [scriptModeUrl, setScriptModeUrl] = useState('');
   const [isShortsDetectorMode, setIsShortsDetectorMode] = useState(false);
   const [shortsDetectorResults, setShortsDetectorResults] = useState<AutoDetectResult[]>([]);
@@ -1359,6 +1398,7 @@ export default function App() {
     if (isMyPageOpen) return `mypage_${myPageInitialTab}`;
     if (isPaymentResultMode) return 'payment_result';
     if (isScriptMode) return 'script_extractor';
+    if (isSourceFinderMode) return 'source_finder';
     if (isMaterialsExplorerMode) return 'materials_explorer';
     if (isRadarMode) return 'channel_radar';
     if (isExplorerMode) return 'channel_explorer';
@@ -1378,6 +1418,7 @@ export default function App() {
     myPageInitialTab,
     isPaymentResultMode,
     isScriptMode,
+    isSourceFinderMode,
     isMaterialsExplorerMode,
     isRadarMode,
     isExplorerMode,
@@ -2050,6 +2091,13 @@ export default function App() {
       // FORCE DISABLE SEARCH - User requested strict 1-point official category mode
       const useSearch = false;
 
+      // 포인트 사전 체크 — 부족하면 API 호출 차단
+      const activeCount = isMyMode ? Math.min(targetChannelIds.length, 50) : 0;
+      const estimatedCost = isMyMode
+        ? activeCount + Math.ceil(activeCount * 50 / 50) + Math.ceil(activeCount / 50)
+        : useSearch ? 102 : 1;
+      await preCheckQuota(estimatedCost, role);
+
       // 15 seconds timeout to prevent infinite loading
       const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 60000));
 
@@ -2224,7 +2272,11 @@ export default function App() {
       } else {
         // 캐시도 없으면 에러 처리
         if (e.message && e.message.startsWith("QUOTA_INSUFFICIENT")) {
-          console.warn('Quota check suggests using cache');
+          setAlertMessage({
+            title: "포인트 부족",
+            message: "남은 포인트가 부족합니다.\n내일 오후 5시(KST)에 충전됩니다.",
+            type: 'error'
+          });
         } else if (e.message !== "TIMEOUT" && e.message !== "QUOTA_EXCEEDED") {
           let displayError = e.message || "Unknown Error";
           if (!displayError.toLowerCase().includes("quota")) {
@@ -2283,8 +2335,23 @@ export default function App() {
       await new Promise(r => setTimeout(r, 600));
 
       if (mode === 'overwrite') {
-        if (pendingImportData.savedChannels) setSavedChannels(pendingImportData.savedChannels);
-        if (pendingImportData.groups) setGroups(pendingImportData.groups);
+        const importedChannels = pendingImportData.savedChannels || [];
+        const importedGroups = pendingImportData.groups || [];
+        if (importedChannels.length > 0) setSavedChannels(importedChannels);
+        if (importedGroups.length > 0) setGroups(importedGroups);
+
+        // DB 저장
+        if (user) {
+          setProgress({ current: 70, total: 100, message: "데이터베이스에 저장 중..." });
+          const systemGroups = ['all', 'unassigned'];
+          const groupsToSave = importedGroups.filter(g => !systemGroups.includes(g.id));
+          for (const g of groupsToSave) {
+            await saveGroupToDb(user.uid, g);
+          }
+          if (importedChannels.length > 0) {
+            await batchSaveChannels(user.uid, importedChannels);
+          }
+        }
       } else {
         const importGroups = pendingImportData.groups || [];
         const importChannels = pendingImportData.savedChannels || [];
@@ -2362,6 +2429,20 @@ export default function App() {
 
         setGroups(mergedGroups);
         setSavedChannels(mergedChannels);
+
+        // DB 저장
+        if (user) {
+          setProgress({ current: 80, total: 100, message: "데이터베이스에 저장 중..." });
+          const systemGroups = ['all', 'unassigned'];
+          const groupsToSave = mergedGroups.filter(g => !systemGroups.includes(g.id));
+          for (const g of groupsToSave) {
+            await saveGroupToDb(user.uid, g);
+          }
+          const newChannels = mergedChannels.filter(c => !savedChannels.some(sc => sc.id === c.id));
+          if (newChannels.length > 0) {
+            await batchSaveChannels(user.uid, newChannels);
+          }
+        }
 
         const detailParts: string[] = [];
         if (mergedByNameCount > 0) detailParts.push(`이름 기준 병합 ${mergedByNameCount}개`);
@@ -2509,6 +2590,9 @@ export default function App() {
 
     // 2. 채널 정보 가져오기
     try {
+      // 포인트 사전 체크 (채널 추가: ~5 유닛)
+      await preCheckQuota(5, role);
+
       const channelInfo = await getChannelInfo(ytKey, channelId);
 
       if (!channelInfo) {
@@ -2547,7 +2631,14 @@ export default function App() {
         type: 'info'
       });
     } catch (e: any) {
-      if (e.message === 'QUOTA_EXCEEDED') {
+      if (e.message?.startsWith('QUOTA_INSUFFICIENT')) {
+        setAlertMessage({
+          title: "포인트 부족",
+          message: "남은 포인트가 부족합니다.\n내일 오후 5시(KST)에 충전됩니다.",
+          type: 'error'
+        });
+        throw new Error('포인트가 부족합니다.');
+      } else if (e.message === 'QUOTA_EXCEEDED') {
         setAlertMessage({
           title: "API 할당량 초과",
           message: "오늘의 YouTube API 사용량을 모두 소진했습니다.\n내일 오후 5시(KST) 후에 다시 시도해주세요.",
@@ -2576,6 +2667,9 @@ export default function App() {
     const targetGroupId = (activeGroupId === 'all') ? 'unassigned' : activeGroupId;
 
     try {
+      // 포인트 사전 체크 (채널 일괄 추가: ~5 유닛 × 채널 수)
+      await preCheckQuota(5 * queries.length, role);
+
       for (let i = 0; i < queries.length; i++) {
         // setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
         const infoFinal = await getChannelInfo(ytKey, queries[i]);
@@ -2607,9 +2701,9 @@ export default function App() {
         return;
       } else if (e.message && e.message.startsWith("QUOTA_INSUFFICIENT")) {
         setAlertMessage({
-          title: "API 할당량 부족",
-          message: e.message.replace("QUOTA_INSUFFICIENT: ", "") + "\n\n일부 채널만 추가하시거나 내일 오후 5시(KST) 후에 다시 시도해주세요.",
-          type: 'info'
+          title: "포인트 부족",
+          message: "남은 포인트가 부족합니다.\n내일 오후 5시(KST)에 충전됩니다.",
+          type: 'error'
         });
         setLoading(false);
         setBatchStatus(null);
@@ -2678,10 +2772,21 @@ export default function App() {
     
     setIsExplorerSearching(true);
     try {
+      // 포인트 사전 체크 (채널 검색: 100 유닛)
+      await preCheckQuota(100, role);
+
       const results = await searchChannelsByKeyword(ytKey, explorerQuery);
       setExplorerResults(results);
-    } catch (e) {
-      alert("검색 중 오류가 발생했습니다.");
+    } catch (e: any) {
+      if (e.message?.startsWith('QUOTA_INSUFFICIENT')) {
+        setAlertMessage({
+          title: "포인트 부족",
+          message: "남은 포인트가 부족합니다.\n내일 오후 5시(KST)에 충전됩니다.",
+          type: 'error'
+        });
+      } else {
+        alert("검색 중 오류가 발생했습니다.");
+      }
     } finally {
       setIsExplorerSearching(false);
     }
@@ -2773,10 +2878,13 @@ export default function App() {
     setShortsDetectorResults([]);
     
     try {
+      // 포인트 사전 체크 (Shorts 탐색: ~14 유닛)
+      await preCheckQuota(14, role);
+
       const results = await autoDetectShortsChannels(ytKey, targetRegion);
-      
+
       setShortsDetectorResults(results.filter(isRecentShort));
-      
+
       if(results.length === 0) {
         alert("최근 7일간의 추천 영상을 찾지 못했습니다. 잠시 후 다시 시도해주세요.");
       } else {
@@ -2787,7 +2895,13 @@ export default function App() {
       }
       
     } catch (e: any) {
-      if (e.message === 'QUOTA_EXCEEDED') {
+      if (e.message?.startsWith('QUOTA_INSUFFICIENT')) {
+        setAlertMessage({
+          title: "포인트 부족",
+          message: "남은 포인트가 부족합니다.\n내일 오후 5시(KST)에 충전됩니다.",
+          type: 'error'
+        });
+      } else if (e.message === 'QUOTA_EXCEEDED') {
         setAlertMessage({
           title: "API 할당량 초과",
           message: "YouTube API 일일 사용량을 모두 소진했습니다.",
@@ -3079,15 +3193,15 @@ export default function App() {
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -3101,13 +3215,17 @@ export default function App() {
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
         isMaterialsExplorerMode={isMaterialsExplorerMode}
-        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
+        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
         isScriptMode={isScriptMode}
-        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        isVideoDownloadMode={isVideoDownloadMode}
+        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
+        isSourceFinderMode={isSourceFinderMode}
+        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
         userGrade={plan || 'general'}
         isAdmin={role === 'admin'}
         onShowAlert={setAlertMessage}
@@ -3213,6 +3331,8 @@ export default function App() {
               setIsCategoryTrendMode(false);
               setIsMaterialsExplorerMode(false);
               setIsScriptMode(false);
+              setIsVideoDownloadMode(false);
+              setIsSourceFinderMode(false);
             }} 
           />
       )}  <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
@@ -3227,6 +3347,14 @@ export default function App() {
               onUsageUpdate={handleApiUsage}
             />
           </div>
+        ) : isVideoDownloadMode ? (
+          <div className="w-full p-6 md:p-10 flex flex-col relative">
+            <VideoDownloader apiKey={ytKey} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role)} />
+          </div>
+        ) : isSourceFinderMode ? (
+          <div className="w-full p-6 md:p-10 flex flex-col relative">
+            <SourceFinder apiKey={ytKey} />
+          </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
         <MaterialsExplorer
@@ -3239,6 +3367,8 @@ export default function App() {
             setIsMaterialsExplorerMode(false);
             setDetailedVideo(null);
             setIsScriptMode(true);
+            setIsVideoDownloadMode(false);
+            setIsSourceFinderMode(false);
             setScriptModeUrl(url);
 
             setIsMembershipMode(false);
@@ -3260,6 +3390,8 @@ export default function App() {
             setIsRadarMode(true);
 
             setIsScriptMode(false);
+            setIsVideoDownloadMode(false);
+            setIsSourceFinderMode(false);
             setIsMembershipMode(false);
             setIsUsageMode(false);
             setIsExplorerMode(false);
@@ -3271,6 +3403,7 @@ export default function App() {
             setIsNationalTrendMode(false);
             setIsCategoryTrendMode(false);
           }}
+          onPreCheckQuota={(cost) => preCheckQuota(cost, role)}
         />
       </div>
         ) : isComparisonMode ? (
@@ -4622,6 +4755,8 @@ export default function App() {
                   setIsCategoryTrendMode(false);
                   setIsMaterialsExplorerMode(false);
                   setIsScriptMode(false);
+                  setIsVideoDownloadMode(false);
+                  setIsSourceFinderMode(false);
                }
             }}
             onClose={() => setAlertMessage(null)} 
@@ -4707,6 +4842,8 @@ export default function App() {
           onExtractTranscript={(url) => {
             setDetailedVideo(null);
             setIsScriptMode(true);
+            setIsVideoDownloadMode(false);
+            setIsSourceFinderMode(false);
             setScriptModeUrl(url);
             
             // 다른 메뉴 상태 초기화
@@ -4730,6 +4867,8 @@ export default function App() {
             
             // 다른 메뉴 상태 초기화
             setIsScriptMode(false);
+            setIsVideoDownloadMode(false);
+            setIsSourceFinderMode(false);
             setIsMembershipMode(false);
             setIsUsageMode(false);
             setIsExplorerMode(false);
