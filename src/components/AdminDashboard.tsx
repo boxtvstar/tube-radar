@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, where, addDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { RecommendedPackage, SavedChannel, ApiUsage } from '../../types';
-import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb, getAnalyticsOverview, AnalyticsOverview } from '../../services/dbService';
+import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb, getAnalyticsOverview, AnalyticsOverview, getAnnouncement, saveAnnouncement, Announcement } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import { generateChannelRecommendation } from '../../services/geminiService';
 import DatePicker, { registerLocale } from 'react-datepicker';
@@ -90,6 +91,37 @@ const formatDuration = (seconds: number) => {
   return `${s}초`;
 };
 
+const mapPageName = (page: string): string => {
+  const map: Record<string, string> = {
+    admin_dashboard: '관리자 대시보드',
+    payment_result: '결제 결과',
+    script_extractor: '스크립트 추출',
+    source_finder: '원본 찾기',
+    materials_explorer: '소재 탐색',
+    channel_radar: '채널 레이더',
+    channel_explorer: '채널 탐색기',
+    shorts_detector: '쇼츠 탐지',
+    recommended_topics: '추천 토픽',
+    recommended_packages: '추천 패키지',
+    comparison: '채널 비교',
+    membership: '멤버십',
+    national_trend: '실시간 국가 트렌드',
+    usage: '사용량 확인',
+    home: '홈',
+    upload_time: '업로드 시간 분석',
+  };
+  if (map[page]) return map[page];
+  if (page.startsWith('mypage_')) {
+    const sub = page.replace('mypage_', '');
+    const subMap: Record<string, string> = { dashboard: '마이페이지', activity: '활동', notifications: '알림', support: '고객지원', usage: '사용량' };
+    return subMap[sub] ? `마이페이지 (${subMap[sub]})` : `마이페이지`;
+  }
+  if (page.startsWith('category_trend_')) return '카테고리 트렌드';
+  if (page.startsWith('my_mode_')) return '내 모니터링';
+  if (page.startsWith('trend_')) return '트렌드 (카테고리)';
+  return page;
+};
+
 export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKey?: string }) => {
   const { user } = useAuth();
   const [users, setUsers] = useState<UserData[]>([]);
@@ -115,6 +147,12 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   const [editId, setEditId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+
+  // One-line Announcement State
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementLink, setAnnouncementLink] = useState('');
+  const [announcementActive, setAnnouncementActive] = useState(false);
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1125,11 +1163,45 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
   // Notice Actions
   // Notice Board Actions
+  const fetchAnnouncementData = async () => {
+    const data = await getAnnouncement();
+    if (data) {
+      setAnnouncementText(data.text || '');
+      setAnnouncementLink(data.link || '');
+      setAnnouncementActive(data.isActive);
+    }
+  };
+
+  const handleSaveAnnouncement = async () => {
+    setAnnouncementSaving(true);
+    try {
+      const ref = doc(db, 'notices', '_announcement');
+      const snap = await getDoc(ref);
+      const payload = {
+        text: announcementText.trim(),
+        isActive: announcementActive,
+        link: announcementLink.trim() || '',
+        updatedAt: Date.now()
+      };
+      if (snap.exists()) {
+        await updateDoc(ref, payload);
+      } else {
+        await setDoc(ref, { ...payload, createdAt: new Date().toISOString() });
+      }
+      alert('한줄 공지가 저장되었습니다.');
+    } catch (e: any) {
+      console.error('Announcement save error:', e);
+      alert('저장 실패: ' + (e?.message || '알 수 없는 오류'));
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  };
+
   const fetchNotices = async () => {
     try {
       const q = query(collection(db, 'notices'), orderBy('createdAt', 'desc'));
       const snap = await getDocs(q);
-      setNoticeList(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notice)));
+      setNoticeList(snap.docs.filter(d => d.id !== '_announcement').map(d => ({ id: d.id, ...d.data() } as Notice)));
     } catch(e) { console.error("Notice fetch failed", e); }
   };
 
@@ -1635,7 +1707,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                    </div>
                  </button>
                  <button 
-                   onClick={() => { setActiveTab('notices'); fetchNotices(); setNoticeViewMode('list'); }}
+                   onClick={() => { setActiveTab('notices'); fetchNotices(); fetchAnnouncementData(); setNoticeViewMode('list'); }}
                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'notices' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
                    <div className="flex items-center gap-1">
@@ -2178,6 +2250,66 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
              </div>
           ) : activeTab === 'notices' ? (
              <div className="max-w-5xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4">
+
+               {/* One-line Announcement Management */}
+               {noticeViewMode === 'list' && (
+                 <div className="mb-6 bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/30 dark:to-violet-950/30 rounded-2xl border border-indigo-200 dark:border-indigo-800/50 p-5">
+                   <div className="flex items-center gap-2 mb-3">
+                     <span className="material-symbols-outlined text-indigo-500 text-lg">signpost</span>
+                     <h4 className="font-black text-slate-900 dark:text-white text-sm">한줄 공지</h4>
+                     <span className="text-[10px] text-slate-400 font-medium ml-1">헤더 아래 배너로 모든 사용자에게 표시됩니다</span>
+                   </div>
+                   <div className="flex flex-col gap-3">
+                     <div className="flex flex-col sm:flex-row gap-2">
+                       <input
+                         type="text"
+                         value={announcementText}
+                         onChange={(e) => setAnnouncementText(e.target.value)}
+                         placeholder="예: v2.1 업데이트 — 업로드 시간 분석 기능이 추가되었습니다!"
+                         className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-400"
+                       />
+                       <input
+                         type="text"
+                         value={announcementLink}
+                         onChange={(e) => setAnnouncementLink(e.target.value)}
+                         placeholder="링크 (선택)"
+                         className="sm:w-48 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-400"
+                       />
+                     </div>
+                     <div className="flex items-center justify-between">
+                       <label className="flex items-center gap-2 cursor-pointer select-none">
+                         <button
+                           onClick={() => setAnnouncementActive(!announcementActive)}
+                           className={`relative w-10 h-5 rounded-full transition-colors ${announcementActive ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                         >
+                           <span className={`absolute top-0.5 left-0.5 size-4 bg-white rounded-full shadow transition-transform ${announcementActive ? 'translate-x-5' : ''}`}></span>
+                         </button>
+                         <span className={`text-xs font-bold ${announcementActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                           {announcementActive ? '노출 중' : '비활성'}
+                         </span>
+                       </label>
+                       <button
+                         onClick={handleSaveAnnouncement}
+                         disabled={announcementSaving}
+                         className="flex items-center gap-1.5 px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                       >
+                         <span className="material-symbols-outlined text-sm">{announcementSaving ? 'hourglass_top' : 'save'}</span>
+                         {announcementSaving ? '저장 중...' : '저장'}
+                       </button>
+                     </div>
+                   </div>
+                   {announcementActive && announcementText && (
+                     <div className="mt-3 pt-3 border-t border-indigo-200/50 dark:border-indigo-800/30">
+                       <div className="text-[10px] text-slate-400 font-bold uppercase mb-1.5">미리보기</div>
+                       <div className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white rounded-lg px-4 py-2 flex items-center justify-center gap-2">
+                         <span className="material-symbols-outlined text-sm text-yellow-300">campaign</span>
+                         <span className="text-xs font-bold">{announcementText}</span>
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               )}
+
                {/* List Mode */}
                {noticeViewMode === 'list' && (
                  <div className="space-y-4">
@@ -2363,94 +2495,183 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
-                      <div className="text-[11px] uppercase font-bold text-slate-500">방문 세션</div>
-                      <div className="text-3xl font-black text-cyan-600 dark:text-cyan-400 mt-2">{(analyticsOverview?.totalSessions || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
-                      <div className="text-[11px] uppercase font-bold text-slate-500">고유 방문자</div>
-                      <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 mt-2">{(analyticsOverview?.uniqueVisitors || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
-                      <div className="text-[11px] uppercase font-bold text-slate-500">평균 체류시간</div>
-                      <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">{formatDuration(analyticsOverview?.avgDurationSec || 0)}</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
-                      <div className="text-[11px] uppercase font-bold text-slate-500">총 페이지뷰</div>
-                      <div className="text-3xl font-black text-amber-600 dark:text-amber-400 mt-2">{(analyticsOverview?.totalPageViews || 0).toLocaleString()}</div>
-                    </div>
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[
+                      { label: '방문 세션', value: (analyticsOverview?.totalSessions || 0).toLocaleString(), icon: 'play_circle', color: 'cyan', bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400', iconBg: 'bg-cyan-500/15' },
+                      { label: '고유 방문자', value: (analyticsOverview?.uniqueVisitors || 0).toLocaleString(), icon: 'people', color: 'indigo', bg: 'bg-indigo-500/10', text: 'text-indigo-600 dark:text-indigo-400', iconBg: 'bg-indigo-500/15' },
+                      { label: '평균 체류시간', value: formatDuration(analyticsOverview?.avgDurationSec || 0), icon: 'schedule', color: 'emerald', bg: 'bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400', iconBg: 'bg-emerald-500/15' },
+                      { label: '총 페이지뷰', value: (analyticsOverview?.totalPageViews || 0).toLocaleString(), icon: 'visibility', color: 'amber', bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-500/15' },
+                    ].map((card) => (
+                      <div key={card.label} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 relative overflow-hidden">
+                        <div className={`absolute top-0 right-0 w-20 h-20 ${card.bg} rounded-bl-[40px] flex items-start justify-end p-2.5`}>
+                          <span className={`material-symbols-outlined text-xl ${card.text} opacity-60`}>{card.icon}</span>
+                        </div>
+                        <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">{card.label}</div>
+                        <div className={`text-2xl md:text-3xl font-black ${card.text} mt-2`}>{card.value}</div>
+                      </div>
+                    ))}
                   </div>
 
+                  {/* Daily Trend Chart */}
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span className="material-symbols-outlined text-cyan-500 text-lg">trending_up</span>
+                        일자별 추이
+                      </h4>
+                      <span className="text-[11px] text-slate-400 font-medium">최근 {analyticsDays}일</span>
+                    </div>
+                    {analyticsOverview?.dailyVisitors?.length ? (
+                      <div className="h-[280px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={analyticsOverview.dailyVisitors.map(d => ({ ...d, dateLabel: d.date.slice(5) }))} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="colorVisitors" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="colorSessions" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="colorPageViews" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-slate-200 dark:text-slate-700" />
+                            <XAxis dataKey="dateLabel" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                            <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: 'rgba(15,23,42,0.9)', border: 'none', borderRadius: '12px', fontSize: '12px', color: '#fff' }}
+                              labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
+                              formatter={(value: number, name: string) => {
+                                const nameMap: Record<string, string> = { visitors: '방문자', sessions: '세션', pageViews: '페이지뷰' };
+                                return [value.toLocaleString(), nameMap[name] || name];
+                              }}
+                            />
+                            <Area type="monotone" dataKey="visitors" stroke="#06b6d4" strokeWidth={2.5} fill="url(#colorVisitors)" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: '#06b6d4' }} />
+                            <Area type="monotone" dataKey="sessions" stroke="#6366f1" strokeWidth={2} fill="url(#colorSessions)" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: '#6366f1' }} />
+                            <Area type="monotone" dataKey="pageViews" stroke="#f59e0b" strokeWidth={2} fill="url(#colorPageViews)" dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: '#f59e0b' }} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-400 py-12 text-center">일자별 데이터 없음</div>
+                    )}
+                    {analyticsOverview?.dailyVisitors?.length ? (
+                      <div className="flex items-center justify-center gap-6 mt-3 text-[11px] text-slate-500">
+                        <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-cyan-500"></span>방문자</div>
+                        <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-indigo-500"></span>세션</div>
+                        <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-amber-500"></span>페이지뷰</div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* Bottom two cards */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Top Pages with progress bars */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-black text-slate-900 dark:text-white">상위 페이지</h4>
-                        <span className="text-[11px] text-slate-500">최근 {analyticsDays}일</span>
+                        <h4 className="font-black text-slate-900 dark:text-white flex items-center gap-2">
+                          <span className="material-symbols-outlined text-indigo-500 text-lg">bar_chart</span>
+                          상위 페이지
+                        </h4>
+                        <span className="text-[11px] text-slate-400 font-medium">최근 {analyticsDays}일</span>
                       </div>
                       {analyticsOverview?.topPages?.length ? (
-                        <div className="space-y-2">
-                          {analyticsOverview.topPages.map((item) => (
-                            <div key={item.page} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
-                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate pr-2">{item.page}</span>
-                              <span className="text-xs font-black text-cyan-600 dark:text-cyan-400">{item.views.toLocaleString()}회</span>
-                            </div>
-                          ))}
+                        <div className="space-y-3">
+                          {(() => {
+                            const maxViews = Math.max(...(analyticsOverview?.topPages || []).map(p => p.views), 1);
+                            return analyticsOverview!.topPages.map((item, i) => (
+                              <div key={item.page}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-black text-slate-300 w-5 text-right">{i + 1}</span>
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{mapPageName(item.page)}</span>
+                                  </div>
+                                  <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{item.views.toLocaleString()}</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full transition-all duration-700"
+                                    style={{ width: `${(item.views / maxViews) * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ));
+                          })()}
                         </div>
                       ) : (
-                        <div className="text-sm text-slate-400 py-6 text-center">데이터 없음</div>
+                        <div className="text-sm text-slate-400 py-8 text-center">데이터 없음</div>
                       )}
                     </div>
 
+                    {/* Visitor Composition - Donut Chart */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-black text-slate-900 dark:text-white">방문자 구성</h4>
-                        <span className="text-[11px] text-slate-500">최근 {analyticsDays}일</span>
+                        <h4 className="font-black text-slate-900 dark:text-white flex items-center gap-2">
+                          <span className="material-symbols-outlined text-emerald-500 text-lg">donut_large</span>
+                          방문자 구성
+                        </h4>
+                        <span className="text-[11px] text-slate-400 font-medium">최근 {analyticsDays}일</span>
                       </div>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
-                          <span className="text-xs font-bold text-slate-600">로그인 사용자</span>
-                          <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{(analyticsOverview?.loggedInVisitors || 0).toLocaleString()}</span>
+                      {(analyticsOverview?.loggedInVisitors || 0) + (analyticsOverview?.guestVisitors || 0) > 0 ? (
+                        <div className="flex items-center gap-4">
+                          <div className="w-[140px] h-[140px] flex-shrink-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={[
+                                    { name: '로그인', value: analyticsOverview?.loggedInVisitors || 0 },
+                                    { name: '게스트', value: analyticsOverview?.guestVisitors || 0 },
+                                  ]}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={40}
+                                  outerRadius={60}
+                                  paddingAngle={4}
+                                  dataKey="value"
+                                  stroke="none"
+                                >
+                                  <Cell fill="#6366f1" />
+                                  <Cell fill="#f59e0b" />
+                                </Pie>
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-center justify-between bg-indigo-50 dark:bg-indigo-500/10 rounded-xl px-4 py-3 border border-indigo-100 dark:border-indigo-500/20">
+                              <div className="flex items-center gap-2">
+                                <span className="size-2.5 rounded-full bg-indigo-500"></span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">로그인 사용자</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{(analyticsOverview?.loggedInVisitors || 0).toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">
+                                  ({((analyticsOverview?.loggedInVisitors || 0) / Math.max((analyticsOverview?.uniqueVisitors || 1), 1) * 100).toFixed(0)}%)
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 rounded-xl px-4 py-3 border border-amber-100 dark:border-amber-500/20">
+                              <div className="flex items-center gap-2">
+                                <span className="size-2.5 rounded-full bg-amber-500"></span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">게스트/익명</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-black text-amber-600 dark:text-amber-400">{(analyticsOverview?.guestVisitors || 0).toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">
+                                  ({((analyticsOverview?.guestVisitors || 0) / Math.max((analyticsOverview?.uniqueVisitors || 1), 1) * 100).toFixed(0)}%)
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
-                          <span className="text-xs font-bold text-slate-600">게스트/익명</span>
-                          <span className="text-sm font-black text-amber-600 dark:text-amber-400">{(analyticsOverview?.guestVisitors || 0).toLocaleString()}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 pt-1">
-                          고유 방문자 = 로그인 사용자 + 익명 방문자(브라우저 단위)
-                        </div>
-                      </div>
+                      ) : (
+                        <div className="text-sm text-slate-400 py-8 text-center">데이터 없음</div>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
-                    <h4 className="font-black text-slate-900 dark:text-white mb-4">일자별 추이</h4>
-                    {analyticsOverview?.dailyVisitors?.length ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                          <thead className="text-[11px] uppercase text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                            <tr>
-                              <th className="py-2">날짜</th>
-                              <th className="py-2 text-right">고유 방문자</th>
-                              <th className="py-2 text-right">세션</th>
-                              <th className="py-2 text-right">페이지뷰</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {analyticsOverview.dailyVisitors.map((d) => (
-                              <tr key={d.date} className="border-b border-slate-100 dark:border-slate-800">
-                                <td className="py-2 font-mono text-xs">{d.date}</td>
-                                <td className="py-2 text-right font-bold">{d.visitors.toLocaleString()}</td>
-                                <td className="py-2 text-right">{d.sessions.toLocaleString()}</td>
-                                <td className="py-2 text-right">{d.pageViews.toLocaleString()}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-slate-400 py-6 text-center">일자별 데이터 없음</div>
-                    )}
                   </div>
                 </>
               )}

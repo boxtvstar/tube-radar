@@ -42,7 +42,9 @@ import {
   subscribeToUsage,
   updateUsageInDb,
   getUserPreferences,
-  saveUserPreferences
+  saveUserPreferences,
+  subscribeToAnnouncement,
+  Announcement
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
 import type { AutoDetectResult } from './services/youtubeService';
@@ -861,6 +863,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   // Notice State
   const [notice, setNotice] = useState<{ id?: string; title?: string; content: string; isActive: boolean; imageUrl?: string } | null>(null);
   const [isNoticeDismissed, setIsNoticeDismissed] = useState(false);
+
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const unreadCount = notifications.filter(n => !n.isRead).length;
   const notifRef = useRef<HTMLDivElement>(null);
@@ -1271,6 +1274,11 @@ export default function App() {
     }
   });
   const [isSyncNoticeDismissed, setIsSyncNoticeDismissed] = useState(false);
+
+  // One-line Announcement Banner
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [isAnnouncementDismissed, setIsAnnouncementDismissed] = useState(false);
+
   const importInputRef = useRef<HTMLInputElement>(null);
   const [pendingImportData, setPendingImportData] = useState<{ savedChannels?: SavedChannel[]; groups?: ChannelGroup[] } | null>(null);
   const [importModeModal, setImportModeModal] = useState(false);
@@ -1616,6 +1624,18 @@ export default function App() {
     const handleQuotaExceeded = () => setIsApiQuotaExceeded(true);
     window.addEventListener('yt-api-quota-exceeded', handleQuotaExceeded);
     return () => window.removeEventListener('yt-api-quota-exceeded', handleQuotaExceeded);
+  }, []);
+
+  // One-line Announcement real-time listener
+  useEffect(() => {
+    const unsub = subscribeToAnnouncement((a) => {
+      setAnnouncement(a);
+      if (a) {
+        const dismissedKey = localStorage.getItem('tubeRadar_announcement_dismissed');
+        setIsAnnouncementDismissed(dismissedKey === String(a.updatedAt));
+      }
+    });
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -3335,9 +3355,35 @@ export default function App() {
             setIsMaterialsExplorerMode(false);
           }}
         />
-        
+
+        {/* One-line Announcement Banner */}
+        {announcement && announcement.isActive && announcement.text && !isAnnouncementDismissed && (
+          <div className="relative bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white overflow-hidden">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M0%2010h20M10%200v20%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.05)%22%20stroke-width%3D%221%22%2F%3E%3C%2Fsvg%3E')] opacity-50"></div>
+            <div className="relative flex items-center justify-center gap-3 px-4 py-2 min-h-[36px]">
+              <span className="material-symbols-outlined text-sm text-yellow-300 animate-pulse">campaign</span>
+              <p className="text-[11px] md:text-xs font-bold tracking-tight text-center">
+                {announcement.link ? (
+                  <a href={announcement.link} target="_blank" rel="noopener noreferrer" className="hover:underline underline-offset-2">{announcement.text}</a>
+                ) : (
+                  announcement.text
+                )}
+              </p>
+              <button
+                onClick={() => {
+                  setIsAnnouncementDismissed(true);
+                  localStorage.setItem('tubeRadar_announcement_dismissed', String(announcement.updatedAt));
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm text-white/70 hover:text-white">close</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {isMyPageOpen && user && (
-          <MyPageModal 
+          <MyPageModal
             onClose={() => setIsMyPageOpen(false)}
             initialTab={myPageInitialTab}
             user={user}

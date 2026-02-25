@@ -649,3 +649,38 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
     dailyVisitors
   };
 };
+
+// ─── One-line Announcement ───────────────────────────────────
+export interface Announcement {
+  text: string;
+  isActive: boolean;
+  link?: string;
+  updatedAt: number;
+}
+
+export const getAnnouncement = async (): Promise<Announcement | null> => {
+  try {
+    const snap = await getDoc(doc(db, 'notices', '_announcement'));
+    if (!snap.exists()) return null;
+    return snap.data() as Announcement;
+  } catch (e) {
+    console.error('getAnnouncement error', e);
+    return null;
+  }
+};
+
+export const saveAnnouncement = async (data: Omit<Announcement, 'updatedAt'>): Promise<void> => {
+  await setDoc(doc(db, 'notices', '_announcement'), {
+    ...data,
+    updatedAt: Date.now()
+  }, { merge: true });
+};
+
+export const subscribeToAnnouncement = (callback: (a: Announcement | null) => void) => {
+  return onSnapshot(doc(db, 'notices', '_announcement'), (snap) => {
+    if (!snap.exists()) { callback(null); return; }
+    callback(snap.data() as Announcement);
+  }, (error) => {
+    console.error('Announcement listener error:', error);
+  });
+};
