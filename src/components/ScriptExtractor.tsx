@@ -75,8 +75,12 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         console.warn('YouTube API Info fetch failed');
       }
 
-      // 2. Python 서버 자막 추출 API 호출 (youtube-transcript-api 기반)
-      const transcriptRes = await fetch(`/api/transcript?v=${videoId}&lang=ko,en`);
+      // 2. 자막 추출 API 호출 (Cloudflare Worker 또는 로컬 Python 서버)
+      const transcriptApiUrl = import.meta.env.VITE_TRANSCRIPT_API_URL;
+      const transcriptUrl = transcriptApiUrl
+        ? `${transcriptApiUrl}?v=${videoId}&lang=ko,en`
+        : `/api/transcript?v=${videoId}&lang=ko,en`;
+      const transcriptRes = await fetch(transcriptUrl);
 
       if (!transcriptRes.ok) {
         throw new Error(`대본 추출 서비스 연결 실패 (상태코드: ${transcriptRes.status})`);
