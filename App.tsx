@@ -2113,8 +2113,8 @@ export default function App() {
     let targetChannelIds: string[] = [];
 
     try {
-      // Clear previous videos to prevent stale/mixed data from different groups
-      setVideos([]);
+      // Keep previous videos visible until new data arrives (prevents empty flash)
+      // setVideos([]) is deferred — only clear after successful fetch
 
       if (isMyMode) {
         // Use override if available (e.g. during update), otherwise use current group
@@ -2148,7 +2148,9 @@ export default function App() {
       const useSearch = false;
 
       // 포인트 사전 체크 — 부족하면 API 호출 차단
+      // 실제 처리되는 채널 수 기준 (50개 제한 적용됨)
       const activeCount = isMyMode ? Math.min(targetChannelIds.length, 50) : 0;
+      console.log(`📊 채널 수: ${targetChannelIds.length} → 실제 처리: ${activeCount}`);
       const isTrendMode = isNationalTrendMode || isCategoryTrendMode;
       const baseCost = isMyMode
         ? activeCount + Math.ceil(activeCount * 50 / 50) + Math.ceil(activeCount / 50)
@@ -2157,8 +2159,9 @@ export default function App() {
       const estimatedCost = isTrendMode ? baseCost * 10 : baseCost;
       await preCheckQuota(estimatedCost, role);
 
-      // 15 seconds timeout to prevent infinite loading
-      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 60000));
+      // 채널 수에 따라 타임아웃 동적 조정 (많은 채널 = 더 긴 대기)
+      const timeoutMs = isMyMode ? Math.max(60000, targetChannelIds.length * 2500) : 60000;
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), timeoutMs));
 
       // Pass query as 2nd arg (keywords), categoryId, force, useSearchApi, AND savedChannels
       if (isMyMode && targetChannelIds.length > 0) {
@@ -2269,8 +2272,11 @@ export default function App() {
         }
       }
 
-      setVideos(data);
-      setVisibleVideoCount(20); // Reset pagination when new data loads
+      // 데이터가 있을 때만 영상 목록 교체 (빈 결과로 기존 데이터를 지우지 않음)
+      if (data && data.length > 0) {
+        setVideos(data);
+        setVisibleVideoCount(20);
+      }
       setHasPendingSync(false); // Mark sync as complete
       setIsSyncNoticeDismissed(false);
 
@@ -2350,7 +2356,9 @@ export default function App() {
             message: "입력하신 API 키의 일일 할당량을 모두 사용했습니다.\n매일 오후 5시(KST)에 자동으로 충전됩니다.\n\n* 사이트 포인트와 별개로, YouTube에서 제공하는 실제 API 할당량이 소진된 상태입니다.",
             type: 'error'
           });
-        } else if (e.message !== "TIMEOUT") {
+        } else if (e.message === "TIMEOUT") {
+          setApiError("채널 수가 많아 데이터 로딩 시간이 초과되었습니다. 그룹을 나누거나 다시 시도해주세요.");
+        } else {
           let displayError = e.message || "Unknown Error";
           if (!displayError.toLowerCase().includes("quota")) {
              setApiError(displayError);

@@ -370,15 +370,16 @@ export const fetchRealVideos = async (
       // 1. Optimized Fetch: Get recent videos from playlists (Fast)
       // 1. Optimized Fetch: Get recent videos from playlists (Fast)
       // FIX: Batch these requests to avoid hitting QPS (Queries Per Second) limits which trigger 403
-      // Balanced batch size for speed + safety
-      const BATCH_SIZE = 3;
-      
       // FIX: Hard limit to prevent massive quota burn for 'Unassigned' or 'All' groups with too many channels
       let activeChannelIds = channelIds;
       if (channelIds.length > 50) {
           console.warn(`[Quota Protection] Channel count ${channelIds.length} exceeds safety limit. Processing top 50 only.`);
           activeChannelIds = channelIds.slice(0, 50);
       }
+
+      // 채널 수에 따라 배치 크기 & 딜레이 동적 조정 (QPS 제한 방지)
+      const BATCH_SIZE = activeChannelIds.length > 30 ? 2 : 3;
+      const BASE_DELAY = activeChannelIds.length > 30 ? 400 : 250;
       
       // ✅ 핵심 최적화: 기간에 따라 가져올 영상 개수 동적 조정
       // 7일 × 50개 채널 = 너무 많은 영상 → API 호출 폭발!
@@ -393,6 +394,9 @@ export const fetchRealVideos = async (
       savedChannels.forEach(ch => channelNameMap.set(ch.id, ch.title));
       let processedCount = 0;
 
+      let rateLimitHits = 0;
+      const retryQueue: string[] = []; // rate limit 실패한 채널 재시도 큐
+
       for (let i = 0; i < activeChannelIds.length; i += BATCH_SIZE) {
         const chunk = activeChannelIds.slice(i, i + BATCH_SIZE);
         const chunkPromises = chunk.map(async (cid) => {
@@ -401,33 +405,35 @@ export const fetchRealVideos = async (
             const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=${maxResultsPerChannel}&key=${apiKey}`);
             trackUsage(apiKey, 'list', 1);
             const data = await res.json();
-            
-            // ⚠️ 모든 에러를 조용히 무시 - 일부 실패해도 나머지 계속 진행
+
             if (data.error) {
                const reason = data.error.errors?.[0]?.reason;
                const code = data.error.code;
-               
-               // 실제 quotaExceeded → throw하여 상위에서 감지
+
                if (code === 403 && reason === 'quotaExceeded') {
                  console.warn(`⚠️ API Quota 초과 감지: ${cid}`);
                  markQuotaExceeded(apiKey);
                  throw new Error("QUOTA_EXCEEDED");
                }
-               
-               // Rate Limit, 404, 기타 모든 에러는 조용히 스킵
+
+               // Rate Limit → 재시도 큐에 추가
+               if (code === 403) {
+                 rateLimitHits++;
+                 retryQueue.push(cid);
+                 console.warn(`⚠️ Rate limit (${cid}), 재시도 큐 추가 (총 ${rateLimitHits}회)`);
+               }
+
                return [];
             }
             return data.items || [];
           } catch (e: any) {
             if (e.message === 'QUOTA_EXCEEDED') throw e;
-            // 네트워크 에러 등 기타 예외는 조용히 처리
+            console.warn(`채널 조회 실패 (${cid}):`, e.message);
             return [];
           }
         });
 
-        // Wait for this batch to finish before starting next
         const chunkResults = await Promise.allSettled(chunkPromises);
-        // QUOTA_EXCEEDED가 발생했으면 재throw
         for (const r of chunkResults) {
           if (r.status === 'rejected' && r.reason?.message === 'QUOTA_EXCEEDED') {
             throw new Error("QUOTA_EXCEEDED");
@@ -436,14 +442,39 @@ export const fetchRealVideos = async (
         playlistResults.push(...chunkResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<any>).value));
         processedCount += chunk.length;
 
-        // Report progress
         if (onProgress) {
           const lastName = channelNameMap.get(chunk[chunk.length - 1]) || chunk[chunk.length - 1];
           onProgress(processedCount, activeChannelIds.length, lastName);
         }
 
-        // Balanced delay between batches (300ms)
-        await new Promise(r => setTimeout(r, 300));
+        // Rate limit 발생 시 딜레이 자동 증가
+        const batchDelay = Math.min(BASE_DELAY + rateLimitHits * 150, 1200);
+        await new Promise(r => setTimeout(r, batchDelay));
+      }
+
+      // Rate limit 실패 채널 재시도 (최대 5개만, 빠르게)
+      if (retryQueue.length > 0) {
+        const retryTargets = retryQueue.slice(0, 5);
+        console.log(`🔄 Rate limit 재시도: ${retryTargets.length}/${retryQueue.length}개 채널`);
+        if (onProgress) {
+          onProgress(processedCount, activeChannelIds.length, `${retryTargets.length}개 채널 재시도 중...`);
+        }
+        await new Promise(r => setTimeout(r, 1000));
+        for (const cid of retryTargets) {
+          try {
+            const uploadsPlaylistId = cid.replace(/^UC/, 'UU');
+            const res = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=${maxResultsPerChannel}&key=${apiKey}`);
+            trackUsage(apiKey, 'list', 1);
+            const data = await res.json();
+            if (!data.error && data.items) {
+              playlistResults.push(data.items);
+              console.log(`✅ 재시도 성공: ${cid} (${data.items.length}개)`);
+            }
+            await new Promise(r => setTimeout(r, 500));
+          } catch (e: any) {
+            if (e.message === 'QUOTA_EXCEEDED') throw e;
+          }
+        }
       }
       const allSnippetItems = playlistResults.flat();
 
@@ -745,7 +776,10 @@ export const fetchRealVideos = async (
 
 
     videos.sort((a, b) => parseFloat(b.viralScore) - parseFloat(a.viralScore));
-    localStorage.setItem(cacheKey, JSON.stringify({ data: videos, timestamp: Date.now() }));
+    // 빈 결과로 기존 캐시를 덮어쓰지 않음
+    if (videos.length > 0) {
+      localStorage.setItem(cacheKey, JSON.stringify({ data: videos, timestamp: Date.now() }));
+    }
     return videos;
   } catch (error: any) {
     throw error;
