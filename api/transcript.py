@@ -1,11 +1,12 @@
 """
 Vercel Serverless Function: YouTube 자막 추출
-youtube-transcript-api 기반
+youtube-transcript-api 기반 + Webshare 프록시 지원
 """
 
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json
+import os
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
@@ -13,6 +14,34 @@ from youtube_transcript_api._errors import (
     NoTranscriptFound,
     VideoUnavailable,
 )
+
+
+def get_ytt_api():
+    """프록시 설정이 있으면 프록시 사용, 없으면 직접 연결"""
+    proxy_user = os.environ.get("WEBSHARE_PROXY_USER")
+    proxy_pass = os.environ.get("WEBSHARE_PROXY_PASS")
+
+    if proxy_user and proxy_pass:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+        return YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=proxy_user,
+                proxy_password=proxy_pass,
+            )
+        )
+
+    # Generic proxy fallback
+    proxy_url = os.environ.get("PROXY_URL")
+    if proxy_url:
+        from youtube_transcript_api.proxies import GenericProxyConfig
+        return YouTubeTranscriptApi(
+            proxy_config=GenericProxyConfig(
+                https_url=proxy_url,
+                http_url=proxy_url,
+            )
+        )
+
+    return YouTubeTranscriptApi()
 
 
 def extract_transcript(video_id: str, lang_priority: list[str] | None = None) -> dict:
@@ -30,7 +59,7 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
     }
 
     try:
-        ytt_api = YouTubeTranscriptApi()
+        ytt_api = get_ytt_api()
         transcript_list = ytt_api.list(video_id)
 
         transcript = None
