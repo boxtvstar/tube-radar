@@ -1,6 +1,6 @@
 """
 YouTube 자막 추출 모듈
-youtube-transcript-api를 사용하여 영상 자막을 [{start, duration, text}] 형태로 반환
+youtube-transcript-api v1.2+ 신규 API 사용
 """
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -12,27 +12,6 @@ from youtube_transcript_api._errors import (
 
 
 def extract_transcript(video_id: str, lang_priority: list[str] | None = None) -> dict:
-    """
-    YouTube 영상 ID로부터 자막을 추출한다.
-
-    Args:
-        video_id: YouTube 영상 ID (11자리)
-        lang_priority: 언어 우선순위 리스트 (기본: ['ko', 'en'])
-
-    Returns:
-        {
-            "success": True/False,
-            "video_id": str,
-            "language": str,          # 실제 추출된 언어 코드
-            "is_generated": bool,     # 자동 생성 자막 여부
-            "segments": [             # 자막 세그먼트 배열
-                {"start": float, "duration": float, "text": str},
-                ...
-            ],
-            "full_text": str,         # 전체 텍스트 (줄바꿈 연결)
-            "error": str | None
-        }
-    """
     if lang_priority is None:
         lang_priority = ["ko", "en"]
 
@@ -47,12 +26,12 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
     }
 
     try:
-        # 1. 사용 가능한 자막 목록 조회
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
 
         transcript = None
 
-        # 2. 수동 자막(직접 입력) 우선 탐색
+        # 1. 수동 자막 우선 탐색
         for lang in lang_priority:
             try:
                 transcript = transcript_list.find_manually_created_transcript([lang])
@@ -61,7 +40,7 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
             except NoTranscriptFound:
                 continue
 
-        # 3. 수동 자막 없으면 자동 생성 자막 탐색
+        # 2. 자동 생성 자막 탐색
         if transcript is None:
             for lang in lang_priority:
                 try:
@@ -71,10 +50,9 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
                 except NoTranscriptFound:
                     continue
 
-        # 4. 우선순위 언어 모두 없으면 아무 자막이나 가져오기
+        # 3. 아무 자막이나 가져오기
         if transcript is None:
             try:
-                # 수동 자막 중 아무거나
                 for t in transcript_list:
                     transcript = t
                     result["is_generated"] = t.is_generated
@@ -86,7 +64,7 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
             result["error"] = "이 영상에 사용 가능한 자막이 없습니다."
             return result
 
-        # 5. 자막 데이터 fetch
+        # 4. 자막 데이터 fetch
         segments = transcript.fetch()
         result["language"] = transcript.language_code
         result["segments"] = [
@@ -113,9 +91,9 @@ def extract_transcript(video_id: str, lang_priority: list[str] | None = None) ->
 
 
 def list_available_languages(video_id: str) -> dict:
-    """영상에 사용 가능한 자막 언어 목록을 반환"""
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
         languages = []
         for t in transcript_list:
             languages.append({
@@ -128,7 +106,6 @@ def list_available_languages(video_id: str) -> dict:
         return {"success": False, "video_id": video_id, "languages": [], "error": str(e)}
 
 
-# CLI 테스트용
 if __name__ == "__main__":
     import sys
     import json

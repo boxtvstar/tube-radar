@@ -55,9 +55,8 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
     setTranscript('');
     setVideoInfo(null);
 
-    const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || '';
     let fetchedTitle = '';
-    
+
     try {
       // 1. 기본 정보 호출 (선택 사항)
       try {
@@ -76,101 +75,35 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         console.warn('YouTube API Info fetch failed');
       }
 
-      // 2. pintostudio/youtube-transcript-scraper 호출
-      const apifyUrl = `https://api.apify.com/v2/acts/pintostudio~youtube-transcript-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`;
-      
-      const payload = {
-        "videoUrl": url,
-        "targetLanguage": "ko" // 기본은 한국어 요청 (없으면 스크래퍼가 기본 자막 시도)
-      };
+      // 2. Python 서버 자막 추출 API 호출 (youtube-transcript-api 기반)
+      const transcriptRes = await fetch(`/api/transcript?v=${videoId}&lang=ko,en`);
 
-      const response = await fetch(apifyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`대본 추출 서비스 연결 실패 (상태코드: ${response.status})`);
+      if (!transcriptRes.ok) {
+        throw new Error(`대본 추출 서비스 연결 실패 (상태코드: ${transcriptRes.status})`);
       }
 
-      const results = await response.json();
-      console.log('Apify Raw Results:', results);
+      const result = await transcriptRes.json();
+      console.log('Transcript API Result:', result);
 
-      if (!results || !Array.isArray(results) || results.length === 0) {
-        throw new Error('분석 결과가 비어있습니다. 자막이 있는 영상인지 확인해주세요.');
+      if (!result.success) {
+        throw new Error(result.error || '자막 추출에 실패했습니다.');
       }
 
-      let transcriptData: any[] = [];
+      const rawText = result.full_text || '';
 
-      // 구조 1: 첫 번째 아이템 내부에 배열이 있는 경우 (문서 공식 구조)
-      if (results[0].transcript && Array.isArray(results[0].transcript)) {
-        transcriptData = results[0].transcript;
-      } else if (results[0].searchResult && Array.isArray(results[0].searchResult)) {
-        transcriptData = results[0].searchResult;
-      } 
-      // 구조 2: 결과 배열 자체가 자막 조각(segments)들인 경우
-      else if (results.some(item => item.text || item.content)) {
-        transcriptData = results;
-      }
-      // 구조 3: 그 외 다른 필드에 배열이 숨어있는 경우 탐색
-      else {
-        const itemWithArray = results.find(item => 
-          Object.values(item).some(val => Array.isArray(val) && val.length > 0)
-        );
-        if (itemWithArray) {
-          const foundArray = Object.values(itemWithArray).find(val => Array.isArray(val)) as any[];
-          transcriptData = foundArray;
-        }
-      }
+      if (rawText.length > 5) {
+        const formattedText = rawText
+          .replace(/([.?!,])\s*/g, '$1\n')
+          .split('\n')
+          .map((line: string) => line.trim())
+          .filter((line: string) => line.length > 0)
+          .join('\n');
+        setTranscript(formattedText);
 
-      if (transcriptData && transcriptData.length > 0) {
-        const rawText = transcriptData
-          .map((item: any) => item.text || item.content || item.transcript || '')
-          .filter(t => typeof t === 'string' && t.trim().length > 0)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        if (rawText.length > 5) {
-          // 마침표(.), 콤마(,), 물음표(?), 느낌표(!) 뒤에 줄바꿈 추가하여 가독성 향상
-          const formattedText = rawText
-            .replace(/([.?!,])\s*/g, '$1\n')
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .join('\n');
-          setTranscript(formattedText);
-          
-          // 포인트 차감 적용
-          onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
-        } else {
-          throw new Error('추출된 텍스트 내용이 너무 짧거나 유효하지 않습니다.');
-        }
+        // 포인트 차감 적용
+        onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
       } else {
-        // 비상 수단: 전체 결과에서 텍스트 데이터 긁어모으기
-        const emergencyRaw = results
-          .map((item: any) => item.text || item.content || JSON.stringify(item))
-          .join(' ')
-          .replace(/<[^>]*>/g, '')
-          .replace(/\{.*\}/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-          
-        if (emergencyRaw.length > 100) {
-           const formattedEmergency = emergencyRaw
-             .replace(/([.?!,])\s*/g, '$1\n')
-             .split('\n')
-             .map(line => line.trim())
-             .filter(line => line.length > 0)
-             .join('\n');
-           setTranscript(formattedEmergency);
-           
-           // 포인트 차감 적용
-           onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
-        } else {
-           throw new Error('이 영상에서 대본 데이터를 파싱할 수 없습니다. 자막이 비활성화된 영상일 수 있습니다.');
-        }
+        throw new Error('추출된 텍스트 내용이 너무 짧거나 유효하지 않습니다.');
       }
 
     } catch (err: any) {
