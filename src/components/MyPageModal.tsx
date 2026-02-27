@@ -254,6 +254,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
 
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
 
+  const [geminiKey, setGeminiKey] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('gemini_api_key') || localStorage.getItem('admin_gemini_key') || '';
+    if (saved) setGeminiKey(saved);
+  }, []);
+
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
   const usagePercent = Math.min(100, Math.max(0, ((usage.total - usage.used) / usage.total) * 100));
 
@@ -461,6 +468,65 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                               <span className="material-symbols-outlined text-[14px]">play_circle</span>
                               API 설정하는 법
                            </button>
+                        </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Gemini AI Settings Section */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm relative overflow-hidden">
+                   {/* Background decoration */}
+                   <div className="absolute top-0 right-0 p-8 opacity-5 dark:opacity-0 pointer-events-none">
+                     <span className="material-symbols-outlined text-9xl">smart_toy</span>
+                   </div>
+
+                   <div className="flex items-center justify-between mb-6 relative z-10">
+                    <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <span className="material-symbols-outlined text-lg hidden md:block">smart_toy</span>
+                      Gemini AI 설정
+                    </h4>
+                    {/* Status Badge */}
+                    <div className="flex items-center gap-2">
+                      {geminiKey && <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>Connected</span>}
+                      {!geminiKey && <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-black uppercase tracking-wide">Not Set</span>}
+                    </div>
+                  </div>
+
+                  <div className="relative z-10">
+                    <div className="relative group">
+                      <input
+                        type="password"
+                        value={geminiKey}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setGeminiKey(val);
+                          localStorage.setItem('gemini_api_key', val);
+                        }}
+                        disabled={role === 'pending' || role === 'guest'}
+                        placeholder={role === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "Google Gemini API Key 입력..."}
+                        className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
+                          role === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
+                          geminiKey ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
+                          'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
+                        }`}
+                      />
+                      <span className={`absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined transition-colors ${
+                        geminiKey ? 'text-emerald-500' : 'text-slate-400 group-focus-within:text-indigo-500'
+                      }`}>smart_toy</span>
+
+                      {geminiKey && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
+                    </div>
+                    {role === 'pending' || role === 'guest' ? (
+                        <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
+                          <span className="material-symbols-outlined text-[14px] mt-0.5">lock</span>
+                          <span>API 키 입력은 관리자 승인 후 가능합니다.</span>
+                        </p>
+                    ) : (
+                        <div className="flex justify-between items-start mt-3 px-1">
+                           <p className="text-[11px] text-slate-400 flex items-start gap-1.5 leading-snug">
+                             <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">info</span>
+                             <span>Gemini API 키를 입력하면 대본 번역, 요약 등 AI 기능을 사용할 수 있습니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
+                           </p>
                         </div>
                     )}
                   </div>
