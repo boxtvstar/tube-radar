@@ -1,19 +1,14 @@
 /**
  * Cloudflare Worker: YouTube 자막 추출
- *
- * Cloudflare 대시보드 → Workers & Pages → Create → "transcript-api" →
- * 이 코드 붙여넣기 → Deploy
+ * InnerTube API 기반 (클라우드 IP에서도 동작)
  */
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // CORS preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: corsHeaders(),
-      });
+      return new Response(null, { headers: corsHeaders() });
     }
 
     const videoId = url.searchParams.get("v");
@@ -37,6 +32,8 @@ export default {
   },
 };
 
+const UA = "com.google.android.youtube/19.29.37 (Linux; U; Android 14)";
+
 async function extractTranscript(videoId, langPriority) {
   const result = {
     success: false,
@@ -48,58 +45,46 @@ async function extractTranscript(videoId, langPriority) {
     error: null,
   };
 
-  // 1. YouTube 비디오 페이지 가져오기
-  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": "ko,en;q=0.9",
-    },
-  });
+  // 1. InnerTube API로 자막 트랙 정보 가져오기
+  const playerRes = await fetch(
+    "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": UA,
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: "ANDROID",
+            clientVersion: "19.29.37",
+            androidSdkVersion: 34,
+            hl: "ko",
+            gl: "KR",
+          },
+        },
+        videoId: videoId,
+      }),
+    }
+  );
 
-  if (!pageRes.ok) {
-    result.error = `YouTube 페이지 로딩 실패 (${pageRes.status})`;
+  if (!playerRes.ok) {
+    result.error = `YouTube API 요청 실패 (${playerRes.status})`;
     return result;
   }
 
-  const html = await pageRes.text();
-
-  // 2. ytInitialPlayerResponse에서 자막 트랙 추출
-  let playerResponse;
-  try {
-    const startMarker = 'ytInitialPlayerResponse = ';
-    const startIdx = html.indexOf(startMarker);
-    if (startIdx === -1) {
-      result.error = "이 영상에서 자막 정보를 찾을 수 없습니다.";
-      return result;
-    }
-    const jsonStart = startIdx + startMarker.length;
-    // 중괄호 카운터로 정확한 JSON 끝 위치 찾기
-    let depth = 0;
-    let jsonEnd = jsonStart;
-    for (let i = jsonStart; i < html.length; i++) {
-      if (html[i] === '{') depth++;
-      else if (html[i] === '}') depth--;
-      if (depth === 0) {
-        jsonEnd = i + 1;
-        break;
-      }
-    }
-    playerResponse = JSON.parse(html.substring(jsonStart, jsonEnd));
-  } catch {
-    result.error = "자막 데이터 파싱 실패";
-    return result;
-  }
+  const playerData = await playerRes.json();
 
   const captionTracks =
-    playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
 
   if (!captionTracks || captionTracks.length === 0) {
     result.error = "이 영상에 사용 가능한 자막이 없습니다.";
     return result;
   }
 
-  // 3. 언어 우선순위에 따라 자막 트랙 선택
+  // 2. 언어 우선순위에 따라 자막 트랙 선택
   let selectedTrack = null;
 
   // 수동 자막 우선 (kind !== "asr")
@@ -134,17 +119,11 @@ async function extractTranscript(videoId, langPriority) {
     result.is_generated = selectedTrack.kind === "asr";
   }
 
-  // 4. 자막 데이터 가져오기 (JSON 형식)
-  let captionUrl = selectedTrack.baseUrl;
-  if (!captionUrl.includes("fmt=json3")) {
-    captionUrl += (captionUrl.includes("?") ? "&" : "?") + "fmt=json3";
-  }
+  // 3. 자막 데이터 가져오기 (XML 형식 - 클라우드에서 가장 안정적)
+  const captionUrl = selectedTrack.baseUrl;
 
   const captionRes = await fetch(captionUrl, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
+    headers: { "User-Agent": UA },
   });
 
   if (!captionRes.ok) {
@@ -152,32 +131,67 @@ async function extractTranscript(videoId, langPriority) {
     return result;
   }
 
-  const captionData = await captionRes.json();
-  const events = captionData.events || [];
+  const captionText = await captionRes.text();
 
-  // 5. 세그먼트 파싱
+  if (!captionText || captionText.length < 10) {
+    result.error = "자막 데이터가 비어있습니다.";
+    return result;
+  }
+
+  result.segments = parseXml(captionText);
+
+  result.language = selectedTrack.languageCode;
+  result.full_text = result.segments.map((s) => s.text).join("\n");
+  result.success = result.segments.length > 0;
+  if (!result.success) result.error = "자막 데이터가 비어있습니다.";
+
+  return result;
+}
+
+function parseXml(xml) {
   const segments = [];
-  for (const event of events) {
-    if (!event.segs) continue;
-    const text = event.segs
-      .map((s) => s.utf8 || "")
-      .join("")
-      .trim();
-    if (!text || text === "\n") continue;
 
+  // <p t="1360" d="1680">텍스트</p> 형태 (InnerTube API)
+  const pRegex = /<p\s+t="([^"]*)"(?:\s+d="([^"]*)")?[^>]*>([\s\S]*?)<\/p>/g;
+  let match;
+  while ((match = pRegex.exec(xml)) !== null) {
+    const text = decodeXmlEntities(match[3]).trim();
+    if (!text) continue;
     segments.push({
-      start: round((event.tStartMs || 0) / 1000, 2),
-      duration: round((event.dDurationMs || 0) / 1000, 2),
+      start: round((parseFloat(match[1]) || 0) / 1000, 2),
+      duration: round((parseFloat(match[2]) || 0) / 1000, 2),
       text: text,
     });
   }
 
-  result.language = selectedTrack.languageCode;
-  result.segments = segments;
-  result.full_text = segments.map((s) => s.text).join("\n");
-  result.success = true;
+  // <text start="0.0" dur="2.5">텍스트</text> 형태 (기존 방식)
+  if (segments.length === 0) {
+    const textRegex =
+      /<text\s+start="([^"]*)"(?:\s+dur="([^"]*)")?[^>]*>([\s\S]*?)<\/text>/g;
+    while ((match = textRegex.exec(xml)) !== null) {
+      const text = decodeXmlEntities(match[3]).trim();
+      if (!text) continue;
+      segments.push({
+        start: round(parseFloat(match[1]) || 0, 2),
+        duration: round(parseFloat(match[2]) || 0, 2),
+        text: text,
+      });
+    }
+  }
 
-  return result;
+  return segments;
+}
+
+function decodeXmlEntities(str) {
+  return str
+    .replace(/<s[^>]*>/g, "")
+    .replace(/<\/s>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n/g, " ");
 }
 
 function round(num, decimals) {
