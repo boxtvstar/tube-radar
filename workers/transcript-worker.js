@@ -65,17 +65,27 @@ async function extractTranscript(videoId, langPriority) {
   const html = await pageRes.text();
 
   // 2. ytInitialPlayerResponse에서 자막 트랙 추출
-  const playerMatch = html.match(
-    /ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;\s*(?:var\s|<\/script)/s
-  );
-  if (!playerMatch) {
-    result.error = "이 영상에서 자막 정보를 찾을 수 없습니다.";
-    return result;
-  }
-
   let playerResponse;
   try {
-    playerResponse = JSON.parse(playerMatch[1]);
+    const startMarker = 'ytInitialPlayerResponse = ';
+    const startIdx = html.indexOf(startMarker);
+    if (startIdx === -1) {
+      result.error = "이 영상에서 자막 정보를 찾을 수 없습니다.";
+      return result;
+    }
+    const jsonStart = startIdx + startMarker.length;
+    // 중괄호 카운터로 정확한 JSON 끝 위치 찾기
+    let depth = 0;
+    let jsonEnd = jsonStart;
+    for (let i = jsonStart; i < html.length; i++) {
+      if (html[i] === '{') depth++;
+      else if (html[i] === '}') depth--;
+      if (depth === 0) {
+        jsonEnd = i + 1;
+        break;
+      }
+    }
+    playerResponse = JSON.parse(html.substring(jsonStart, jsonEnd));
   } catch {
     result.error = "자막 데이터 파싱 실패";
     return result;
