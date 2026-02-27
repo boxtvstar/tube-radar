@@ -109,12 +109,12 @@ export const ChannelRadar = ({ apiKey, onClose, onVideoClick, initialQuery }: Ch
 
   const addLog = (msg: string) => setLogs(prev => [...prev, msg]);
 
-  // Auto-run if initialQuery is provided
+  // Auto-run if initialQuery is provided or changes
   useEffect(() => {
     if (initialQuery) {
        runRadar(initialQuery);
     }
-  }, []);
+  }, [initialQuery]);
 
   const runRadar = async (overrideInput?: string | any) => {
     const target = (typeof overrideInput === 'string' && overrideInput) ? overrideInput : input;

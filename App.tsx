@@ -523,10 +523,9 @@ const Sidebar = ({
                    <span className="material-symbols-outlined text-[10px]">
                      {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
                    </span>
-                   GOLD
                 </span>
               </span>
-            } 
+            }
             active={isTopicMode} 
             onClick={() => {
               if (!isAdmin && userGrade !== 'gold') {
@@ -558,10 +557,9 @@ const Sidebar = ({
                    <span className="material-symbols-outlined text-[10px]">
                      {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
                    </span>
-                   GOLD
                 </span>
               </span>
-            } 
+            }
             active={isPackageMode} 
             onClick={() => {
               if (!isAdmin && userGrade !== 'gold') {
@@ -593,10 +591,9 @@ const Sidebar = ({
                      <span className="material-symbols-outlined text-[10px]">
                        {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
                      </span>
-                     GOLD
                   </span>
                 </span>
-              } 
+              }
               active={isScriptMode} 
               onClick={() => {
                 if (!isAdmin && userGrade !== 'gold') {
@@ -628,7 +625,6 @@ const Sidebar = ({
                   <span className="material-symbols-outlined text-[10px]">
                     {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
                   </span>
-                  GOLD
                 </span>
               </span>
             }
@@ -2099,6 +2095,28 @@ export default function App() {
       setApiError("YouTube API 키가 유효하지 않거나 설정되지 않았습니다.");
       setLoading(false);
       return;
+    }
+
+    // 모니터링 리스트: force가 아닐 때 유효한 캐시가 있으면 API 호출 스킵
+    if (!force && isMyMode && activeGroupId) {
+      try {
+        const monCacheKey = `my_monitoring_list_${activeGroupId}`;
+        const monCached = localStorage.getItem(monCacheKey);
+        if (monCached) {
+          const parsedCache = JSON.parse(monCached);
+          const cacheAge = Date.now() - (parsedCache.timestamp || 0);
+          // 6시간 이내 캐시가 있고 데이터가 있으면 스킵
+          if (cacheAge < 6 * 60 * 60 * 1000 && parsedCache.videos?.length > 0) {
+            console.log('✅ 모니터링 리스트 캐시 사용 (API 스킵)', parsedCache.videos.length, '개');
+            setVideos(parsedCache.videos);
+            setVisibleVideoCount(20);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('Cache check failed:', e);
+      }
     }
 
     setLoading(true);
