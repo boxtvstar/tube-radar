@@ -79,11 +79,9 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         console.warn('YouTube API Info fetch failed');
       }
 
-      // 2. 자막 추출 API 호출 (Cloudflare Worker 또는 로컬 Python 서버)
-      const transcriptApiUrl = import.meta.env.VITE_TRANSCRIPT_API_URL;
-      const transcriptUrl = transcriptApiUrl
-        ? `${transcriptApiUrl}?v=${videoId}&lang=ko,en`
-        : `/api/transcript?v=${videoId}&lang=ko,en`;
+      // 2. 자막 추출 API 호출 (Cloudflare Worker)
+      const transcriptApiUrl = import.meta.env.VITE_TRANSCRIPT_API_URL || 'https://transcript-api.boxtvstar.workers.dev';
+      const transcriptUrl = `${transcriptApiUrl}?v=${videoId}&lang=ko,en`;
       const transcriptRes = await fetch(transcriptUrl);
 
       if (!transcriptRes.ok) {
