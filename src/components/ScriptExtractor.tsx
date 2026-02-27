@@ -79,37 +79,74 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         console.warn('YouTube API Info fetch failed');
       }
 
-      // 2. 자막 추출 API 호출 (Cloudflare Worker)
-      const transcriptApiUrl = import.meta.env.VITE_TRANSCRIPT_API_URL || 'https://transcript-api.boxtvstar.workers.dev';
-      const transcriptUrl = `${transcriptApiUrl}?v=${videoId}&lang=ko,en`;
-      const transcriptRes = await fetch(transcriptUrl);
+      // 2. Apify 자막 추출 API 호출
+      const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || '';
+      const apifyUrl = `https://api.apify.com/v2/acts/pintostudio~youtube-transcript-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`;
 
-      if (!transcriptRes.ok) {
-        throw new Error(`대본 추출 서비스 연결 실패 (상태코드: ${transcriptRes.status})`);
+      const payload = {
+        "videoUrl": url,
+        "targetLanguage": "ko"
+      };
+
+      const response = await fetch(apifyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`대본 추출 서비스 연결 실패 (상태코드: ${response.status})`);
       }
 
-      const result = await transcriptRes.json();
-      console.log('Transcript API Result:', result);
+      const results = await response.json();
+      console.log('Apify Raw Results:', results);
 
-      if (!result.success) {
-        throw new Error(result.error || '자막 추출에 실패했습니다.');
+      if (!results || !Array.isArray(results) || results.length === 0) {
+        throw new Error('분석 결과가 비어있습니다. 자막이 있는 영상인지 확인해주세요.');
       }
 
-      const rawText = result.full_text || '';
+      let transcriptData: any[] = [];
 
-      if (rawText.length > 5) {
-        const formattedText = rawText
-          .replace(/([.?!,])\s*/g, '$1\n')
-          .split('\n')
-          .map((line: string) => line.trim())
-          .filter((line: string) => line.length > 0)
-          .join('\n');
-        setTranscript(formattedText);
-
-        // 포인트 차감 적용
-        onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
+      if (results[0].transcript && Array.isArray(results[0].transcript)) {
+        transcriptData = results[0].transcript;
+      } else if (results[0].searchResult && Array.isArray(results[0].searchResult)) {
+        transcriptData = results[0].searchResult;
+      } else if (results.some((item: any) => item.text || item.content)) {
+        transcriptData = results;
       } else {
-        throw new Error('추출된 텍스트 내용이 너무 짧거나 유효하지 않습니다.');
+        const itemWithArray = results.find((item: any) =>
+          Object.values(item).some(val => Array.isArray(val) && (val as any[]).length > 0)
+        );
+        if (itemWithArray) {
+          const foundArray = Object.values(itemWithArray).find(val => Array.isArray(val)) as any[];
+          transcriptData = foundArray;
+        }
+      }
+
+      if (transcriptData && transcriptData.length > 0) {
+        const rawText = transcriptData
+          .map((item: any) => item.text || item.content || item.transcript || '')
+          .filter((t: any) => typeof t === 'string' && t.trim().length > 0)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (rawText.length > 5) {
+          const formattedText = rawText
+            .replace(/([.?!,])\s*/g, '$1\n')
+            .split('\n')
+            .map((line: string) => line.trim())
+            .filter((line: string) => line.length > 0)
+            .join('\n');
+          setTranscript(formattedText);
+
+          // 포인트 차감 적용
+          onUsageUpdate(200, 'script', `대본 추출: ${fetchedTitle || url}`);
+        } else {
+          throw new Error('추출된 텍스트 내용이 너무 짧거나 유효하지 않습니다.');
+        }
+      } else {
+        throw new Error('이 영상에 사용 가능한 자막이 없습니다.');
       }
 
     } catch (err: any) {
