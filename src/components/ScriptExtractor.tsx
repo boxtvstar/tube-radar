@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ApiUsage } from '../../types';
 
@@ -26,6 +26,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
   const [aiResult, setAiResult] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMode, setAiMode] = useState<'translate' | 'summarize' | null>(null);
+  const aiResultRef = useRef<HTMLDivElement>(null);
 
   const extractVideoId = (url: string) => {
     // Shorts, Mobile, etc.를 모두 포함하는 더 강력한 정규식
@@ -151,13 +152,14 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
     setAiLoading(true);
     setAiMode(mode);
     setAiResult('');
+    setTimeout(() => aiResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
     try {
       const prompt = mode === 'translate'
         ? `다음 유튜브 영상 대본을 자연스러운 한국어로 번역해주세요. 의역보다는 직역에 가깝되 자연스럽게 번역하세요.\n\n${transcript.substring(0, 15000)}`
         : `다음 유튜브 영상 대본을 한국어로 핵심 내용을 요약해주세요. 주요 포인트를 불릿 포인트로 정리하고, 전체 요약을 3-5문장으로 작성해주세요.\n\n${transcript.substring(0, 15000)}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -173,6 +175,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
       if (!text) throw new Error('AI 응답이 비어있습니다.');
 
       setAiResult(text);
+      setTimeout(() => aiResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch (err: any) {
       setError(err.message || 'AI 처리 중 오류가 발생했습니다.');
     } finally {
@@ -263,18 +266,32 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
                 <button
                   onClick={() => handleAiAction('translate')}
                   disabled={aiLoading}
-                  className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-emerald-100 dark:border-emerald-900/50"
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                    aiLoading && aiMode === 'translate'
+                      ? 'bg-emerald-500 text-white border-emerald-500 animate-pulse'
+                      : 'bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-sm">translate</span>
-                  한국어 번역
+                  {aiLoading && aiMode === 'translate'
+                    ? <div className="size-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    : <span className="material-symbols-outlined text-sm">translate</span>
+                  }
+                  {aiLoading && aiMode === 'translate' ? '번역 중...' : '한국어 번역'}
                 </button>
                 <button
                   onClick={() => handleAiAction('summarize')}
                   disabled={aiLoading}
-                  className="px-4 py-2 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-amber-100 dark:border-amber-900/50"
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                    aiLoading && aiMode === 'summarize'
+                      ? 'bg-amber-500 text-white border-amber-500 animate-pulse'
+                      : 'bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900/50'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-sm">summarize</span>
-                  요약하기
+                  {aiLoading && aiMode === 'summarize'
+                    ? <div className="size-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    : <span className="material-symbols-outlined text-sm">summarize</span>
+                  }
+                  {aiLoading && aiMode === 'summarize' ? '요약 중...' : '요약하기'}
                 </button>
               </div>
             </div>
@@ -284,6 +301,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
               </p>
             </div>
 
+            <div ref={aiResultRef} />
             {aiLoading && (
               <div className="flex items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/30 rounded-xl animate-pulse">
                 <div className="size-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
@@ -300,13 +318,30 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
                     <span className="material-symbols-outlined text-sm">{aiMode === 'translate' ? 'translate' : 'summarize'}</span>
                     {aiMode === 'translate' ? 'AI 번역 결과' : 'AI 요약 결과'}
                   </h3>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(aiResult); alert('복사되었습니다.'); }}
-                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
-                  >
-                    <span className="material-symbols-outlined text-sm">content_copy</span>
-                    복사
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(aiResult); alert('복사되었습니다.'); }}
+                      className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-sm">content_copy</span>
+                      복사
+                    </button>
+                    <button
+                      onClick={() => {
+                        const filename = aiMode === 'translate' ? '번역결과.txt' : '요약결과.txt';
+                        const blob = new Blob([aiResult], { type: 'text/plain;charset=utf-8' });
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = filename;
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                      }}
+                      className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border border-indigo-100 dark:border-indigo-900/50"
+                    >
+                      <span className="material-symbols-outlined text-sm">download</span>
+                      다운로드
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl p-6 border border-emerald-100 dark:border-emerald-800/50 max-h-[400px] overflow-y-auto custom-scrollbar">
                   <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">

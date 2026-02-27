@@ -6,6 +6,7 @@ import { getApiUsage, resetQuota, trackUsage, preCheckQuota } from './services/u
 import { db } from './src/lib/firebase';
 import { useAuth } from './src/contexts/AuthContext';
 import { Login } from './src/components/Login';
+import { LandingPage } from './src/components/LandingPage';
 import { PendingApproval } from './src/components/PendingApproval';
 import { AdminDashboard } from './src/components/AdminDashboard';
 import { UserRole } from './src/contexts/AuthContext';
@@ -1945,7 +1946,7 @@ export default function App() {
   }, [role]);
 
   if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;
-  if (!user) return <Login />;
+  if (!user) return <LandingPage />;
 
   // Initialize region and category when entering Category Trend mode
   useEffect(() => {
@@ -3212,7 +3213,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <Login />;
+    return <LandingPage />;
   }
 
   // [RBAC] 승인 대기 상태 체크 -> 전용 대기 화면 표시

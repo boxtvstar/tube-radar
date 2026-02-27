@@ -255,10 +255,35 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
 
   const [geminiKey, setGeminiKey] = useState('');
+  const [geminiKeyStatus, setGeminiKeyStatus] = useState<'idle' | 'valid' | 'invalid' | 'loading'>('idle');
+
+  const validateGeminiKey = async (key: string) => {
+    if (!key || key.trim().length < 10) {
+      setGeminiKeyStatus('idle');
+      return;
+    }
+    setGeminiKeyStatus('loading');
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+        { method: 'GET' }
+      );
+      if (res.ok) {
+        setGeminiKeyStatus('valid');
+      } else {
+        setGeminiKeyStatus('invalid');
+      }
+    } catch {
+      setGeminiKeyStatus('invalid');
+    }
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('gemini_api_key') || localStorage.getItem('admin_gemini_key') || '';
-    if (saved) setGeminiKey(saved);
+    if (saved) {
+      setGeminiKey(saved);
+      validateGeminiKey(saved);
+    }
   }, []);
 
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
@@ -487,8 +512,10 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                     </h4>
                     {/* Status Badge */}
                     <div className="flex items-center gap-2">
-                      {geminiKey && <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>Connected</span>}
-                      {!geminiKey && <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-black uppercase tracking-wide">Not Set</span>}
+                      {geminiKeyStatus === 'valid' && <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>Connected</span>}
+                      {geminiKeyStatus === 'invalid' && <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-500"></span>Error</span>}
+                      {geminiKeyStatus === 'loading' && <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-600 text-xs font-black uppercase tracking-wide flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500 animate-spin"></span>Checking...</span>}
+                      {geminiKeyStatus === 'idle' && !geminiKey && <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-black uppercase tracking-wide">Not Set</span>}
                     </div>
                   </div>
 
@@ -501,20 +528,30 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                           const val = e.target.value;
                           setGeminiKey(val);
                           localStorage.setItem('gemini_api_key', val);
+                          if (!val) {
+                            setGeminiKeyStatus('idle');
+                          } else {
+                            // debounce validation
+                            setGeminiKeyStatus('loading');
+                            clearTimeout((window as any).__geminiValidateTimer);
+                            (window as any).__geminiValidateTimer = setTimeout(() => validateGeminiKey(val), 800);
+                          }
                         }}
                         disabled={role === 'pending' || role === 'guest'}
                         placeholder={role === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "Google Gemini API Key 입력..."}
                         className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
                           role === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
-                          geminiKey ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
+                          geminiKeyStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
+                          geminiKeyStatus === 'invalid' ? 'border-rose-200 focus:border-rose-500 text-rose-700 dark:text-rose-400' :
                           'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
                         }`}
                       />
                       <span className={`absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined transition-colors ${
-                        geminiKey ? 'text-emerald-500' : 'text-slate-400 group-focus-within:text-indigo-500'
+                        geminiKeyStatus === 'valid' ? 'text-emerald-500' : 'text-slate-400 group-focus-within:text-indigo-500'
                       }`}>smart_toy</span>
 
-                      {geminiKey && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
+                      {geminiKeyStatus === 'valid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
+                      {geminiKeyStatus === 'invalid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-rose-500 animate-in zoom-in">error</span>}
                     </div>
                     {role === 'pending' || role === 'guest' ? (
                         <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
