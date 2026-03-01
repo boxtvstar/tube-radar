@@ -320,6 +320,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   // Whitelist Viewer State
   const [showWhitelistModal, setShowWhitelistModal] = useState(false);
   const [whitelistData, setWhitelistData] = useState<{count: number, updatedAt: string, ids: string[], memberDetails: any[]} | null>(null);
+  const [whitelistDiff, setWhitelistDiff] = useState<{added: any[], removed: any[]} | null>(null);
 
   const loadWhitelist = async () => {
     try {
@@ -531,6 +532,14 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
    // Reusable function to save to DB (Reference Only)
    const updateWhitelistInDb = async (ids: string[], details: any[] = []) => {
       try {
+         // Compare old vs new whitelist to compute diff
+         const oldDetails = whitelistData?.memberDetails || [];
+         const oldIds = new Set(oldDetails.map((m: any) => m.id));
+         const newIds = new Set(ids);
+
+         const added = details.filter((m: any) => !oldIds.has(m.id));
+         const removed = oldDetails.filter((m: any) => !newIds.has(m.id));
+
          // Save ONLY to system_data whitelist (Reference Data)
          const docRef = doc(db, "system_data", "membership_whitelist");
          await setDoc(docRef, {
@@ -541,8 +550,38 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
             updatedBy: user?.email
          });
 
+         // Immediately downgrade removed users
+         const revokedNames: string[] = [];
+         for (const member of removed) {
+            const foundUser = users.find(u => {
+               const uChannelId = (u as any).channelId || '';
+               return uChannelId && uChannelId === member.id;
+            });
+            if (foundUser && foundUser.role === 'approved') {
+               await updateDoc(doc(db, 'users', foundUser.uid), {
+                  role: 'pending',
+                  plan: 'free',
+                  membershipTier: null,
+                  expiresAt: null,
+               });
+               try {
+                  await addDoc(collection(db, 'users', foundUser.uid, 'history'), {
+                     action: 'membership_revoked',
+                     details: `화이트리스트에서 제거됨 (CSV 업로드) — 이름: ${member.name || '-'}, ID: ${member.id}`,
+                     date: new Date().toISOString(),
+                  });
+               } catch(e) {}
+               revokedNames.push(member.name || member.id);
+            }
+         }
+
          await loadWhitelist();
-         alert("✅ 멤버십 명단이 [참고용 데이터]로 저장되었습니다.\n(실제 유저 권한에는 영향을 주지 않습니다.)");
+
+         if (added.length > 0 || removed.length > 0) {
+            setWhitelistDiff({ added, removed });
+         } else {
+            alert("✅ 멤버십 명단이 업데이트되었습니다. (변경 사항 없음)");
+         }
       } catch (e: any) {
          console.error("Save Error", e);
          alert("저장 실패: " + e.message);
@@ -2617,15 +2656,23 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         </h4>
                         <span className="text-[11px] text-slate-400 font-medium">최근 {analyticsDays}일</span>
                       </div>
-                      {(analyticsOverview?.loggedInVisitors || 0) + (analyticsOverview?.guestVisitors || 0) > 0 ? (
+                      {(analyticsOverview?.uniqueVisitors || 0) > 0 ? (() => {
+                        const gold = analyticsOverview?.goldVisitors || 0;
+                        const silver = analyticsOverview?.silverVisitors || 0;
+                        const general = analyticsOverview?.generalVisitors || 0;
+                        const guest = analyticsOverview?.guestVisitors || 0;
+                        const total = Math.max(gold + silver + general + guest, 1);
+                        return (
                         <div className="flex items-center gap-4">
                           <div className="w-[140px] h-[140px] flex-shrink-0">
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                 <Pie
                                   data={[
-                                    { name: '로그인', value: analyticsOverview?.loggedInVisitors || 0 },
-                                    { name: '게스트', value: analyticsOverview?.guestVisitors || 0 },
+                                    ...(gold > 0 ? [{ name: '골드', value: gold }] : []),
+                                    ...(silver > 0 ? [{ name: '실버', value: silver }] : []),
+                                    ...(general > 0 ? [{ name: '일반', value: general }] : []),
+                                    ...(guest > 0 ? [{ name: '게스트', value: guest }] : []),
                                   ]}
                                   cx="50%"
                                   cy="50%"
@@ -2635,40 +2682,59 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                   dataKey="value"
                                   stroke="none"
                                 >
-                                  <Cell fill="#6366f1" />
-                                  <Cell fill="#f59e0b" />
+                                  {gold > 0 && <Cell fill="#f59e0b" />}
+                                  {silver > 0 && <Cell fill="#6366f1" />}
+                                  {general > 0 && <Cell fill="#64748b" />}
+                                  {guest > 0 && <Cell fill="#cbd5e1" />}
                                 </Pie>
                               </PieChart>
                             </ResponsiveContainer>
                           </div>
-                          <div className="flex-1 space-y-3">
-                            <div className="flex items-center justify-between bg-indigo-50 dark:bg-indigo-500/10 rounded-xl px-4 py-3 border border-indigo-100 dark:border-indigo-500/20">
-                              <div className="flex items-center gap-2">
-                                <span className="size-2.5 rounded-full bg-indigo-500"></span>
-                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">로그인 사용자</span>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{(analyticsOverview?.loggedInVisitors || 0).toLocaleString()}</span>
-                                <span className="text-[10px] text-slate-400 ml-1.5">
-                                  ({((analyticsOverview?.loggedInVisitors || 0) / Math.max((analyticsOverview?.uniqueVisitors || 1), 1) * 100).toFixed(0)}%)
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 rounded-xl px-4 py-3 border border-amber-100 dark:border-amber-500/20">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 rounded-xl px-4 py-2.5 border border-amber-100 dark:border-amber-500/20">
                               <div className="flex items-center gap-2">
                                 <span className="size-2.5 rounded-full bg-amber-500"></span>
-                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">게스트/익명</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">골드</span>
                               </div>
                               <div className="text-right">
-                                <span className="text-sm font-black text-amber-600 dark:text-amber-400">{(analyticsOverview?.guestVisitors || 0).toLocaleString()}</span>
-                                <span className="text-[10px] text-slate-400 ml-1.5">
-                                  ({((analyticsOverview?.guestVisitors || 0) / Math.max((analyticsOverview?.uniqueVisitors || 1), 1) * 100).toFixed(0)}%)
-                                </span>
+                                <span className="text-sm font-black text-amber-600 dark:text-amber-400">{gold.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">({(gold / total * 100).toFixed(0)}%)</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between bg-indigo-50 dark:bg-indigo-500/10 rounded-xl px-4 py-2.5 border border-indigo-100 dark:border-indigo-500/20">
+                              <div className="flex items-center gap-2">
+                                <span className="size-2.5 rounded-full bg-indigo-500"></span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">실버</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{silver.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">({(silver / total * 100).toFixed(0)}%)</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-500/10 rounded-xl px-4 py-2.5 border border-slate-200 dark:border-slate-500/20">
+                              <div className="flex items-center gap-2">
+                                <span className="size-2.5 rounded-full bg-slate-500"></span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">일반</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-black text-slate-600 dark:text-slate-400">{general.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">({(general / total * 100).toFixed(0)}%)</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-400/5 rounded-xl px-4 py-2.5 border border-slate-100 dark:border-slate-700">
+                              <div className="flex items-center gap-2">
+                                <span className="size-2.5 rounded-full bg-slate-300"></span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">게스트</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-black text-slate-500 dark:text-slate-400">{guest.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 ml-1.5">({(guest / total * 100).toFixed(0)}%)</span>
                               </div>
                             </div>
                           </div>
                         </div>
-                      ) : (
+                        );
+                      })() : (
                         <div className="text-sm text-slate-400 py-8 text-center">데이터 없음</div>
                       )}
                     </div>
@@ -3389,6 +3455,65 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
              </div>
            </div>
         )}
+         {/* Whitelist Diff Modal */}
+         {whitelistDiff && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+               <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+                  <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                     <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                           <span className="material-symbols-outlined text-indigo-500">compare_arrows</span>
+                           멤버십 명단 변경 내역
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                           추가 {whitelistDiff.added.length}명 / 제거 {whitelistDiff.removed.length}명
+                        </p>
+                     </div>
+                     <button onClick={() => setWhitelistDiff(null)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                        <span className="material-symbols-outlined">close</span>
+                     </button>
+                  </div>
+                  <div className="max-h-[60vh] overflow-y-auto">
+                     {whitelistDiff.added.length > 0 && (
+                        <div className="p-4">
+                           <h4 className="text-xs font-bold text-emerald-600 mb-2 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-sm">person_add</span>
+                              새로 추가됨 ({whitelistDiff.added.length}명)
+                           </h4>
+                           <div className="space-y-1.5">
+                              {whitelistDiff.added.map((m: any) => (
+                                 <div key={m.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30">
+                                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{m.name || m.id}</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-800/40 text-emerald-700 dark:text-emerald-300 font-bold">{m.tier || '-'}</span>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     )}
+                     {whitelistDiff.removed.length > 0 && (
+                        <div className="p-4 pt-0">
+                           {whitelistDiff.added.length > 0 && <hr className="border-slate-100 dark:border-slate-800 mb-4" />}
+                           <h4 className="text-xs font-bold text-red-500 mb-2 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-sm">person_remove</span>
+                              제거됨 ({whitelistDiff.removed.length}명)
+                           </h4>
+                           <div className="space-y-1.5">
+                              {whitelistDiff.removed.map((m: any) => (
+                                 <div key={m.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30">
+                                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{m.name || m.id}</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-800/40 text-red-700 dark:text-red-300 font-bold">{m.tier || '-'}</span>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     )}
+                  </div>
+                  <div className="p-4 border-t border-slate-100 dark:border-slate-800">
+                     <button onClick={() => setWhitelistDiff(null)} className="w-full py-2.5 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-colors text-sm">확인</button>
+                  </div>
+               </div>
+            </div>
+         )}
          {/* Add Member Modal */}
          {isAddMemberModalOpen && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

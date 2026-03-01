@@ -135,10 +135,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        else if (tier.includes('silver') || tier.includes('regular') || tier.includes('실버')) {
                            targetPlan = 'silver'; // Silver Plan
                        }
-                       
+
                        // LOGIC: Calculate Expiry
                        let newExpiry = '';
-                       const now = new Date(); 
+                       const now = new Date();
 
                        // 1. Explicit 'remainingDays'
                        if (match.remainingDays) {
@@ -147,8 +147,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                               const exp = new Date(now.getTime() + parsedDays * 24 * 60 * 60 * 1000);
                               newExpiry = exp.toISOString();
                            }
-                       } 
-                       
+                       }
+
                        // 2. Monthly Renewal Logic
                        if (!newExpiry && match.lastUpdate) {
                            const dateStr = match.lastUpdate;
@@ -172,7 +172,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
                        const expiryTime = new Date(newExpiry).getTime();
                        const currentExpiryTime = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0;
-                       
+
                        // Conditions to Update
                        const finalRole = currentRole === 'admin' ? 'admin' : targetRole;
                        const currentPlanSafe = currentPlan || 'free';
@@ -181,24 +181,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                              // Show if: New upgrade/change OR First time seen in this session
                              const popupKey = `membership_welcome_${user.uid}_${targetPlan}_${finalRole}`;
                              const hasShown = sessionStorage.getItem(popupKey);
-                             
+
                              // Logic:
                              // 1. If Update Needed (Change detected) -> Show (unless suppressed)
                              // 2. OR If Valid Member & Not Shown in Session -> Show
                              // We unify this: If (Valid Member) AND (!hasShown), Show.
-                             
+
                              if (!hasShown) {
                                 const diffInMs = expiryTime - new Date().getTime();
                                 const daysLeftVal = Math.max(Math.ceil(diffInMs / (1000 * 60 * 60 * 24)), 0);
-                                
+
                                 let limit = 1000;
                                 if (targetPlan === 'silver') limit = 2000;
                                 if (targetPlan === 'gold') limit = 5000;
                                 if (finalRole === 'admin') limit = 10000;
 
-                                setMembershipJustApproved({ 
-                                    matches: true, 
-                                    daysLeft: daysLeftVal, 
+                                setMembershipJustApproved({
+                                    matches: true,
+                                    daysLeft: daysLeftVal,
                                     name: user.displayName || 'Member',
                                     plan: targetPlan,
                                     limit: limit
@@ -215,7 +215,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                       expiresAt: newExpiry,
                                       lastUpdate: new Date().toISOString()
                                   });
-                                  
+
                                   // Log History
                                   try {
                                      const { addDoc, collection } = await import('firebase/firestore');
@@ -232,21 +232,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                   try {
                                      const { query, where, getDocs, collection } = await import('firebase/firestore');
                                      const { sendNotification } = await import('../../services/dbService');
-                                     
+
                                      // Get all admin users
                                      const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
                                      const adminSnapshot = await getDocs(adminQuery);
-                                     
+
                                      const isNewApproval = currentRole === 'pending';
                                      const isUpgrade = currentRole === 'approved' && currentPlanSafe !== targetPlan;
-                                     
+
                                      let notificationMessage = '';
                                      if (isNewApproval) {
                                         notificationMessage = `새로운 회원이 승인되었습니다: ${user.displayName || user.email} (${match.tier})`;
                                      } else if (isUpgrade) {
                                         notificationMessage = `회원 등급이 변경되었습니다: ${user.displayName || user.email} (${currentPlanSafe} → ${targetPlan})`;
                                      }
-                                     
+
                                      if (notificationMessage) {
                                         // Send notification to each admin
                                         for (const adminDoc of adminSnapshot.docs) {
@@ -262,6 +262,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                      console.error('Failed to notify admin:', e);
                                   }
                              }
+                    } else {
+                       // Whitelist에서 제거된 경우: approved 사용자를 pending으로 다운그레이드
+                       if (currentRole === 'approved') {
+                          await updateDoc(userRef, {
+                             role: 'pending',
+                             plan: 'free',
+                             membershipTier: null,
+                             expiresAt: null,
+                          });
+                          try {
+                             const { addDoc, collection } = await import('firebase/firestore');
+                             await addDoc(collection(db, 'users', user.uid, 'history'), {
+                                action: 'membership_revoked',
+                                details: `화이트리스트에서 제거됨 (ID: ${storedChannelId})`,
+                                date: new Date().toISOString(),
+                             });
+                          } catch(e) {}
+                       }
                     }
                  }
              } catch (e) {
