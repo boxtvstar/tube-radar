@@ -567,6 +567,9 @@ export interface AnalyticsOverview {
   uniqueVisitors: number;
   loggedInVisitors: number;
   guestVisitors: number;
+  goldVisitors: number;
+  silverVisitors: number;
+  generalVisitors: number;
   avgDurationSec: number;
   totalPageViews: number;
   topPages: { page: string; views: number }[];
@@ -588,6 +591,9 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
   const visitorSet = new Set<string>();
   const loggedInSet = new Set<string>();
   const guestSet = new Set<string>();
+  const goldSet = new Set<string>();
+  const silverSet = new Set<string>();
+  const generalSet = new Set<string>();
   let totalDurationSec = 0;
 
   const dailyVisitorsMap = new Map<string, Set<string>>();
@@ -595,10 +601,20 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
   const dailyPageViewsMap = new Map<string, number>();
 
   sessions.forEach((s) => {
+    // 관리자 세션은 통계에서 제외
+    if (s.role === 'admin') return;
+
     const visitorKey = s.userId ? `u:${s.userId}` : `a:${s.anonId || 'unknown'}`;
     visitorSet.add(visitorKey);
-    if (s.userId) loggedInSet.add(String(s.userId));
-    else guestSet.add(String(s.anonId || 'unknown'));
+    if (s.userId) {
+      loggedInSet.add(String(s.userId));
+      const plan = String(s.plan || '').toLowerCase();
+      if (plan === 'gold' || s.role === 'pro') goldSet.add(String(s.userId));
+      else if (plan === 'silver' || s.role === 'regular') silverSet.add(String(s.userId));
+      else generalSet.add(String(s.userId));
+    } else {
+      guestSet.add(String(s.anonId || 'unknown'));
+    }
 
     totalDurationSec += Number(s.durationSec || 0);
 
@@ -643,6 +659,9 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
     uniqueVisitors: visitorSet.size,
     loggedInVisitors: loggedInSet.size,
     guestVisitors: guestSet.size,
+    goldVisitors: goldSet.size,
+    silverVisitors: silverSet.size,
+    generalVisitors: generalSet.size,
     avgDurationSec: sessions.length > 0 ? Math.round(totalDurationSec / sessions.length) : 0,
     totalPageViews: pageViews.length,
     topPages,

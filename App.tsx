@@ -59,6 +59,7 @@ import { ScriptExtractor } from './src/components/ScriptExtractor';
 import { VideoDownloader } from './src/components/VideoDownloader';
 import { SourceFinder } from './src/components/SourceFinder';
 import UploadTimeAnalysis from './src/components/UploadTimeAnalysis';
+import { ChannelRevenueAnalyzer } from './src/components/ChannelRevenueAnalyzer';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -315,11 +316,13 @@ const Sidebar = ({
   onToggleSourceFinderMode,
   isUploadTimeMode,
   onToggleUploadTimeMode,
+  isRevenueMode,
+  onToggleRevenueMode,
   userGrade, // Added userGrade
   onShowAlert, // Added onShowAlert
   isAdmin // Added isAdmin
-}: { 
-  theme?: 'dark' | 'light', // Added theme type 
+}: {
+  theme?: 'dark' | 'light', // Added theme type
   ytKey: string,
   onYtKeyChange: (val: string) => void,
   ytApiStatus: 'idle' | 'valid' | 'invalid' | 'loading',
@@ -369,6 +372,8 @@ const Sidebar = ({
   onToggleSourceFinderMode: (val: boolean) => void;
   isUploadTimeMode: boolean;
   onToggleUploadTimeMode: (val: boolean) => void;
+  isRevenueMode: boolean;
+  onToggleRevenueMode: (val: boolean) => void;
   userGrade?: string;
   onShowAlert?: (alert: { title: string, message: string, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => void;
   isAdmin?: boolean;
@@ -479,6 +484,17 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`${isUploadTimeMode ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-indigo-500'}`}
+            isCollapsed={isCollapsed}
+          />
+          <SidebarItem
+            icon="monetization_on"
+            label="채널 수익 분석"
+            active={isRevenueMode}
+            onClick={() => {
+              onToggleRevenueMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isRevenueMode ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:text-emerald-500'}`}
             isCollapsed={isCollapsed}
           />
 
@@ -1321,6 +1337,7 @@ export default function App() {
   const [isTopicMode, setIsTopicMode] = useState(false);
   const [isMembershipMode, setIsMembershipMode] = useState(false);
   const [isUploadTimeMode, setIsUploadTimeMode] = useState(false);
+  const [isRevenueMode, setIsRevenueMode] = useState(false);
 
   // Payment Result Routing
   const [isPaymentResultMode, setIsPaymentResultMode] = useState(false);
@@ -1484,6 +1501,7 @@ export default function App() {
     let isMounted = true;
     const initAnalytics = async () => {
       if (analyticsSessionIdRef.current) return;
+      if (role === 'admin') return; // 관리자 통계 제외
       const sessionId = await createAnalyticsSession({
         userId: user?.uid || null,
         role: role || null,
@@ -3296,15 +3314,15 @@ export default function App() {
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -3318,19 +3336,21 @@ export default function App() {
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
         isMaterialsExplorerMode={isMaterialsExplorerMode}
-        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
+        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
         isScriptMode={isScriptMode}
-        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
         isVideoDownloadMode={isVideoDownloadMode}
-        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
+        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
         isSourceFinderMode={isSourceFinderMode}
-        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
+        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
         isUploadTimeMode={isUploadTimeMode}
-        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
+        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
+        isRevenueMode={isRevenueMode}
+        onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
         userGrade={plan || 'general'}
         isAdmin={role === 'admin'}
         onShowAlert={setAlertMessage}
@@ -3501,6 +3521,10 @@ export default function App() {
                 setIsMyMode(true);
               }}
             />
+          </div>
+        ) : isRevenueMode ? (
+          <div className="w-full p-6 md:p-10 flex flex-col relative">
+            <ChannelRevenueAnalyzer apiKey={ytKey} onSelectVideo={(video) => setDetailedVideo(video)} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role)} />
           </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
