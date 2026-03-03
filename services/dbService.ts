@@ -635,8 +635,7 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
 
   const topPages = Array.from(pageCountMap.entries())
     .map(([page, views]) => ({ page, views }))
-    .sort((a, b) => b.views - a.views)
-    .slice(0, 8);
+    .sort((a, b) => b.views - a.views);
 
   const dates = new Set<string>([
     ...Array.from(dailyVisitorsMap.keys()),

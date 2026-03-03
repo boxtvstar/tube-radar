@@ -681,7 +681,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
   // --- Recommended Packages & Topics State ---
 const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership' | 'notices' | 'analytics'>('users');
-  const [analyticsDays, setAnalyticsDays] = useState<7 | 30>(7);
+  const [analyticsDays, setAnalyticsDays] = useState<1 | 7 | 30>(1);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
   const [packages, setPackages] = useState<RecommendedPackage[]>([]);
@@ -1823,6 +1823,12 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
             {activeTab === 'analytics' && (
               <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setAnalyticsDays(1)}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${analyticsDays === 1 ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                  >
+                    오늘
+                  </button>
                   <button
                     onClick={() => setAnalyticsDays(7)}
                     className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${analyticsDays === 7 ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
