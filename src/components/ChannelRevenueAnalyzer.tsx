@@ -206,15 +206,13 @@ export const ChannelRevenueAnalyzer: React.FC<ChannelRevenueAnalyzerProps> = ({ 
       const longCount = durations.filter(d => d >= 480).length; // 8분 이상 (미드롤 가능)
       const longRatio = durations.length > 0 ? longCount / durations.length : 0;
 
-      // 보정 계수 계산
+      // 보정 계수 계산 (CPM은 이미 RPM 기반이므로 fill rate 별도 적용 안 함)
       // 1) 미드롤 보정: 8분+ 영상 비율 × 최대 1.8배 (미드롤 광고 2~3개 추가)
       const midrollBonus = 1 + (longRatio * 0.8);
       // 2) 쇼츠 감소: 쇼츠 CPM은 일반의 ~15% 수준
       const shortsDiscount = 1 - (shortsRatio * 0.85);
-      // 3) 광고 게재율 (fill rate): 평균 50~65%
-      const fillRate = 0.55;
       // 최종 보정 계수
-      const adMultiplier = midrollBonus * shortsDiscount * fillRate;
+      const adMultiplier = midrollBonus * shortsDiscount;
 
       const revenueMin = Math.round((monthlyViews / 1000) * cpmRange.min * adMultiplier);
       const revenueMax = Math.round((monthlyViews / 1000) * cpmRange.max * adMultiplier);
@@ -471,8 +469,6 @@ export const ChannelRevenueAnalyzer: React.FC<ChannelRevenueAnalyzerProps> = ({ 
                   <span>•</span>
                   <span>평균 길이: {result.avgDurationSec >= 60 ? `${Math.floor(result.avgDurationSec / 60)}분 ${Math.round(result.avgDurationSec % 60)}초` : `${Math.round(result.avgDurationSec)}초`}</span>
                   {result.shortsRatio > 0 && <><span>•</span><span>쇼츠 비율: {Math.round(result.shortsRatio * 100)}%</span></>}
-                  <span>•</span>
-                  <span>광고 보정: ×{result.adMultiplier.toFixed(2)}</span>
                 </div>
               </div>
             </div>
