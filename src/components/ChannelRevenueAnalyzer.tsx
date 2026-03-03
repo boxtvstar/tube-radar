@@ -11,22 +11,22 @@ interface ChannelRevenueAnalyzerProps {
 
 // 카테고리별 CPM 범위 (KRW, 1000뷰 기준)
 const CPM_DATA: Record<string, { min: number; max: number; label: string }> = {
-  '금융/비즈니스': { min: 3000, max: 8000, label: '금융/비즈니스' },
-  '과학/기술': { min: 2000, max: 5000, label: '과학/기술' },
-  '교육': { min: 1500, max: 4000, label: '교육' },
-  '노하우/스타일': { min: 1500, max: 4000, label: '노하우/스타일' },
-  '자동차': { min: 2000, max: 5000, label: '자동차' },
-  '여행': { min: 1000, max: 3500, label: '여행' },
-  '게임': { min: 500, max: 2000, label: '게임' },
-  '엔터테인먼트': { min: 800, max: 3000, label: '엔터테인먼트' },
-  '음악': { min: 300, max: 1500, label: '음악' },
-  '코미디': { min: 800, max: 2500, label: '코미디' },
-  '스포츠': { min: 800, max: 2500, label: '스포츠' },
-  '뉴스/정치': { min: 1000, max: 3000, label: '뉴스/정치' },
-  '브이로그/인물': { min: 800, max: 2500, label: '브이로그/인물' },
-  '동물': { min: 800, max: 2000, label: '동물' },
-  '영화/애니': { min: 600, max: 2000, label: '영화/애니' },
-  '기타': { min: 700, max: 2500, label: '기타' },
+  '금융/비즈니스': { min: 5000, max: 15000, label: '금융/비즈니스' },
+  '과학/기술': { min: 3000, max: 8000, label: '과학/기술' },
+  '교육': { min: 2500, max: 7000, label: '교육' },
+  '노하우/스타일': { min: 2500, max: 6000, label: '노하우/스타일' },
+  '자동차': { min: 3000, max: 8000, label: '자동차' },
+  '여행': { min: 2000, max: 5000, label: '여행' },
+  '게임': { min: 1000, max: 3500, label: '게임' },
+  '엔터테인먼트': { min: 1500, max: 5000, label: '엔터테인먼트' },
+  '음악': { min: 800, max: 2500, label: '음악' },
+  '코미디': { min: 1500, max: 4000, label: '코미디' },
+  '스포츠': { min: 1500, max: 4000, label: '스포츠' },
+  '뉴스/정치': { min: 2000, max: 5000, label: '뉴스/정치' },
+  '브이로그/인물': { min: 1500, max: 4500, label: '브이로그/인물' },
+  '동물': { min: 1200, max: 3500, label: '동물' },
+  '영화/애니': { min: 1200, max: 3500, label: '영화/애니' },
+  '기타': { min: 1200, max: 4000, label: '기타' },
 };
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -43,6 +43,12 @@ const parseISODuration = (d: string) => {
   const min = (m[2] || '0').padStart(2, '0');
   const sec = (m[3] || '0').padStart(2, '0');
   return h ? `${h}:${min}:${sec}` : `${min}:${sec}`;
+};
+
+const parseDurationToSeconds = (d: string) => {
+  const m = d.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1] || '0') * 3600) + (parseInt(m[2] || '0') * 60) + parseInt(m[3] || '0');
 };
 
 const parseNum = (val?: string) => {
@@ -89,6 +95,9 @@ interface AnalysisResult {
   healthGrade: string;
   healthColor: string;
   subsToViewRatio: number;
+  avgDurationSec: number;
+  shortsRatio: number; // 0~1
+  adMultiplier: number;
   recentVideoStats: { id: string; title: string; views: number; publishedAt: string; thumbnail: string; duration: string; categoryId: string; channelTitle: string }[];
 }
 
@@ -189,9 +198,26 @@ export const ChannelRevenueAnalyzer: React.FC<ChannelRevenueAnalyzerProps> = ({ 
         monthlyViews = Math.round(avgViews * 4); // 주 1회 업로드 가정
       }
 
-      // 6. 수익 추정
-      const revenueMin = Math.round((monthlyViews / 1000) * cpmRange.min);
-      const revenueMax = Math.round((monthlyViews / 1000) * cpmRange.max);
+      // 6. 영상 길이 / 쇼츠 분석 → 수익 보정
+      const durations = recentVideos.map(v => parseDurationToSeconds(v.duration || ''));
+      const avgDurationSec = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+      const shortsCount = durations.filter(d => d > 0 && d <= 60).length;
+      const shortsRatio = durations.length > 0 ? shortsCount / durations.length : 0;
+      const longCount = durations.filter(d => d >= 480).length; // 8분 이상 (미드롤 가능)
+      const longRatio = durations.length > 0 ? longCount / durations.length : 0;
+
+      // 보정 계수 계산
+      // 1) 미드롤 보정: 8분+ 영상 비율 × 최대 1.8배 (미드롤 광고 2~3개 추가)
+      const midrollBonus = 1 + (longRatio * 0.8);
+      // 2) 쇼츠 감소: 쇼츠 CPM은 일반의 ~15% 수준
+      const shortsDiscount = 1 - (shortsRatio * 0.85);
+      // 3) 광고 게재율 (fill rate): 평균 50~65%
+      const fillRate = 0.55;
+      // 최종 보정 계수
+      const adMultiplier = midrollBonus * shortsDiscount * fillRate;
+
+      const revenueMin = Math.round((monthlyViews / 1000) * cpmRange.min * adMultiplier);
+      const revenueMax = Math.round((monthlyViews / 1000) * cpmRange.max * adMultiplier);
 
       // 7. 수익화 자격 판단
       const isMonetizable = subs >= 1000;
@@ -267,6 +293,9 @@ export const ChannelRevenueAnalyzer: React.FC<ChannelRevenueAnalyzerProps> = ({ 
         healthGrade,
         healthColor,
         subsToViewRatio,
+        avgDurationSec,
+        shortsRatio,
+        adMultiplier,
         recentVideoStats: recentVideos.slice(0, 5),
       });
 
@@ -433,12 +462,17 @@ export const ChannelRevenueAnalyzer: React.FC<ChannelRevenueAnalyzerProps> = ({ 
                     <div className="text-lg md:text-xl font-bold text-white/70 mt-1">~ {formatKRW(result.yearlyRevenueMax)}</div>
                   </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-white/20 flex flex-wrap gap-3 text-[10px] font-bold text-white/70">
+                <div className="mt-4 pt-4 border-t border-white/20 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-white/70">
                   <span>월간 추정 조회수: {formatCount(result.monthlyViews)}회</span>
                   <span>•</span>
                   <span>CPM: ₩{result.cpmRange.min.toLocaleString()} ~ ₩{result.cpmRange.max.toLocaleString()}</span>
                   <span>•</span>
                   <span>카테고리: {result.category}</span>
+                  <span>•</span>
+                  <span>평균 길이: {result.avgDurationSec >= 60 ? `${Math.floor(result.avgDurationSec / 60)}분 ${Math.round(result.avgDurationSec % 60)}초` : `${Math.round(result.avgDurationSec)}초`}</span>
+                  {result.shortsRatio > 0 && <><span>•</span><span>쇼츠 비율: {Math.round(result.shortsRatio * 100)}%</span></>}
+                  <span>•</span>
+                  <span>광고 보정: ×{result.adMultiplier.toFixed(2)}</span>
                 </div>
               </div>
             </div>
