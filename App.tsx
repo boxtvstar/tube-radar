@@ -2194,7 +2194,7 @@ export default function App() {
         : useSearch ? 102 : 1;
       // 트렌드 분석 메뉴는 10배 과금
       const estimatedCost = isTrendMode ? baseCost * 10 : baseCost;
-      await preCheckQuota(estimatedCost, role);
+      await preCheckQuota(estimatedCost, role === 'admin' ? 'admin' : plan || 'general');
 
       // 채널 수에 따라 타임아웃 동적 조정 (많은 채널 = 더 긴 대기)
       const timeoutMs = isMyMode ? Math.max(60000, targetChannelIds.length * 2500) : 60000;
@@ -2709,7 +2709,7 @@ export default function App() {
     // 2. 채널 정보 가져오기
     try {
       // 포인트 사전 체크 (채널 추가: ~5 유닛)
-      await preCheckQuota(5, role);
+      await preCheckQuota(5, role === 'admin' ? 'admin' : plan || 'general');
 
       const channelInfo = await getChannelInfo(ytKey, channelId);
 
@@ -2786,7 +2786,7 @@ export default function App() {
 
     try {
       // 포인트 사전 체크 (채널 일괄 추가: ~5 유닛 × 채널 수)
-      await preCheckQuota(5 * queries.length, role);
+      await preCheckQuota(5 * queries.length, role === 'admin' ? 'admin' : plan || 'general');
 
       for (let i = 0; i < queries.length; i++) {
         // setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
@@ -2891,7 +2891,7 @@ export default function App() {
     setIsExplorerSearching(true);
     try {
       // 포인트 사전 체크 (채널 검색: 100 유닛)
-      await preCheckQuota(100, role);
+      await preCheckQuota(100, role === 'admin' ? 'admin' : plan || 'general');
 
       const results = await searchChannelsByKeyword(ytKey, explorerQuery);
       setExplorerResults(results);
@@ -2997,7 +2997,7 @@ export default function App() {
     
     try {
       // 포인트 사전 체크 (Shorts 탐색: 실제 ~14 유닛 × 10배 = 140)
-      await preCheckQuota(140, role);
+      await preCheckQuota(140, role === 'admin' ? 'admin' : plan || 'general');
 
       const results = await autoDetectShortsChannels(ytKey, targetRegion);
 
@@ -3502,7 +3502,7 @@ export default function App() {
           </div>
         ) : isVideoDownloadMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
-            <VideoDownloader apiKey={ytKey} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role)} />
+            <VideoDownloader apiKey={ytKey} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role === 'admin' ? 'admin' : plan || 'general')} />
           </div>
         ) : isSourceFinderMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
@@ -3524,7 +3524,7 @@ export default function App() {
           </div>
         ) : isRevenueMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
-            <ChannelRevenueAnalyzer apiKey={ytKey} onSelectVideo={(video) => setDetailedVideo(video)} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role)} />
+            <ChannelRevenueAnalyzer apiKey={ytKey} onSelectVideo={(video) => setDetailedVideo(video)} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role === 'admin' ? 'admin' : plan || 'general')} />
           </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
@@ -3576,7 +3576,7 @@ export default function App() {
             setIsNationalTrendMode(false);
             setIsCategoryTrendMode(false);
           }}
-          onPreCheckQuota={(cost) => preCheckQuota(cost, role)}
+          onPreCheckQuota={(cost) => preCheckQuota(cost, role === 'admin' ? 'admin' : plan || 'general')}
         />
       </div>
         ) : isComparisonMode ? (

@@ -100,12 +100,13 @@ export const getRemainingQuota = (apiKey: string): number => {
  * API 호출 전에 잔여 포인트가 충분한지 확인
  * 부족하면 에러를 throw하여 API 호출 자체를 차단
  */
-export const preCheckQuota = async (estimatedCost: number, userRole?: string): Promise<void> => {
+export const preCheckQuota = async (estimatedCost: number, userRoleOrPlan?: string): Promise<void> => {
   const user = auth.currentUser;
   if (!user) return; // 비로그인 유저는 패스 (localStorage 기반 추적만)
 
   try {
-    const plan = userRole === 'pro' ? 'gold' : userRole === 'admin' ? 'admin' : userRole === 'regular' ? 'silver' : 'general';
+    const val = (userRoleOrPlan || '').toLowerCase();
+    const plan = val === 'gold' ? 'gold' : val === 'silver' ? 'silver' : val === 'admin' ? 'admin' : val === 'pro' ? 'gold' : val === 'regular' ? 'silver' : 'general';
     const usage = await getUsageFromDb(user.uid, plan);
     const bonusPoints = usage.bonusPoints || 0;
     const remaining = (usage.total - usage.used) + bonusPoints;
