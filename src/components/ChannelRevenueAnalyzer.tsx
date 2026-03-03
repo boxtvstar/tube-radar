@@ -450,16 +450,16 @@ export const ChannelRevenueAnalyzer: React.FC<ChannelRevenueAnalyzerProps> = ({ 
                   <div>
                     <div className="text-[10px] text-white/60 font-bold mb-1">월간 예상 수익</div>
                     <div className="text-2xl md:text-3xl font-black leading-none">
-                      {formatKRW(result.revenueMin)}
+                      {formatKRW(Math.round((result.revenueMin + result.revenueMax) / 2))}
                     </div>
-                    <div className="text-lg md:text-xl font-bold text-white/70 mt-1">~ {formatKRW(result.revenueMax)}</div>
+                    <div className="text-xs font-bold text-white/50 mt-1.5">{formatKRW(result.revenueMin)} ~ {formatKRW(result.revenueMax)}</div>
                   </div>
                   <div>
                     <div className="text-[10px] text-white/60 font-bold mb-1">연간 예상 수익</div>
                     <div className="text-2xl md:text-3xl font-black leading-none">
-                      {formatKRW(result.yearlyRevenueMin)}
+                      {formatKRW(Math.round((result.yearlyRevenueMin + result.yearlyRevenueMax) / 2))}
                     </div>
-                    <div className="text-lg md:text-xl font-bold text-white/70 mt-1">~ {formatKRW(result.yearlyRevenueMax)}</div>
+                    <div className="text-xs font-bold text-white/50 mt-1.5">{formatKRW(result.yearlyRevenueMin)} ~ {formatKRW(result.yearlyRevenueMax)}</div>
                   </div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-white/20 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-white/70">
