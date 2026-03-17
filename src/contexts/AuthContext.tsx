@@ -129,7 +129,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        let targetPlan = 'free';
 
                        const tier = (match.tier || '').toLowerCase();
-                       if (tier.includes('gold') || tier.includes('pro') || tier.includes('골드')) {
+                       if (tier.includes('platinum') || tier.includes('플래티넘')) {
+                           targetPlan = 'platinum';
+                       }
+                       else if (tier.includes('gold') || tier.includes('pro') || tier.includes('골드')) {
                            targetPlan = 'gold'; // Gold Plan
                        }
                        else if (tier.includes('silver') || tier.includes('regular') || tier.includes('실버')) {
@@ -194,6 +197,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                 let limit = 1000;
                                 if (targetPlan === 'silver') limit = 2000;
                                 if (targetPlan === 'gold') limit = 5000;
+                                if (targetPlan === 'platinum') limit = 7000;
                                 if (finalRole === 'admin') limit = 10000;
 
                                 setMembershipJustApproved({

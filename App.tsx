@@ -60,6 +60,7 @@ import { VideoDownloader } from './src/components/VideoDownloader';
 import { SourceFinder } from './src/components/SourceFinder';
 import UploadTimeAnalysis from './src/components/UploadTimeAnalysis';
 import { ChannelRevenueAnalyzer } from './src/components/ChannelRevenueAnalyzer';
+import { FormatStudio } from './src/components/FormatStudio';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -87,6 +88,11 @@ const getTimeAgo = (date: string) => {
   if (interval > 1) return Math.floor(interval) + "일 전";
   interval = seconds / 3600;
   return "방금 전";
+};
+
+const isGoldOrAbovePlan = (value?: string | null) => {
+  const normalized = (value || '').toLowerCase();
+  return normalized === 'gold' || normalized === 'platinum' || normalized === 'admin';
 };
 
 // --- 서브 컴포넌트 ---
@@ -263,6 +269,26 @@ const SidebarItem = ({
   </button>
 );
 
+const SidebarSectionLabel = ({
+  label,
+  isCollapsed,
+  className = '',
+}: {
+  label: string;
+  isCollapsed?: boolean;
+  className?: string;
+}) => {
+  if (isCollapsed) return null;
+
+  return (
+    <div
+      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 animate-in fade-in ${className}`}
+    >
+      {label}
+    </div>
+  );
+};
+
 
 const Sidebar = ({ 
   ytKey, 
@@ -314,6 +340,8 @@ const Sidebar = ({
   onToggleVideoDownloadMode,
   isSourceFinderMode,
   onToggleSourceFinderMode,
+  isFormatStudioMode,
+  onToggleFormatStudioMode,
   isUploadTimeMode,
   onToggleUploadTimeMode,
   isRevenueMode,
@@ -370,6 +398,8 @@ const Sidebar = ({
   onToggleVideoDownloadMode: (val: boolean) => void;
   isSourceFinderMode: boolean;
   onToggleSourceFinderMode: (val: boolean) => void;
+  isFormatStudioMode: boolean;
+  onToggleFormatStudioMode: (val: boolean) => void;
   isUploadTimeMode: boolean;
   onToggleUploadTimeMode: (val: boolean) => void;
   isRevenueMode: boolean;
@@ -385,6 +415,7 @@ const Sidebar = ({
   const percent = isApiKeyMissing ? 0 : Math.max(0, (remain / usage.total) * 100);
   const isCritical = !isApiKeyMissing && percent < 10;
   const isWarning = !isApiKeyMissing && percent < 30;
+  const hasGoldAccess = !!isAdmin || isGoldOrAbovePlan(userGrade);
 
   return (
     <>
@@ -429,7 +460,7 @@ const Sidebar = ({
       
         <nav className="flex-1 px-4 pb-4 space-y-0.5 overflow-y-auto custom-scrollbar flex flex-col">
         {/* 1. 채널 관리 */}
-        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-2 animate-in fade-in">채널 관리</div>}
+        <SidebarSectionLabel label="채널 관리" isCollapsed={isCollapsed} className="mt-2" />
         <div className={`px-2 space-y-0.5 ${isCollapsed ? 'mt-4' : ''}`}>
           <button
             onClick={() => { 
@@ -437,7 +468,7 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && !isUploadTimeMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && !isFormatStudioMode && !isUploadTimeMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -501,7 +532,7 @@ const Sidebar = ({
         </div>
 
         {/* 2. 키워드 탐색 */}
-        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">키워드 탐색</div>}
+        <SidebarSectionLabel label="키워드 탐색" isCollapsed={isCollapsed} className="mt-1" />
         <div className="px-2 space-y-0.5">
           <SidebarItem 
              icon="travel_explore" 
@@ -528,7 +559,7 @@ const Sidebar = ({
         </div>
 
         {/* 3. 아이디어·추천 */}
-        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">아이디어·추천</div>}
+        <SidebarSectionLabel label="아이디어·추천" isCollapsed={isCollapsed} className="mt-1" />
         <div className="px-2 space-y-0.5">
           <SidebarItem 
             icon="lightbulb" 
@@ -537,14 +568,14 @@ const Sidebar = ({
                 유튜브 추천 소재
                 <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
                    <span className="material-symbols-outlined text-[10px]">
-                     {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                     {!hasGoldAccess ? 'lock' : 'stars'}
                    </span>
                 </span>
               </span>
             }
             active={isTopicMode} 
             onClick={() => {
-              if (!isAdmin && userGrade !== 'gold') {
+              if (!hasGoldAccess) {
                  if (onShowAlert) {
                     onShowAlert({
                        title: "권한 제한",
@@ -571,14 +602,14 @@ const Sidebar = ({
                 추천 채널 팩
                 <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
                    <span className="material-symbols-outlined text-[10px]">
-                     {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                     {!hasGoldAccess ? 'lock' : 'stars'}
                    </span>
                 </span>
               </span>
             }
             active={isPackageMode} 
             onClick={() => {
-              if (!isAdmin && userGrade !== 'gold') {
+              if (!hasGoldAccess) {
                  if (onShowAlert) {
                     onShowAlert({
                        title: "권한 제한",
@@ -598,6 +629,51 @@ const Sidebar = ({
             className={`${isPackageMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
             isCollapsed={isCollapsed}
           />
+        </div>
+
+        <SidebarSectionLabel label="AI 스튜디오" isCollapsed={isCollapsed} className="mt-2" />
+        {!isCollapsed && (
+          <div className="px-3 pb-2">
+            <p className="rounded-2xl border border-fuchsia-200/70 dark:border-fuchsia-500/20 bg-gradient-to-r from-fuchsia-50 to-orange-50 dark:from-fuchsia-500/10 dark:to-orange-500/10 px-4 py-3 text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-300">
+              영상 하나를 벤치마킹해서 새 주제 10개와 새 대본까지 만드는 단일 입력형 작업 공간입니다.
+            </p>
+          </div>
+        )}
+        <div className="px-2 space-y-0.5">
+          <SidebarItem
+            icon="schema"
+            label={
+              <span className="flex items-center gap-1.5">
+                레퍼런스 스튜디오
+                <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                  <span className="material-symbols-outlined text-[10px]">
+                    {!hasGoldAccess ? 'lock' : 'stars'}
+                  </span>
+                </span>
+              </span>
+            }
+            active={isFormatStudioMode}
+            onClick={() => {
+              if (!hasGoldAccess) {
+                if (onShowAlert) {
+                  onShowAlert({
+                    title: "권한 제한",
+                    message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                    type: 'error',
+                    showSubscribeButton: true,
+                    onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                  });
+                } else {
+                  alert("🚫 이 기능은 골드 등급 전용입니다.");
+                }
+                return;
+              }
+              onToggleFormatStudioMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isFormatStudioMode ? 'bg-fuchsia-50 dark:bg-fuchsia-500/10 !text-fuchsia-600 dark:!text-fuchsia-300 border border-fuchsia-200 dark:border-fuchsia-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-fuchsia-500'}`}
+            isCollapsed={isCollapsed}
+          />
             <SidebarItem 
               icon="description" 
               label={
@@ -605,14 +681,14 @@ const Sidebar = ({
                   유튜브 대본 추출
                   <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
                      <span className="material-symbols-outlined text-[10px]">
-                       {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                       {!hasGoldAccess ? 'lock' : 'stars'}
                      </span>
                   </span>
                 </span>
               }
               active={isScriptMode} 
               onClick={() => {
-                if (!isAdmin && userGrade !== 'gold') {
+                if (!hasGoldAccess) {
                    if (onShowAlert) {
                       onShowAlert({
                          title: "권한 제한",
@@ -639,14 +715,14 @@ const Sidebar = ({
                 유사 썸네일 찾기
                 <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
                   <span className="material-symbols-outlined text-[10px]">
-                    {(!isAdmin && userGrade !== 'gold') ? 'lock' : 'stars'}
+                    {!hasGoldAccess ? 'lock' : 'stars'}
                   </span>
                 </span>
               </span>
             }
             active={isVideoDownloadMode}
             onClick={() => {
-              if (!isAdmin && userGrade !== 'gold') {
+              if (!hasGoldAccess) {
                 if (onShowAlert) {
                   onShowAlert({
                     title: "권한 제한",
@@ -670,7 +746,7 @@ const Sidebar = ({
 
         {/* 4. 국가별 트렌드 (유지) */}
         {/* 4. 트렌드 분석 */}
-        {!isCollapsed && <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-3 py-1.5 mt-1 animate-in fade-in">트렌드 분석</div>}
+        <SidebarSectionLabel label="트렌드 분석" isCollapsed={isCollapsed} className="mt-1" />
         <div className="px-2 space-y-0.5">
           <SidebarItem 
             icon="bolt" 
@@ -1323,6 +1399,7 @@ export default function App() {
   const [isScriptMode, setIsScriptMode] = useState(false);
   const [isVideoDownloadMode, setIsVideoDownloadMode] = useState(false);
   const [isSourceFinderMode, setIsSourceFinderMode] = useState(false);
+  const [isFormatStudioMode, setIsFormatStudioMode] = useState(false);
   const [scriptModeUrl, setScriptModeUrl] = useState('');
   const [isShortsDetectorMode, setIsShortsDetectorMode] = useState(false);
   const [shortsDetectorResults, setShortsDetectorResults] = useState<AutoDetectResult[]>([]);
@@ -1450,6 +1527,7 @@ export default function App() {
     if (isPaymentResultMode) return 'payment_result';
     if (isScriptMode) return 'script_extractor';
     if (isSourceFinderMode) return 'source_finder';
+    if (isFormatStudioMode) return 'format_studio';
     if (isMaterialsExplorerMode) return 'materials_explorer';
     if (isRadarMode) return 'channel_radar';
     if (isExplorerMode) return 'channel_explorer';
@@ -1470,6 +1548,7 @@ export default function App() {
     isPaymentResultMode,
     isScriptMode,
     isSourceFinderMode,
+    isFormatStudioMode,
     isMaterialsExplorerMode,
     isRadarMode,
     isExplorerMode,
@@ -1700,8 +1779,14 @@ export default function App() {
   const handleApiUsage = async (cost: number, type: 'search' | 'list' | 'script', details?: string) => {
     if (!user) return;
     try {
-       const plan = role === 'pro' ? 'gold' : role === 'admin' ? 'admin' : role === 'guest' ? 'general' : 'silver';
-       const newUsage = await updateUsageInDb(user.uid, plan, cost, type, details || '');
+       const effectivePlan =
+         role === 'admin' ? 'admin' :
+         plan === 'platinum' ? 'platinum' :
+         role === 'pro' || plan === 'gold' ? 'gold' :
+         plan === 'silver' || role === 'regular' ? 'silver' :
+         role === 'guest' ? 'general' :
+         'silver';
+       const newUsage = await updateUsageInDb(user.uid, effectivePlan, cost, type, details || '');
        setUsage(newUsage);
     } catch (e: any) {
        console.error("Usage Update Failed", e);
@@ -3314,15 +3399,15 @@ export default function App() {
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -3336,21 +3421,23 @@ export default function App() {
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
         isMaterialsExplorerMode={isMaterialsExplorerMode}
-        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
+        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
         isScriptMode={isScriptMode}
-        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
         isVideoDownloadMode={isVideoDownloadMode}
-        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
+        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
         isSourceFinderMode={isSourceFinderMode}
-        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
+        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
+        isFormatStudioMode={isFormatStudioMode}
+        onToggleFormatStudioMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsFormatStudioMode(val); }}
         isUploadTimeMode={isUploadTimeMode}
-        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
+        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
         isRevenueMode={isRevenueMode}
-        onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
+        onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
         userGrade={plan || 'general'}
         isAdmin={role === 'admin'}
         onShowAlert={setAlertMessage}
@@ -3485,6 +3572,7 @@ export default function App() {
               setIsScriptMode(false);
               setIsVideoDownloadMode(false);
               setIsSourceFinderMode(false);
+              setIsFormatStudioMode(false);
               setIsUploadTimeMode(false);
             }}
           />
@@ -3507,6 +3595,14 @@ export default function App() {
         ) : isSourceFinderMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <SourceFinder apiKey={ytKey} />
+          </div>
+        ) : isFormatStudioMode ? (
+          <div className="w-full p-6 md:p-10 flex flex-col relative">
+            <FormatStudio
+              apiKey={ytKey}
+              usage={usage}
+              onUsageUpdate={handleApiUsage}
+            />
           </div>
         ) : isUploadTimeMode ? (
           <div className="w-full">
@@ -3540,6 +3636,7 @@ export default function App() {
             setIsScriptMode(true);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
+            setIsFormatStudioMode(false);
             setIsUploadTimeMode(false);
             setScriptModeUrl(url);
 
@@ -3564,6 +3661,7 @@ export default function App() {
             setIsScriptMode(false);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
+            setIsFormatStudioMode(false);
             setIsUploadTimeMode(false);
             setIsMembershipMode(false);
             setIsUsageMode(false);
@@ -4050,7 +4148,7 @@ export default function App() {
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400 font-medium italic mt-4 text-center">
-                    ※ 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급의 경우 매일 2천포인트가 지급되고 골드등급의 경우 매일 5천포인트가 지급이 됩니다.
+                    ※ 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급은 매일 2천포인트, 골드등급은 5천포인트, 플래티넘등급은 7천포인트가 지급됩니다.
                   </p>
                 </div>
                 <div className="mt-6 bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-3xl p-6">

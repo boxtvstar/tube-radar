@@ -106,7 +106,7 @@ export const preCheckQuota = async (estimatedCost: number, userRoleOrPlan?: stri
 
   try {
     const val = (userRoleOrPlan || '').toLowerCase();
-    const plan = val === 'gold' ? 'gold' : val === 'silver' ? 'silver' : val === 'admin' ? 'admin' : val === 'pro' ? 'gold' : val === 'regular' ? 'silver' : 'general';
+    const plan = val === 'platinum' ? 'platinum' : val === 'gold' ? 'gold' : val === 'silver' ? 'silver' : val === 'admin' ? 'admin' : val === 'pro' ? 'gold' : val === 'regular' ? 'silver' : 'general';
     const usage = await getUsageFromDb(user.uid, plan);
     const bonusPoints = usage.bonusPoints || 0;
     const remaining = (usage.total - usage.used) + bonusPoints;

@@ -57,11 +57,16 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
       // Use membershipTier or Plan
       if (membershipTier) {
           badgeLabel = membershipTier.toUpperCase(); // e.g., '실버 버튼' -> '실버 버튼'
-          if (badgeLabel.includes('GOLD') || badgeLabel.includes('골드')) {
+          if (badgeLabel.includes('PLATINUM') || badgeLabel.includes('플래티넘')) {
+             badgeStyle = 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300';
+          } else if (badgeLabel.includes('GOLD') || badgeLabel.includes('골드')) {
              badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
           } else {
              badgeStyle = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
           }
+      } else if (plan === 'platinum') {
+          badgeLabel = 'PLATINUM';
+          badgeStyle = 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300';
       } else if (plan === 'gold') {
           badgeLabel = 'GOLD BUTTON';
           badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
@@ -1012,7 +1017,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                    {/* Disclaimer Notice */}
                    <div className="w-full max-w-md mb-6 px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
                       <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed text-center">
-                        홈페이지에서 사용할수 있는 포인트를 나타낸것으로 매일 오후 5시(KST)에 초기화되어 충분히 사용 가능합니다. 실버등급의 경우 매일 2천포인트가 지급되고 골드등급의 경우 매일 5천포인트가 지급이 됩니다.
+                        홈페이지에서 사용할수 있는 포인트를 나타낸것으로 매일 오후 5시(KST)에 초기화됩니다. 실버등급은 매일 2천포인트, 골드등급은 5천포인트, 플래티넘등급은 7천포인트가 지급됩니다.
                       </p>
                    </div>
 

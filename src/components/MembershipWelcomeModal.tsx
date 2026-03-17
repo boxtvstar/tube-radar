@@ -10,6 +10,7 @@ interface MembershipWelcomeModalProps {
 
 export const MembershipWelcomeModal: React.FC<MembershipWelcomeModalProps> = ({ onClose, userName, daysLeft, plan, limit }) => {
   const getTierName = (p?: string) => {
+     if (p === 'platinum') return '플래티넘 버튼(Platinum)';
      if (p === 'gold') return '골드 버튼(Gold)';
      if (p === 'silver') return '실버 버튼(Silver)';
      return '일반(General)';
@@ -40,7 +41,7 @@ export const MembershipWelcomeModal: React.FC<MembershipWelcomeModalProps> = ({ 
 
            <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 text-center space-y-4 mb-6">
               <div>
-                <span className={`text-xs font-black px-2 py-1 rounded text-white ${plan === 'gold' ? 'bg-amber-500' : 'bg-slate-400'}`}>
+                <span className={`text-xs font-black px-2 py-1 rounded text-white ${plan === 'platinum' ? 'bg-violet-500' : plan === 'gold' ? 'bg-amber-500' : 'bg-slate-400'}`}>
                   {getTierName(plan)}
                 </span>
                 <p className="text-sm font-bold text-slate-900 dark:text-white mt-2">
@@ -73,4 +74,3 @@ export const MembershipWelcomeModal: React.FC<MembershipWelcomeModalProps> = ({ 
     </div>
   );
 };
-

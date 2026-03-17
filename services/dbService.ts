@@ -301,6 +301,7 @@ export const getUsageFromDb = async (userId: string, plan: string = 'general'): 
   let total = 1000; // Default/General
   if (plan === 'silver') total = 2000;
   if (plan === 'gold') total = 5000;
+  if (plan === 'platinum') total = 7000;
   if (plan === 'admin') total = 10000;
 
   const currentResetTime = getQuotaResetTime();
@@ -341,6 +342,7 @@ export const subscribeToUsage = (userId: string, plan: string, callback: (usage:
   let total = 1000; // Default/General
   if (plan === 'silver') total = 2000;
   if (plan === 'gold') total = 5000;
+  if (plan === 'platinum') total = 7000;
   if (plan === 'admin') total = 10000;
 
   const defaultUsage: ApiUsage = {
@@ -397,6 +399,7 @@ export const updateUsageInDb = async (userId: string, plan: string | undefined, 
   if (plan) {
       if (plan === 'silver') limit = 2000;
       if (plan === 'gold') limit = 5000;
+      if (plan === 'platinum') limit = 7000;
       if (plan === 'admin') limit = 10000;
   } else {
       // Fetch user role if plan not provided (likely called from usageService)
@@ -609,7 +612,7 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
     if (s.userId) {
       loggedInSet.add(String(s.userId));
       const plan = String(s.plan || '').toLowerCase();
-      if (plan === 'gold' || s.role === 'pro') goldSet.add(String(s.userId));
+      if (plan === 'gold' || plan === 'platinum' || s.role === 'pro') goldSet.add(String(s.userId));
       else if (plan === 'silver' || s.role === 'regular') silverSet.add(String(s.userId));
       else generalSet.add(String(s.userId));
     } else {

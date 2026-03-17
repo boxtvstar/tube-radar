@@ -11,6 +11,7 @@ interface ScriptExtractorProps {
 
 export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initialUrl, usage, onUsageUpdate }) => {
   const { plan, role } = useAuth();
+  const hasGoldAccess = plan === 'gold' || plan === 'platinum' || role === 'admin';
   const [url, setUrl] = useState(initialUrl || '');
   const [loading, setLoading] = useState(false);
   
@@ -49,7 +50,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
     }
 
     // 등급 제한: 골드 이상 또는 관리자만 가능
-    if (plan !== 'gold' && role !== 'admin') {
+    if (!hasGoldAccess) {
       setError('대본 추출 기능은 골드(Gold) 등급 이상 회원만 사용 가능합니다.');
       return;
     }

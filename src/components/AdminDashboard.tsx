@@ -97,6 +97,7 @@ const mapPageName = (page: string): string => {
     payment_result: '결제 결과',
     script_extractor: '스크립트 추출',
     source_finder: '원본 찾기',
+    format_studio: '레퍼런스 스튜디오',
     materials_explorer: '소재 탐색',
     channel_radar: '채널 레이더',
     channel_explorer: '채널 탐색기',
@@ -1142,6 +1143,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
             chunk.map(async (u) => {
               try {
                 const p = u.role === 'admin' ? 'admin'
+                  : (u.plan === 'platinum') ? 'platinum'
                   : (u.plan === 'gold' || u.role === 'pro') ? 'gold'
                   : (u.plan === 'silver') ? 'silver' : 'general';
                 const usage = await getUsageFromDb(u.uid, p);
@@ -1429,9 +1431,12 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
               newExpiryDate.setDate(newExpiryDate.getDate() + days);
 
               let newRole: 'regular' | 'pro' = 'regular';
-              let newPlan: 'silver' | 'gold' = 'silver';
+              let newPlan: 'silver' | 'gold' | 'platinum' = 'silver';
 
-              if (targetTier.includes('골드') || targetTier.includes('Gold') || targetTier.includes('pro')) {
+              if (targetTier.includes('플래티넘') || targetTier.includes('Platinum')) {
+                  newRole = 'pro';
+                  newPlan = 'platinum';
+              } else if (targetTier.includes('골드') || targetTier.includes('Gold') || targetTier.includes('pro')) {
                   newRole = 'pro';
                   newPlan = 'gold';
               }
@@ -1978,6 +1983,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          // 2. Check Role/Plan (Fallback)
                          if (!tier || tier === '-') {
                             if (u.role === 'admin') tier = 'admin';
+                            else if (u.plan === 'platinum') tier = 'platinum';
                             else if (u.role === 'pro' || u.plan === 'gold') tier = 'gold';
                             else if (u.role === 'regular' || u.plan === 'silver') tier = 'silver';
                          }
@@ -1987,6 +1993,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          let style = 'bg-slate-100 text-slate-500 border-slate-200';
 
                          if (tier === 'admin') { label = 'ADMIN'; style = 'bg-purple-100 text-purple-600 border-purple-200'; }
+                         else if (tier.includes('platinum') || tier.includes('플래티넘')) { label = '플래티넘 버튼'; style = 'bg-violet-100 text-violet-600 border-violet-200'; }
                          else if (tier.includes('gold') || tier.includes('골드')) { label = '골드 버튼'; style = 'bg-amber-100 text-amber-600 border-amber-200'; }
                          else if (tier.includes('silver') || tier.includes('실버')) { label = '실버 버튼'; style = 'bg-indigo-50 text-indigo-600 border-indigo-100'; }
                          else if (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') { label = '승인됨'; style = 'bg-emerald-100 text-emerald-600 border-emerald-200'; }
@@ -2700,7 +2707,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                             <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 rounded-xl px-4 py-2.5 border border-amber-100 dark:border-amber-500/20">
                               <div className="flex items-center gap-2">
                                 <span className="size-2.5 rounded-full bg-amber-500"></span>
-                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">골드</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">골드 이상</span>
                               </div>
                               <div className="text-right">
                                 <span className="text-sm font-black text-amber-600 dark:text-amber-400">{gold.toLocaleString()}</span>
@@ -2852,7 +2859,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                  </td>
                                  <td className="px-4 py-3">
                                     <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold border ${
-                                       (m.tier?.includes('골드') || m.tier?.includes('Gold') || m.tier?.includes('VIP')) 
+                                       (m.tier?.includes('플래티넘') || m.tier?.includes('Platinum'))
+                                       ? 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-800'
+                                       : (m.tier?.includes('골드') || m.tier?.includes('Gold') || m.tier?.includes('VIP')) 
                                        ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800' 
                                        : (m.tier?.includes('실버') || m.tier?.includes('Silver')) 
                                        ? 'bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
@@ -3092,7 +3101,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                   <div>
                      <label className="block text-xs font-bold text-slate-500 mb-1">등급 (Grade)</label>
                      <div className="flex gap-2">
-                       {['general', 'silver', 'gold'].map((p) => (
+                       {['general', 'silver', 'gold', 'platinum'].map((p) => (
                          <button
                            key={p}
                            onClick={() => setEditPlan(p)}
@@ -3102,7 +3111,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
                            }`}
                          >
-                           {p === 'general' ? '일반' : p === 'silver' ? '실버' : '골드'}
+                           {p === 'general' ? '일반' : p === 'silver' ? '실버' : p === 'gold' ? '골드' : '플래티넘'}
                          </button>
                        ))}
                      </div>
@@ -3557,6 +3566,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                            >
                               <option value="실버 버튼">실버 버튼</option>
                               <option value="골드 버튼">골드 버튼</option>
+                              <option value="플래티넘 버튼">플래티넘 버튼</option>
                            </select>
                         </div>
                         <div>
