@@ -4,10 +4,11 @@ import { collection, addDoc, updateDoc, doc, getDoc, query, where, getDocs } fro
 import { db } from '../lib/firebase';
 
 export const PendingApproval = () => {
-  const { logout, user } = useAuth();
+  const { logout, user, trialStatus, trialExpiresAt, trialUsed, setMembershipJustApproved } = useAuth();
   const [isMessaging, setIsMessaging] = useState(false);
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isStartingTrial, setIsStartingTrial] = useState(false);
   
   // Choose Result Modal State
   const [resultModal, setResultModal] = useState<{ type: 'success' | 'error', title: string, message: React.ReactNode } | null>(null);
@@ -172,6 +173,67 @@ export const PendingApproval = () => {
   }, [user]);
 
   const answeredCount = inquiries.filter(i => i.isAnswered).length;
+  const trialDaysLeft = trialExpiresAt ? Math.max(Math.ceil((new Date(trialExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)), 0) : 0;
+  const hasExpiredTrial = trialStatus === 'expired' || (trialUsed && trialStatus !== 'active' && !!trialExpiresAt && new Date(trialExpiresAt).getTime() <= Date.now());
+  const canStartTrial = !!user && !trialUsed && trialStatus !== 'active' && trialStatus !== 'converted';
+
+  const handleStartTrial = async () => {
+    if (!user || !canStartTrial) return;
+
+    setIsStartingTrial(true);
+    try {
+      const now = new Date();
+      const expires = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        role: 'approved',
+        plan: 'silver',
+        membershipTier: null,
+        expiresAt: expires.toISOString(),
+        trialStatus: 'active',
+        trialStartedAt: now.toISOString(),
+        trialExpiresAt: expires.toISOString(),
+        trialUsed: true,
+        trialSource: 'pending_screen'
+      });
+
+      try {
+        await addDoc(collection(db, 'users', user.uid, 'history'), {
+          action: 'trial_started',
+          details: '3일 무료 체험 시작 (실버 등급)',
+          date: now.toISOString()
+        });
+      } catch (e) {}
+
+      setMembershipJustApproved({
+        matches: true,
+        daysLeft: 3,
+        name: user.displayName || 'Member',
+        plan: 'silver',
+        limit: 2000
+      });
+
+      setResultModal({
+        type: 'success',
+        title: '무료 체험 시작!',
+        message: (
+          <>
+            <p>실버 등급 3일 무료 체험이 시작되었습니다.</p>
+            <p className="mt-1 text-slate-300">종료 후에는 다시 승인 대기 화면으로 돌아옵니다.</p>
+          </>
+        )
+      });
+    } catch (error) {
+      console.error('Trial start failed', error);
+      setResultModal({
+        type: 'error',
+        title: '체험 시작 실패',
+        message: '잠시 후 다시 시도해주세요.'
+      });
+    } finally {
+      setIsStartingTrial(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4 relative overflow-y-auto">
@@ -241,6 +303,34 @@ export const PendingApproval = () => {
              <p className="text-[10px] text-gray-500 mt-2">
                 * 멤버십 회원이 아니신가요? 가입 후 위에서 인증해주세요.
              </p>
+        </div>
+
+        <div className="bg-gray-800/50 rounded-xl p-4 mb-4 border border-gray-700 text-left">
+           <div className="flex items-center gap-2 mb-2">
+              <span className="material-symbols-outlined text-sky-400 text-lg">timer</span>
+              <div className="text-xs font-bold text-slate-300 uppercase">3일 무료 체험</div>
+           </div>
+           {trialStatus === 'active' ? (
+              <p className="text-xs text-slate-400 leading-relaxed">
+                현재 무료 체험이 진행 중입니다. 남은 기간은 <span className="text-sky-400 font-bold">{trialDaysLeft}일</span> 입니다.
+              </p>
+           ) : hasExpiredTrial ? (
+              <p className="text-xs text-slate-400 leading-relaxed">
+                무료 체험은 이미 종료되었습니다. 이제 멤버십 채널 인증 후 계속 이용할 수 있습니다.
+              </p>
+           ) : (
+              <p className="text-xs text-slate-400 leading-relaxed">
+                계정당 1회, 실버 등급 기능을 3일 동안 무료로 체험할 수 있습니다.
+              </p>
+           )}
+           <button
+             onClick={handleStartTrial}
+             disabled={!canStartTrial || isStartingTrial}
+             className="mt-3 w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+           >
+             <span className="material-symbols-outlined text-lg">rocket_launch</span>
+             {trialStatus === 'active' ? '무료 체험 진행 중' : hasExpiredTrial ? '무료 체험 사용 완료' : (isStartingTrial ? '시작 중...' : '3일 무료 체험 시작')}
+           </button>
         </div>
 
         {/* Message Admin Section */}

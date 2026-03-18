@@ -1325,7 +1325,7 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, role: authRole, plan, membershipTier, expiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
+  const { user, role: authRole, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
   
   // [Hardcode Admin Override] for specific email
   const role = ((user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole) as string;
@@ -3533,6 +3533,8 @@ export default function App() {
             plan={plan}
             membershipTier={membershipTier}
             expiresAt={expiresAt}
+            trialStatus={trialStatus}
+            trialExpiresAt={trialExpiresAt}
             onLogout={logout}
             ytKey={ytKey}
             onYtKeyChange={setYtKey}

@@ -12,6 +12,9 @@ interface AuthContextType {
   plan: string | null;
   membershipTier: string | null;
   expiresAt: string | null;
+  trialStatus: 'active' | 'expired' | 'converted' | null;
+  trialExpiresAt: string | null;
+  trialUsed: boolean;
   loading: boolean;
   hiddenItemIds: string[];
   signInWithGoogle: () => Promise<void>;
@@ -31,6 +34,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [plan, setPlan] = useState<string | null>(null);
   const [membershipTier, setMembershipTier] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [trialStatus, setTrialStatus] = useState<'active' | 'expired' | 'converted' | null>(null);
+  const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
+  const [trialUsed, setTrialUsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hiddenItemIds, setHiddenItemIds] = useState<string[]>([]);
   const [membershipJustApproved, setMembershipJustApproved] = useState<{ matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null>(null);
@@ -43,6 +49,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setPlan(null);
         setMembershipTier(null);
         setExpiresAt(null);
+        setTrialStatus(null);
+        setTrialExpiresAt(null);
+        setTrialUsed(false);
         setHiddenItemIds([]);
         setLoading(false);
         return;
@@ -76,7 +85,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             lastLoginAt: new Date().toISOString(),
             expiresAt: null,
             plan: 'free',
-            channelId: null
+            channelId: null,
+            trialStatus: null,
+            trialExpiresAt: null,
+            trialStartedAt: null,
+            trialUsed: false,
+            trialSource: null
           }, { merge: true });
        } else {
           // Update last login
@@ -100,12 +114,54 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const currentTier = data.membershipTier || null;
         const storedChannelId = data.channelId;
         const currentExpiresAt = data.expiresAt;
+        const currentTrialStatus = data.trialStatus || null;
+        const currentTrialExpiresAt = data.trialExpiresAt || null;
+        const currentTrialUsed = !!data.trialUsed;
         const currentHiddenItemIds = data.hiddenItemIds || [];
 
-        setRole(currentRole);
-        setPlan(currentPlan);
-        setMembershipTier(currentTier);
-        setExpiresAt(currentExpiresAt || null);
+        let effectiveRole = currentRole;
+        let effectivePlan = currentPlan;
+        let effectiveTier = currentTier;
+        let effectiveExpiresAt = currentExpiresAt || null;
+        const trialExpiryTime = currentTrialExpiresAt ? new Date(currentTrialExpiresAt).getTime() : 0;
+        const hasActiveTrial = currentTrialStatus === 'active' && trialExpiryTime > Date.now();
+
+        if (currentRole !== 'admin' && currentTrialStatus === 'active' && currentTrialExpiresAt && trialExpiryTime <= Date.now()) {
+          try {
+            await updateDoc(userRef, {
+              role: 'pending',
+              plan: 'free',
+              membershipTier: null,
+              expiresAt: null,
+              trialStatus: 'expired'
+            });
+            try {
+              const { addDoc, collection } = await import('firebase/firestore');
+              await addDoc(collection(db, 'users', user.uid, 'history'), {
+                action: 'trial_expired',
+                details: '3일 무료 체험 종료',
+                date: new Date().toISOString()
+              });
+            } catch (e) {}
+          } catch (e) {
+            console.error('Trial expiry update failed', e);
+          }
+          effectiveRole = 'pending';
+          effectivePlan = 'free';
+          effectiveExpiresAt = null;
+        } else if (currentRole !== 'admin' && hasActiveTrial) {
+          effectiveRole = 'approved';
+          effectivePlan = 'silver';
+          effectiveExpiresAt = currentTrialExpiresAt;
+        }
+
+        setRole(effectiveRole);
+        setPlan(effectivePlan);
+        setMembershipTier(effectiveTier);
+        setExpiresAt(effectiveExpiresAt);
+        setTrialStatus(currentTrialStatus);
+        setTrialExpiresAt(currentTrialExpiresAt || null);
+        setTrialUsed(currentTrialUsed);
         setHiddenItemIds(currentHiddenItemIds);
         
         // --- Membership Auto-Approval Logic (Real-time) ---
@@ -217,7 +273,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                       plan: targetPlan,
                                       membershipTier: match.tier,
                                       expiresAt: newExpiry,
-                                      lastUpdate: new Date().toISOString()
+                                      lastUpdate: new Date().toISOString(),
+                                      trialStatus: currentTrialStatus === 'active' ? 'converted' : currentTrialStatus
                                   });
 
                                   // Log History
@@ -230,6 +287,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                         previousExpiry: currentExpiresAt,
                                         newExpiry: newExpiry
                                      });
+                                     if (currentTrialStatus === 'active') {
+                                        await addDoc(collection(db, 'users', user.uid, 'history'), {
+                                          action: 'trial_converted',
+                                          details: `무료 체험 중 정식 멤버십 전환 (${match.tier})`,
+                                          date: new Date().toISOString()
+                                        });
+                                     }
                                   } catch(e) {}
 
                                   // Notify Admin of New Approval or Upgrade
@@ -268,7 +332,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                              }
                     } else {
                        // Whitelist에서 제거된 경우: approved 사용자를 pending으로 다운그레이드
-                       if (currentRole === 'approved') {
+                       if (currentRole === 'approved' && !hasActiveTrial) {
                           await updateDoc(userRef, {
                              role: 'pending',
                              plan: 'free',
@@ -296,6 +360,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => unsubscribeSnapshot();
   }, [user]);
+
+  useEffect(() => {
+    if (!user || trialStatus !== 'active' || !trialExpiresAt) return;
+
+    const expireAt = new Date(trialExpiresAt).getTime();
+    const remainingMs = expireAt - Date.now();
+    const userRef = doc(db, 'users', user.uid);
+
+    const expireTrial = async () => {
+      try {
+        const snap = await getDoc(userRef);
+        if (!snap.exists()) return;
+        const data = snap.data();
+        if (data.role === 'admin' || data.trialStatus !== 'active') return;
+
+        await updateDoc(userRef, {
+          role: 'pending',
+          plan: 'free',
+          membershipTier: null,
+          expiresAt: null,
+          trialStatus: 'expired'
+        });
+
+        try {
+          const { addDoc, collection } = await import('firebase/firestore');
+          await addDoc(collection(db, 'users', user.uid, 'history'), {
+            action: 'trial_expired',
+            details: '3일 무료 체험 종료',
+            date: new Date().toISOString()
+          });
+        } catch (e) {}
+      } catch (error) {
+        console.error('Scheduled trial expiry failed', error);
+      }
+    };
+
+    if (remainingMs <= 0) {
+      void expireTrial();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void expireTrial();
+    }, remainingMs + 1000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [user, trialStatus, trialExpiresAt]);
 
   const dismissItem = async (itemId: string) => {
     if (!user) return;
@@ -359,7 +470,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, role, plan, membershipTier, expiresAt, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
+    <AuthContext.Provider value={{ user, role, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, trialUsed, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
       {children}
     </AuthContext.Provider>
   );

@@ -14,6 +14,8 @@ interface MyPageModalProps {
   plan?: string | null;
   membershipTier?: string | null;
   expiresAt: string | null;
+  trialStatus?: string | null;
+  trialExpiresAt?: string | null;
   onLogout: () => void;
   onMarkRead: (id: string) => void;
   initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage';
@@ -35,6 +37,8 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   plan,
   membershipTier,
   expiresAt,
+  trialStatus,
+  trialExpiresAt,
   onLogout,
   onMarkRead,
   initialTab = 'dashboard',
@@ -49,13 +53,20 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   // Determine Badge Label & Style
   let badgeLabel = 'GUEST';
   let badgeStyle = 'bg-slate-50 text-slate-500';
+  const isTrialActive = trialStatus === 'active' && !!trialExpiresAt && new Date(trialExpiresAt).getTime() > Date.now();
+  const trialDaysLeft = isTrialActive && trialExpiresAt
+    ? Math.max(Math.ceil((new Date(trialExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)), 0)
+    : 0;
 
   if (role === 'admin') {
       badgeLabel = 'ADMIN';
       badgeStyle = 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300';
   } else if (role === 'approved') {
-      // Use membershipTier or Plan
-      if (membershipTier) {
+      if (isTrialActive) {
+          badgeLabel = 'SILVER TRIAL';
+          badgeStyle = 'bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300';
+      } else if (membershipTier) {
+          // Use membershipTier or plan for regular memberships.
           badgeLabel = membershipTier.toUpperCase(); // e.g., '실버 버튼' -> '실버 버튼'
           if (badgeLabel.includes('PLATINUM') || badgeLabel.includes('플래티넘')) {
              badgeStyle = 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300';
@@ -331,8 +342,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wide ${badgeStyle}`}>
                             {badgeLabel}
                          </span>
-                      </div>
+                     </div>
                       <span className="text-[10px] text-slate-400 font-medium tracking-tight">{user.email}</span>
+                      {isTrialActive && (
+                        <span className="text-[10px] text-sky-500 font-bold tracking-tight">
+                          무료 체험 D-{trialDaysLeft}
+                        </span>
+                      )}
                    </div>
                 </div>
 
