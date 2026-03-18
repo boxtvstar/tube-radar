@@ -31,6 +31,9 @@ interface UserData {
   channelId?: string; // YouTube Channel ID
   lastLoginAt?: string;
   adminMemo?: string;
+  membershipTier?: string | null;
+  trialStatus?: 'active' | 'expired' | 'converted' | null;
+  trialExpiresAt?: string | null;
 }
 
 // Notice Interface
@@ -79,6 +82,21 @@ const getStatusLabel = (status?: string) => {
     case 'pending': return '대기중';
     default: return '대기중';
   }
+};
+
+const getUserAccessBadge = (u: UserData) => {
+  const isTrialActive =
+    u.trialStatus === 'active' &&
+    !!u.trialExpiresAt &&
+    new Date(u.trialExpiresAt).getTime() > Date.now();
+
+  if (u.role === 'admin') return { label: '관리자', style: 'bg-purple-100 text-purple-600 border-purple-200' };
+  if (isTrialActive) return { label: '무료체험', style: 'bg-sky-100 text-sky-600 border-sky-200' };
+  if (u.plan === 'platinum') return { label: '플래티넘', style: 'bg-violet-100 text-violet-600 border-violet-200' };
+  if (u.role === 'pro' || u.plan === 'gold') return { label: '골드', style: 'bg-amber-100 text-amber-600 border-amber-200' };
+  if (u.role === 'regular' || u.plan === 'silver') return { label: '실버', style: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
+  if (u.role === 'approved') return { label: '무료승인', style: 'bg-emerald-100 text-emerald-600 border-emerald-200' };
+  return { label: '대기중', style: 'bg-yellow-100 text-yellow-600 border-yellow-200' };
 };
 
 const formatDuration = (seconds: number) => {
@@ -1519,7 +1537,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                });
             } catch(e) {/* ignore log error */}
 
-            alert(`명단 삭제 완료.\n사용자(${foundUser.displayName})의 등급도 '승인됨(Free)'으로 변경되었습니다.`);
+            alert(`명단 삭제 완료.\n사용자(${foundUser.displayName})의 등급도 '무료승인'으로 변경되었습니다.`);
             
             // Refresh to show updated status
             fetchUsers(); 
@@ -1785,7 +1803,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                           : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                       }`}
                     >
-                      {f === 'all' ? '전체' : f === 'approved' ? '승인됨' : '대기중'} ({
+                      {f === 'all' ? '전체' : f === 'approved' ? '사용가능' : '대기중'} ({
                         f === 'all' ? users.length : users.filter(u => u.role === f).length
                       })
                     </button>
@@ -1989,18 +2007,19 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          }
                          
                          // 3. Render
-                         let label = '일반';
-                         let style = 'bg-slate-100 text-slate-500 border-slate-200';
-
-                         if (tier === 'admin') { label = 'ADMIN'; style = 'bg-purple-100 text-purple-600 border-purple-200'; }
-                         else if (tier.includes('platinum') || tier.includes('플래티넘')) { label = '플래티넘 버튼'; style = 'bg-violet-100 text-violet-600 border-violet-200'; }
-                         else if (tier.includes('gold') || tier.includes('골드')) { label = '골드 버튼'; style = 'bg-amber-100 text-amber-600 border-amber-200'; }
-                         else if (tier.includes('silver') || tier.includes('실버')) { label = '실버 버튼'; style = 'bg-indigo-50 text-indigo-600 border-indigo-100'; }
-                         else if (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') { label = '승인됨'; style = 'bg-emerald-100 text-emerald-600 border-emerald-200'; }
+                         const badge = getUserAccessBadge({
+                            ...u,
+                            plan:
+                              tier === 'admin' ? u.plan :
+                              (tier.includes('platinum') || tier.includes('플래티넘')) ? 'platinum' :
+                              (tier.includes('gold') || tier.includes('골드')) ? 'gold' :
+                              (tier.includes('silver') || tier.includes('실버')) ? 'silver' :
+                              u.plan
+                         });
 
                          return (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${style}`}>
-                            {label}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${badge.style}`}>
+                            {badge.label}
                           </span>
                          );
                       })()}
@@ -2061,13 +2080,14 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       })()}
                     </td>
                     <td className="px-2 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide border ${
-                        u.role === 'admin' ? 'bg-purple-100 text-purple-600 border-purple-200' :
-                        (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') ? 'bg-emerald-100 text-emerald-600 border-emerald-200' :
-                        'bg-yellow-100 text-yellow-600 border-yellow-200'
-                      }`}>
-                        {u.role === 'admin' ? '관리자' : (u.role === 'approved' || u.role === 'regular' || u.role === 'pro') ? '승인됨' : '대기중'}
-                      </span>
+                      {(() => {
+                        const badge = getUserAccessBadge(u);
+                        return (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-wide border ${badge.style}`}>
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
 
                     </td>
                     <td className="px-2 py-3">
@@ -3092,7 +3112,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                              : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
                          }`}
                        >
-                         {r === 'admin' ? '관리자' : r === 'approved' ? '승인됨' : '대기'}
+                         {r === 'admin' ? '관리자' : r === 'approved' ? '무료승인' : '대기'}
                        </button>
                      ))}
                    </div>
