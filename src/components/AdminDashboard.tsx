@@ -576,6 +576,71 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
             updatedBy: user?.email
          });
 
+         // Immediately sync matched users to the latest whitelist tier/status.
+         for (const member of details) {
+            const foundUser = users.find(u => {
+               const uChannelId = (u as any).channelId || '';
+               const uEmail = (u.email || '').toLowerCase().trim();
+               const memberId = String(member.id || '').trim();
+               const memberIdLower = memberId.toLowerCase();
+
+               if (uChannelId && uChannelId === memberId) return true;
+               return uEmail === memberIdLower || uEmail.split('@')[0] === memberIdLower;
+            });
+
+            if (!foundUser) continue;
+
+            const resolvedStatus = resolveStatusFromTier(member.tier);
+            if (!resolvedStatus) continue;
+
+            const nextRole = getLegacyRoleFromStatus(resolvedStatus, foundUser.email);
+            const nextPlan = getLegacyPlanFromStatus(resolvedStatus);
+            const currentStatus = foundUser.status || deriveStatusFromLegacy(foundUser as any);
+
+            let nextExpiresAt: string | null = foundUser.expiresAt || null;
+            const now = new Date();
+
+            if (member.remainingDays) {
+              const parsedDays = parseInt(String(member.remainingDays).replace(/[^0-9]/g, ''));
+              if (!isNaN(parsedDays)) {
+                nextExpiresAt = new Date(now.getTime() + parsedDays * 24 * 60 * 60 * 1000).toISOString();
+              }
+            } else if (member.lastUpdate) {
+              const anchorDate = new Date(member.lastUpdate);
+              if (!isNaN(anchorDate.getTime())) {
+                const anchorDay = anchorDate.getDate();
+                const nextRenewal = new Date(now.getFullYear(), now.getMonth(), anchorDay);
+                if (now.getDate() >= anchorDay) nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+                nextExpiresAt = nextRenewal.toISOString();
+              }
+            }
+
+            if (
+              currentStatus !== resolvedStatus ||
+              foundUser.plan !== nextPlan ||
+              foundUser.membershipTier !== member.tier ||
+              (!!nextExpiresAt && nextExpiresAt !== (foundUser.expiresAt || null))
+            ) {
+              await updateDoc(doc(db, 'users', foundUser.uid), {
+                status: resolvedStatus,
+                role: nextRole,
+                plan: nextPlan,
+                membershipTier: member.tier || null,
+                expiresAt: nextExpiresAt || null,
+                lastUpdate: new Date().toISOString(),
+                ...(resolvedStatus !== 'trial' ? { trialStatus: foundUser.trialStatus === 'active' ? 'converted' : (foundUser.trialStatus || null) } : {})
+              });
+
+              try {
+                await addDoc(collection(db, 'users', foundUser.uid, 'history'), {
+                  action: 'membership_sync',
+                  details: `CSV 재동기화: ${currentStatus} -> ${resolvedStatus} (${member.tier || '-'})`,
+                  date: new Date().toISOString()
+                });
+              } catch (e) {}
+            }
+         }
+
          // Immediately downgrade removed users
          const revokedNames: string[] = [];
          for (const member of removed) {
