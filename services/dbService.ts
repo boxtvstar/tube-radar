@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../src/lib/firebase";
 import { SavedChannel, ChannelGroup, RecommendedPackage, Notification, ApiUsage } from "../types";
+import { deriveStatusFromLegacy, getDailyPointLimit, getEffectiveStatus } from "../src/lib/membership";
 
 // Helper function to remove undefined fields from objects (deep)
 // Firestore doesn't allow undefined values, so we need to filter them out
@@ -298,11 +299,7 @@ export const getUsageFromDb = async (userId: string, plan: string = 'general'): 
   const snap = await getDoc(docRef);
   
   // Determine Total based on Plan
-  let total = 1000; // Default/General
-  if (plan === 'silver') total = 2000;
-  if (plan === 'gold') total = 5000;
-  if (plan === 'platinum') total = 7000;
-  if (plan === 'admin') total = 10000;
+  let total = getDailyPointLimit(plan || 'pending');
 
   const currentResetTime = getQuotaResetTime();
   const defaultUsage: ApiUsage = {
@@ -339,11 +336,7 @@ export const subscribeToUsage = (userId: string, plan: string, callback: (usage:
   const currentResetTime = getQuotaResetTime();
 
   // Determine Total based on Plan
-  let total = 1000; // Default/General
-  if (plan === 'silver') total = 2000;
-  if (plan === 'gold') total = 5000;
-  if (plan === 'platinum') total = 7000;
-  if (plan === 'admin') total = 10000;
+  let total = getDailyPointLimit(plan || 'pending');
 
   const defaultUsage: ApiUsage = {
     total,
@@ -397,19 +390,15 @@ export const updateUsageInDb = async (userId: string, plan: string | undefined, 
   // Determine Limit
   let limit = 1000;
   if (plan) {
-      if (plan === 'silver') limit = 2000;
-      if (plan === 'gold') limit = 5000;
-      if (plan === 'platinum') limit = 7000;
-      if (plan === 'admin') limit = 10000;
+      limit = getDailyPointLimit(plan);
   } else {
       // Fetch user role if plan not provided (likely called from usageService)
       try {
          const userSnap = await getDoc(doc(db, "users", userId));
          if (userSnap.exists()) {
-            const role = userSnap.data().role;
-            if (role === 'regular') limit = 2000;
-            else if (role === 'pro') limit = 5000;
-            else if (role === 'admin') limit = 10000;
+            const data = userSnap.data();
+            const status = getEffectiveStatus(deriveStatusFromLegacy(data), data.email);
+            limit = getDailyPointLimit(status);
          }
       } catch (e) {
          // Default 1000
@@ -611,9 +600,9 @@ export const getAnalyticsOverview = async (days: number = 7): Promise<AnalyticsO
     visitorSet.add(visitorKey);
     if (s.userId) {
       loggedInSet.add(String(s.userId));
-      const plan = String(s.plan || '').toLowerCase();
-      if (plan === 'gold' || plan === 'platinum' || s.role === 'pro') goldSet.add(String(s.userId));
-      else if (plan === 'silver' || s.role === 'regular') silverSet.add(String(s.userId));
+      const status = getEffectiveStatus(deriveStatusFromLegacy(s as any), (s as any).email);
+      if (status === 'gold' || status === 'platinum') goldSet.add(String(s.userId));
+      else if (status === 'trial' || status === 'silver') silverSet.add(String(s.userId));
       else generalSet.add(String(s.userId));
     } else {
       guestSet.add(String(s.anonId || 'unknown'));

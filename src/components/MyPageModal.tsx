@@ -4,12 +4,14 @@ import { ApiUsage, Notification, RecommendedPackage } from '../../types';
 import { getUserProposals, sendInquiry, getUserInquiries, saveTopicToDb, savePackageToDb } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import { SavedChannel } from '../../types';
+import { MembershipStatus } from '../lib/membership';
 
 interface MyPageModalProps {
   onClose: () => void;
   user: any;
   usage: ApiUsage;
   notifications: Notification[];
+  status?: MembershipStatus | null;
   role: string;
   plan?: string | null;
   membershipTier?: string | null;
@@ -33,6 +35,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   user, 
   usage, 
   notifications, 
+  status,
   role, 
   plan,
   membershipTier,
@@ -53,7 +56,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   // Determine Badge Label & Style
   let badgeLabel = 'GUEST';
   let badgeStyle = 'bg-slate-50 text-slate-500';
-  const isTrialActive = trialStatus === 'active' && !!trialExpiresAt && new Date(trialExpiresAt).getTime() > Date.now();
+  const isTrialActive = status === 'trial' && !!trialExpiresAt && new Date(trialExpiresAt).getTime() > Date.now();
   const trialDaysLeft = isTrialActive && trialExpiresAt
     ? Math.max(Math.ceil((new Date(trialExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)), 0)
     : 0;
@@ -61,33 +64,21 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   if (role === 'admin') {
       badgeLabel = 'ADMIN';
       badgeStyle = 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300';
-  } else if (role === 'approved') {
-      if (isTrialActive) {
-          badgeLabel = 'SILVER TRIAL';
-          badgeStyle = 'bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300';
-      } else if (membershipTier) {
-          // Use membershipTier or plan for regular memberships.
-          badgeLabel = membershipTier.toUpperCase(); // e.g., '실버 버튼' -> '실버 버튼'
-          if (badgeLabel.includes('PLATINUM') || badgeLabel.includes('플래티넘')) {
-             badgeStyle = 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300';
-          } else if (badgeLabel.includes('GOLD') || badgeLabel.includes('골드')) {
-             badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
-          } else {
-             badgeStyle = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
-          }
-      } else if (plan === 'platinum') {
-          badgeLabel = 'PLATINUM';
-          badgeStyle = 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300';
-      } else if (plan === 'gold') {
-          badgeLabel = 'GOLD BUTTON';
-          badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
-      } else if (plan === 'silver') {
-          badgeLabel = 'SILVER BUTTON';
-          badgeStyle = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
-      } else {
-          badgeLabel = 'APPROVED';
-          badgeStyle = 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300';
-      }
+  } else if (isTrialActive) {
+      badgeLabel = 'FREE TRIAL';
+      badgeStyle = 'bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300';
+  } else if (status === 'platinum' || plan === 'platinum') {
+      badgeLabel = 'PLATINUM';
+      badgeStyle = 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300';
+  } else if (status === 'gold' || plan === 'gold') {
+      badgeLabel = 'GOLD';
+      badgeStyle = 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300';
+  } else if (status === 'silver' || plan === 'silver' || membershipTier) {
+      badgeLabel = 'SILVER';
+      badgeStyle = 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
+  } else if (status === 'pending') {
+      badgeLabel = 'PENDING';
+      badgeStyle = 'bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-300';
   }
 
   // ... rest of component ...
@@ -481,10 +472,10 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                         type="password" 
                         value={ytKey} 
                         onChange={(e) => onYtKeyChange(e.target.value)}
-                        disabled={role === 'pending' || role === 'guest'}
-                        placeholder={role === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "YouTube Data API v3 키를 입력하세요"}
+                        disabled={status === 'pending' || role === 'guest'}
+                        placeholder={status === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "YouTube Data API v3 키를 입력하세요"}
                         className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
-                          role === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
+                          status === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
                           ytApiStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
                           ytApiStatus === 'invalid' ? 'border-rose-200 focus:border-rose-500 text-rose-700 dark:text-rose-400' :
                           'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
@@ -496,7 +487,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       
                       {ytApiStatus === 'valid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
                     </div>
-                    {role === 'pending' || role === 'guest' ? (
+                    {status === 'pending' || role === 'guest' ? (
                         <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
                           <span className="material-symbols-outlined text-[14px] mt-0.5">lock</span>
                           <span>API 키 입력은 관리자 승인 후 가능합니다.</span>
@@ -558,10 +549,10 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                             (window as any).__geminiValidateTimer = setTimeout(() => validateGeminiKey(val), 800);
                           }
                         }}
-                        disabled={role === 'pending' || role === 'guest'}
-                        placeholder={role === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "Google Gemini API Key 입력..."}
+                        disabled={status === 'pending' || role === 'guest'}
+                        placeholder={status === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "Google Gemini API Key 입력..."}
                         className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
-                          role === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
+                          status === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
                           geminiKeyStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
                           geminiKeyStatus === 'invalid' ? 'border-rose-200 focus:border-rose-500 text-rose-700 dark:text-rose-400' :
                           'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
@@ -574,7 +565,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       {geminiKeyStatus === 'valid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
                       {geminiKeyStatus === 'invalid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-rose-500 animate-in zoom-in">error</span>}
                     </div>
-                    {role === 'pending' || role === 'guest' ? (
+                    {status === 'pending' || role === 'guest' ? (
                         <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
                           <span className="material-symbols-outlined text-[14px] mt-0.5">lock</span>
                           <span>API 키 입력은 관리자 승인 후 가능합니다.</span>

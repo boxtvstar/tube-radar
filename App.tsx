@@ -10,6 +10,7 @@ import { LandingPage } from './src/components/LandingPage';
 import { PendingApproval } from './src/components/PendingApproval';
 import { AdminDashboard } from './src/components/AdminDashboard';
 import { UserRole } from './src/contexts/AuthContext';
+import { getEffectiveStatus, getLegacyPlanFromStatus, hasSilverAccess } from './src/lib/membership';
 import { GuestNoticeModal } from './src/components/GuestNoticeModal';
 import { MembershipWelcomeModal } from './src/components/MembershipWelcomeModal';
 import { MyPageModal } from './src/components/MyPageModal';
@@ -1325,10 +1326,14 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, role: authRole, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
+  const { user, status, role: authRole, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
   
-  // [Hardcode Admin Override] for specific email
-  const role = ((user?.email === 'boxtvstar@gmail.com') ? 'admin' : authRole) as string;
+  const effectiveStatus = getEffectiveStatus(status, user?.email);
+  const isAdmin = effectiveStatus === 'admin';
+  const isPending = effectiveStatus === 'pending';
+  const role = (isAdmin ? 'admin' : authRole) as string;
+  const effectivePlan = isAdmin ? 'admin' : (status ? getLegacyPlanFromStatus(status) : (plan || 'free'));
+  const userGrade = isAdmin ? 'admin' : status === 'trial' ? 'silver' : (status || 'general');
 
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [visibleVideoCount, setVisibleVideoCount] = useState(20); // Pagination: Show 20 videos initially
@@ -1567,24 +1572,24 @@ export default function App() {
 
   // Load usage from DB (Real-time)
   useEffect(() => {
-    if (user && role !== 'pending') {
-      const targetPlan = (role === 'admin' ? 'admin' : plan) || 'general';
+    if (user && !isPending) {
+      const targetPlan = isAdmin ? 'admin' : effectivePlan || 'general';
       const unsubscribe = subscribeToUsage(user.uid, targetPlan, (newUsage) => {
         setUsage(newUsage);
       });
       return () => unsubscribe();
     }
-  }, [user, role, plan]);
+  }, [user, isPending, isAdmin, effectivePlan]);
 
   useEffect(() => {
     let isMounted = true;
     const initAnalytics = async () => {
       if (analyticsSessionIdRef.current) return;
-      if (role === 'admin') return; // 관리자 통계 제외
+      if (isAdmin) return; // 관리자 통계 제외
       const sessionId = await createAnalyticsSession({
         userId: user?.uid || null,
         role: role || null,
-        plan: plan || null,
+        plan: effectivePlan || null,
         page: analyticsPage
       });
       if (!isMounted || !sessionId) return;
@@ -1596,7 +1601,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [user?.uid, role, plan, analyticsPage]);
+  }, [user?.uid, role, effectivePlan, analyticsPage, isAdmin]);
 
   useEffect(() => {
     const sessionId = analyticsSessionIdRef.current;
@@ -1779,14 +1784,7 @@ export default function App() {
   const handleApiUsage = async (cost: number, type: 'search' | 'list' | 'script', details?: string) => {
     if (!user) return;
     try {
-       const effectivePlan =
-         role === 'admin' ? 'admin' :
-         plan === 'platinum' ? 'platinum' :
-         role === 'pro' || plan === 'gold' ? 'gold' :
-         plan === 'silver' || role === 'regular' ? 'silver' :
-         role === 'guest' ? 'general' :
-         'silver';
-       const newUsage = await updateUsageInDb(user.uid, effectivePlan, cost, type, details || '');
+       const newUsage = await updateUsageInDb(user.uid, isAdmin ? 'admin' : userGrade, cost, type, details || '');
        setUsage(newUsage);
     } catch (e: any) {
        console.error("Usage Update Failed", e);
@@ -2039,10 +2037,10 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (role === 'pending') {
+    if (isPending) {
       setShowGuestNotice(true);
     }
-  }, [role]);
+  }, [isPending]);
 
   if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;
   if (!user) return <LandingPage />;
@@ -2279,7 +2277,7 @@ export default function App() {
         : useSearch ? 102 : 1;
       // 트렌드 분석 메뉴는 10배 과금
       const estimatedCost = isTrendMode ? baseCost * 10 : baseCost;
-      await preCheckQuota(estimatedCost, role === 'admin' ? 'admin' : plan || 'general');
+      await preCheckQuota(estimatedCost, isAdmin ? 'admin' : userGrade);
 
       // 채널 수에 따라 타임아웃 동적 조정 (많은 채널 = 더 긴 대기)
       const timeoutMs = isMyMode ? Math.max(60000, targetChannelIds.length * 2500) : 60000;
@@ -2674,7 +2672,7 @@ export default function App() {
     }
   };
 
-  const isReadOnly = role === 'pending';
+  const isReadOnly = isPending;
   const [progress, setProgress] = useState<{ current: number; total: number; message: string; isInline?: boolean } | null>(null);
   
   // --- Bulk Update Channel Stats (For Avg Views) ---
@@ -2794,7 +2792,7 @@ export default function App() {
     // 2. 채널 정보 가져오기
     try {
       // 포인트 사전 체크 (채널 추가: ~5 유닛)
-      await preCheckQuota(5, role === 'admin' ? 'admin' : plan || 'general');
+      await preCheckQuota(5, isAdmin ? 'admin' : userGrade);
 
       const channelInfo = await getChannelInfo(ytKey, channelId);
 
@@ -2871,7 +2869,7 @@ export default function App() {
 
     try {
       // 포인트 사전 체크 (채널 일괄 추가: ~5 유닛 × 채널 수)
-      await preCheckQuota(5 * queries.length, role === 'admin' ? 'admin' : plan || 'general');
+      await preCheckQuota(5 * queries.length, isAdmin ? 'admin' : userGrade);
 
       for (let i = 0; i < queries.length; i++) {
         // setBatchStatus(`${queries.length}개 중 ${i + 1}번째 처리 중...`);
@@ -2976,7 +2974,7 @@ export default function App() {
     setIsExplorerSearching(true);
     try {
       // 포인트 사전 체크 (채널 검색: 100 유닛)
-      await preCheckQuota(100, role === 'admin' ? 'admin' : plan || 'general');
+      await preCheckQuota(100, isAdmin ? 'admin' : userGrade);
 
       const results = await searchChannelsByKeyword(ytKey, explorerQuery);
       setExplorerResults(results);
@@ -3029,7 +3027,7 @@ export default function App() {
   };
 
   const renderRestricted = (content: React.ReactNode) => {
-    if (role !== 'pending') return content;
+    if (!isPending) return content;
     return (
       <div className="relative min-h-[60vh]">
          <RestrictedOverlay 
@@ -3082,7 +3080,7 @@ export default function App() {
     
     try {
       // 포인트 사전 체크 (Shorts 탐색: 실제 ~14 유닛 × 10배 = 140)
-      await preCheckQuota(140, role === 'admin' ? 'admin' : plan || 'general');
+      await preCheckQuota(140, isAdmin ? 'admin' : userGrade);
 
       const results = await autoDetectShortsChannels(ytKey, targetRegion);
 
@@ -3339,11 +3337,11 @@ export default function App() {
 
   // [RBAC] 승인 대기 상태 체크 -> 전용 대기 화면 표시
   // 멤버십 승인 팝업이 떠 있으면 사용자가 확인할 때까지 대기
-  if (role === 'pending' && !membershipJustApproved) {
+  if (isPending && !membershipJustApproved) {
     return <PendingApproval />;
   }
   // pending이지만 팝업이 있으면 → 팝업 먼저 보여주고 확인 후 메인으로 진입
-  if (role === 'pending' && membershipJustApproved) {
+  if (isPending && membershipJustApproved) {
     return (
       <MembershipWelcomeModal
         onClose={() => setMembershipJustApproved(null)}
@@ -3361,7 +3359,7 @@ export default function App() {
   // }
 
   // [Expiration] 만료 체크 (관리자는 제외)
-  if (role !== 'admin' && expiresAt && new Date(expiresAt) < new Date()) {
+  if (!isAdmin && expiresAt && new Date(expiresAt) < new Date()) {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
         <div className="max-w-md w-full bg-gray-900 rounded-2xl p-8 border border-gray-800 text-center shadow-2xl">
@@ -3413,7 +3411,7 @@ export default function App() {
         isApiKeyMissing={isApiKeyMissing}
 
         usage={usage}
-        isReadOnly={role === 'pending'}
+        isReadOnly={isPending}
         isCollapsed={false}
         onToggleCollapse={() => {}}
         isMobileMenuOpen={isMobileMenuOpen}
@@ -3438,8 +3436,8 @@ export default function App() {
         onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
         isRevenueMode={isRevenueMode}
         onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
-        userGrade={plan || 'general'}
-        isAdmin={role === 'admin'}
+        userGrade={userGrade}
+        isAdmin={isAdmin}
         onShowAlert={setAlertMessage}
       />
       
@@ -3529,6 +3527,7 @@ export default function App() {
                 setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n));
               }
             }}
+            status={status}
             role={role}
             plan={plan}
             membershipTier={membershipTier}
@@ -3551,9 +3550,9 @@ export default function App() {
         
 
 
-        {isAdminOpen && (role === 'admin' || role === 'approved') && <AdminDashboard onClose={() => setIsAdminOpen(false)} apiKey={ytKey} />}
+        {isAdminOpen && isAdmin && <AdminDashboard onClose={() => setIsAdminOpen(false)} apiKey={ytKey} />}
         {analysisResult && <AnalysisResultModal result={analysisResult} onClose={() => setAnalysisResult(null)} />}
-        {showGuestNotice && user && role !== 'admin' && role !== 'approved' && (
+        {showGuestNotice && user && !hasSilverAccess(effectiveStatus) && (
           <GuestNoticeModal 
             userName={user.displayName || 'Guest'} 
             onClose={() => setShowGuestNotice(false)} 
@@ -3592,7 +3591,7 @@ export default function App() {
           </div>
         ) : isVideoDownloadMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
-            <VideoDownloader apiKey={ytKey} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role === 'admin' ? 'admin' : plan || 'general')} />
+            <VideoDownloader apiKey={ytKey} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
           </div>
         ) : isSourceFinderMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
@@ -3622,7 +3621,7 @@ export default function App() {
           </div>
         ) : isRevenueMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
-            <ChannelRevenueAnalyzer apiKey={ytKey} onSelectVideo={(video) => setDetailedVideo(video)} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, role === 'admin' ? 'admin' : plan || 'general')} />
+            <ChannelRevenueAnalyzer apiKey={ytKey} onSelectVideo={(video) => setDetailedVideo(video)} onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
           </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
@@ -3676,7 +3675,7 @@ export default function App() {
             setIsNationalTrendMode(false);
             setIsCategoryTrendMode(false);
           }}
-          onPreCheckQuota={(cost) => preCheckQuota(cost, role === 'admin' ? 'admin' : plan || 'general')}
+          onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)}
         />
       </div>
         ) : isComparisonMode ? (
@@ -4697,7 +4696,7 @@ export default function App() {
           </>)}
         {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isRadarMode && !isMaterialsExplorerMode && (
             <div className="space-y-4 pb-20">
-               {isMyMode && role === 'pending' && (
+               {isMyMode && isPending && (
                   <RestrictedOverlay 
                      onCheckStatus={() => { setMyPageInitialTab('dashboard'); setIsMyPageOpen(true); }}
                      onSubscribe={() => {
@@ -4711,7 +4710,7 @@ export default function App() {
                      }}
                   />
                )}
-               <div className={`mt-6 ${isMyMode && role === 'pending' ? 'blur-sm pointer-events-none select-none opacity-40 transition-all duration-500' : ''}`}>
+               <div className={`mt-6 ${isMyMode && isPending ? 'blur-sm pointer-events-none select-none opacity-40 transition-all duration-500' : ''}`}>
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                   <div className="flex flex-col gap-1">

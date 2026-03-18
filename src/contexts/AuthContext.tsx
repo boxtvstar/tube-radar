@@ -3,27 +3,21 @@ import { User, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged 
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { fetchMyChannelId } from '../../services/youtubeService';
+import {
+  MembershipStatus,
+  deriveStatusFromLegacy,
+  getDailyPointLimit,
+  getEffectiveStatus,
+  getLegacyPlanFromStatus,
+  getLegacyRoleFromStatus,
+  resolveStatusFromTier
+} from '../lib/membership';
 
 export type UserRole = 'admin' | 'approved' | 'pending' | 'regular' | 'pro' | 'guest';
 
-const normalizeTierText = (value: unknown) =>
-  String(value || '')
-    .toLowerCase()
-    .normalize('NFKC')
-    .replace(/[\s_-]+/g, '')
-    .replace(/[^\p{L}\p{N}]/gu, '');
-
-const resolvePlanFromTier = (value: unknown): 'silver' | 'gold' | 'platinum' | null => {
-  const tier = normalizeTierText(value);
-  if (!tier) return null;
-  if (tier.includes('platinum') || tier.includes('플래티넘')) return 'platinum';
-  if (tier.includes('gold') || tier.includes('골드') || tier.includes('pro') || tier.includes('vip')) return 'gold';
-  if (tier.includes('silver') || tier.includes('실버') || tier.includes('regular')) return 'silver';
-  return null;
-};
-
 interface AuthContextType {
   user: User | null;
+  status: MembershipStatus | null;
   role: UserRole | null;
   plan: string | null;
   membershipTier: string | null;
@@ -46,6 +40,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [status, setStatus] = useState<MembershipStatus | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
   const [membershipTier, setMembershipTier] = useState<string | null>(null);
@@ -61,6 +56,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
+        setStatus(null);
         setRole(null);
         setPlan(null);
         setMembershipTier(null);
@@ -96,6 +92,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             email: user.email,
             displayName: user.displayName,
             photoURL: user.photoURL,
+            status: 'pending',
             role: 'pending',
             createdAt: new Date().toISOString(),
             lastLoginAt: new Date().toISOString(),
@@ -134,17 +131,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const currentTrialExpiresAt = data.trialExpiresAt || null;
         const currentTrialUsed = !!data.trialUsed;
         const currentHiddenItemIds = data.hiddenItemIds || [];
-
-        let effectiveRole = currentRole;
-        let effectivePlan = currentPlan;
+        let nextStatus = deriveStatusFromLegacy(data);
         let effectiveTier = currentTier;
         let effectiveExpiresAt = currentExpiresAt || null;
         const trialExpiryTime = currentTrialExpiresAt ? new Date(currentTrialExpiresAt).getTime() : 0;
-        const hasActiveTrial = currentTrialStatus === 'active' && trialExpiryTime > Date.now();
+        const effectiveStatusNow = getEffectiveStatus(nextStatus, user.email);
+        const hasActiveTrial = nextStatus === 'trial' && trialExpiryTime > Date.now();
 
-        if (currentRole !== 'admin' && currentTrialStatus === 'active' && currentTrialExpiresAt && trialExpiryTime <= Date.now()) {
+        if (effectiveStatusNow !== 'admin' && nextStatus === 'trial' && currentTrialExpiresAt && trialExpiryTime <= Date.now()) {
           try {
             await updateDoc(userRef, {
+              status: 'pending',
               role: 'pending',
               plan: 'free',
               membershipTier: null,
@@ -162,23 +159,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           } catch (e) {
             console.error('Trial expiry update failed', e);
           }
-          effectiveRole = 'pending';
-          effectivePlan = 'free';
+          nextStatus = 'pending';
+          effectiveTier = null;
           effectiveExpiresAt = null;
-        } else if (currentRole !== 'admin' && hasActiveTrial) {
-          effectiveRole = 'approved';
-          effectivePlan = 'silver';
+        } else if (effectiveStatusNow !== 'admin' && hasActiveTrial) {
+          nextStatus = 'trial';
+          effectiveTier = null;
           effectiveExpiresAt = currentTrialExpiresAt;
         }
-
-        setRole(effectiveRole);
-        setPlan(effectivePlan);
-        setMembershipTier(effectiveTier);
-        setExpiresAt(effectiveExpiresAt);
-        setTrialStatus(currentTrialStatus);
-        setTrialExpiresAt(currentTrialExpiresAt || null);
-        setTrialUsed(currentTrialUsed);
-        setHiddenItemIds(currentHiddenItemIds);
         
         // --- Membership Auto-Approval Logic (Real-time) ---
         // If channelId is present (e.g. just submitted), check whitelist.
@@ -195,16 +183,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     const match = details.find(m => m.id === storedChannelId);
                     
                     if (match) {
-                       // Determine Target Plan/Role based on Tier
-                       // Role is always 'approved' for members. Separation is via 'plan'.
-                       let targetRole: UserRole = 'approved';
                        const currentPlanSafe = currentPlan || 'free';
-                       const resolvedPlan = resolvePlanFromTier(match.tier);
-                       const fallbackPlan =
-                         currentPlanSafe === 'silver' || currentPlanSafe === 'gold' || currentPlanSafe === 'platinum'
-                           ? currentPlanSafe
+                       const resolvedStatus = resolveStatusFromTier(match.tier);
+                       const fallbackStatus =
+                         nextStatus === 'silver' || nextStatus === 'gold' || nextStatus === 'platinum'
+                           ? nextStatus
                            : 'silver';
-                       const targetPlan = resolvedPlan || fallbackPlan;
+                       const targetStatus = resolvedStatus || fallbackStatus;
+                       const targetPlan = getLegacyPlanFromStatus(targetStatus);
 
                        // LOGIC: Calculate Expiry
                        let newExpiry = '';
@@ -244,7 +230,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        const currentExpiryTime = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0;
 
                        // Conditions to Update
-                       const finalRole = currentRole === 'admin' ? 'admin' : targetRole;
+                       const finalRole = getLegacyRoleFromStatus(targetStatus, user.email);
 
                              // Check for Popup Trigger (Session based)
                              // Show if: New upgrade/change OR First time seen in this session
@@ -260,25 +246,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                 const diffInMs = expiryTime - new Date().getTime();
                                 const daysLeftVal = Math.max(Math.ceil(diffInMs / (1000 * 60 * 60 * 24)), 0);
 
-                                let limit = 1000;
-                                if (targetPlan === 'silver') limit = 2000;
-                                if (targetPlan === 'gold') limit = 5000;
-                                if (targetPlan === 'platinum') limit = 7000;
-                                if (finalRole === 'admin') limit = 10000;
-
                                 setMembershipJustApproved({
                                     matches: true,
                                     daysLeft: daysLeftVal,
                                     name: user.displayName || 'Member',
                                     plan: targetPlan,
-                                    limit: limit
+                                    limit: getDailyPointLimit(targetStatus)
                                 });
                                 sessionStorage.setItem(popupKey, 'true');
                              }
 
                              // Update DB if: Role changed, Plan changed, OR Expiry extended
-                             if (finalRole !== currentRole || currentPlanSafe !== targetPlan || expiryTime > (currentExpiryTime + 86400000)) {
+                             if (data.status !== targetStatus || finalRole !== currentRole || currentPlanSafe !== targetPlan || expiryTime > (currentExpiryTime + 86400000)) {
                                   await updateDoc(userRef, {
+                                      status: targetStatus,
                                       role: finalRole,
                                       plan: targetPlan,
                                       membershipTier: match.tier,
@@ -340,10 +321,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                      console.error('Failed to notify admin:', e);
                                   }
                              }
+                             nextStatus = targetStatus;
+                             effectiveTier = match.tier || null;
+                             effectiveExpiresAt = newExpiry;
                     } else {
-                       // Whitelist에서 제거된 경우: approved 사용자를 pending으로 다운그레이드
-                       if (currentRole === 'approved' && !hasActiveTrial) {
+                       // Whitelist에서 제거된 경우: 유료 등급 사용자를 pending으로 다운그레이드
+                       if ((nextStatus === 'silver' || nextStatus === 'gold' || nextStatus === 'platinum') && !hasActiveTrial) {
                           await updateDoc(userRef, {
+                             status: 'pending',
                              role: 'pending',
                              plan: 'free',
                              membershipTier: null,
@@ -357,6 +342,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                                 date: new Date().toISOString(),
                              });
                           } catch(e) {}
+                          nextStatus = 'pending';
+                          effectiveTier = null;
+                          effectiveExpiresAt = null;
                        }
                     }
                  }
@@ -365,6 +353,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
              }
         }
 
+        const effectiveStatus = getEffectiveStatus(nextStatus, user.email);
+        const legacyRole = effectiveStatus === 'admin' ? 'admin' : getLegacyRoleFromStatus(nextStatus, user.email);
+        const legacyPlan = effectiveStatus === 'admin' ? 'admin' : getLegacyPlanFromStatus(nextStatus);
+
+        if (
+          data.status !== nextStatus ||
+          (effectiveStatus !== 'admin' && currentRole !== legacyRole) ||
+          (effectiveStatus !== 'admin' && currentPlan !== legacyPlan)
+        ) {
+          try {
+            await updateDoc(userRef, {
+              status: nextStatus,
+              ...(effectiveStatus === 'admin' ? {} : { role: legacyRole, plan: legacyPlan })
+            });
+          } catch (e) {
+            console.error('Status migration sync failed', e);
+          }
+        }
+
+        setStatus(nextStatus);
+        setRole(legacyRole);
+        setPlan(legacyPlan);
+        setMembershipTier(effectiveTier);
+        setExpiresAt(effectiveExpiresAt);
+        setTrialStatus(currentTrialStatus);
+        setTrialExpiresAt(currentTrialExpiresAt || null);
+        setTrialUsed(currentTrialUsed);
+        setHiddenItemIds(currentHiddenItemIds);
+
         setLoading(false);
     });
 
@@ -372,7 +389,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [user]);
 
   useEffect(() => {
-    if (!user || trialStatus !== 'active' || !trialExpiresAt) return;
+    if (!user || status !== 'trial' || !trialExpiresAt) return;
 
     const expireAt = new Date(trialExpiresAt).getTime();
     const remainingMs = expireAt - Date.now();
@@ -383,9 +400,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const snap = await getDoc(userRef);
         if (!snap.exists()) return;
         const data = snap.data();
-        if (data.role === 'admin' || data.trialStatus !== 'active') return;
+        if (getEffectiveStatus(deriveStatusFromLegacy(data), user.email) === 'admin' || deriveStatusFromLegacy(data) !== 'trial') return;
 
         await updateDoc(userRef, {
+          status: 'pending',
           role: 'pending',
           plan: 'free',
           membershipTier: null,
@@ -416,7 +434,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, remainingMs + 1000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [user, trialStatus, trialExpiresAt]);
+  }, [user, status, trialExpiresAt]);
 
   const dismissItem = async (itemId: string) => {
     if (!user) return;
@@ -480,7 +498,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, role, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, trialUsed, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
+    <AuthContext.Provider value={{ user, status, role, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, trialUsed, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
       {children}
     </AuthContext.Provider>
   );

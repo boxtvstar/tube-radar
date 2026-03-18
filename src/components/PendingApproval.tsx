@@ -4,7 +4,7 @@ import { collection, addDoc, updateDoc, doc, getDoc, query, where, getDocs } fro
 import { db } from '../lib/firebase';
 
 export const PendingApproval = () => {
-  const { logout, user, trialStatus, trialExpiresAt, trialUsed, setMembershipJustApproved } = useAuth();
+  const { logout, user, status, trialStatus, trialExpiresAt, trialUsed, setMembershipJustApproved } = useAuth();
   const [isMessaging, setIsMessaging] = useState(false);
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -174,8 +174,8 @@ export const PendingApproval = () => {
 
   const answeredCount = inquiries.filter(i => i.isAnswered).length;
   const trialDaysLeft = trialExpiresAt ? Math.max(Math.ceil((new Date(trialExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)), 0) : 0;
-  const hasExpiredTrial = trialStatus === 'expired' || (trialUsed && trialStatus !== 'active' && !!trialExpiresAt && new Date(trialExpiresAt).getTime() <= Date.now());
-  const canStartTrial = !!user && !trialUsed && trialStatus !== 'active' && trialStatus !== 'converted';
+  const hasExpiredTrial = trialStatus === 'expired' || (trialUsed && status !== 'trial' && !!trialExpiresAt && new Date(trialExpiresAt).getTime() <= Date.now());
+  const canStartTrial = !!user && !trialUsed && status !== 'trial' && trialStatus !== 'converted';
 
   const handleStartTrial = async () => {
     if (!user || !canStartTrial) return;
@@ -186,6 +186,7 @@ export const PendingApproval = () => {
       const expires = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
       await updateDoc(doc(db, 'users', user.uid), {
+        status: 'trial',
         role: 'approved',
         plan: 'silver',
         membershipTier: null,

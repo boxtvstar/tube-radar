@@ -9,6 +9,17 @@ import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtub
 import { generateChannelRecommendation } from '../../services/geminiService';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import { ko } from 'date-fns/locale/ko';
+import {
+  ADMIN_EMAIL,
+  MembershipStatus,
+  deriveStatusFromLegacy,
+  getDailyPointLimit,
+  getDisplayLabelFromStatus,
+  getEffectiveStatus,
+  getLegacyPlanFromStatus,
+  getLegacyRoleFromStatus,
+  resolveStatusFromTier
+} from '../lib/membership';
 
 
 registerLocale('ko', ko);
@@ -34,6 +45,7 @@ interface UserData {
   membershipTier?: string | null;
   trialStatus?: 'active' | 'expired' | 'converted' | null;
   trialExpiresAt?: string | null;
+  status?: MembershipStatus;
 }
 
 // Notice Interface
@@ -85,34 +97,13 @@ const getStatusLabel = (status?: string) => {
 };
 
 const getUserAccessBadge = (u: UserData) => {
-  const isTrialActive =
-    u.trialStatus === 'active' &&
-    !!u.trialExpiresAt &&
-    new Date(u.trialExpiresAt).getTime() > Date.now();
-
-  if (u.role === 'admin') return { label: '관리자', style: 'bg-purple-100 text-purple-600 border-purple-200' };
-  if (isTrialActive) return { label: '무료체험', style: 'bg-sky-100 text-sky-600 border-sky-200' };
-  if (u.plan === 'platinum') return { label: '플래티넘', style: 'bg-violet-100 text-violet-600 border-violet-200' };
-  if (u.role === 'pro' || u.plan === 'gold') return { label: '골드', style: 'bg-amber-100 text-amber-600 border-amber-200' };
-  if (u.role === 'regular' || u.plan === 'silver') return { label: '실버', style: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
-  if (u.role === 'approved') return { label: '무료승인', style: 'bg-emerald-100 text-emerald-600 border-emerald-200' };
-  return { label: '대기중', style: 'bg-yellow-100 text-yellow-600 border-yellow-200' };
-};
-
-const normalizeTierText = (value: unknown) =>
-  String(value || '')
-    .toLowerCase()
-    .normalize('NFKC')
-    .replace(/[\s_-]+/g, '')
-    .replace(/[^\p{L}\p{N}]/gu, '');
-
-const resolvePlanFromTier = (value: unknown): 'silver' | 'gold' | 'platinum' | null => {
-  const tier = normalizeTierText(value);
-  if (!tier) return null;
-  if (tier.includes('platinum') || tier.includes('플래티넘')) return 'platinum';
-  if (tier.includes('gold') || tier.includes('골드') || tier.includes('pro') || tier.includes('vip')) return 'gold';
-  if (tier.includes('silver') || tier.includes('실버') || tier.includes('regular')) return 'silver';
-  return null;
+  const effectiveStatus = getEffectiveStatus(u.status || deriveStatusFromLegacy(u as any), u.email);
+  if (effectiveStatus === 'admin') return { label: '관리자', style: 'bg-purple-100 text-purple-600 border-purple-200' };
+  if (effectiveStatus === 'trial') return { label: '무료체험', style: 'bg-sky-100 text-sky-600 border-sky-200' };
+  if (effectiveStatus === 'platinum') return { label: '플래티넘', style: 'bg-violet-100 text-violet-600 border-violet-200' };
+  if (effectiveStatus === 'gold') return { label: '골드', style: 'bg-amber-100 text-amber-600 border-amber-200' };
+  if (effectiveStatus === 'silver') return { label: '실버', style: 'bg-indigo-50 text-indigo-600 border-indigo-100' };
+  return { label: '대기', style: 'bg-yellow-100 text-yellow-600 border-yellow-200' };
 };
 
 const formatDuration = (seconds: number) => {
@@ -163,7 +154,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   const [loading, setLoading] = useState(true);
   const [userPointData, setUserPointData] = useState<Record<string, ApiUsage>>({});
   const [pointDataLoading, setPointDataLoading] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'approved' | 'pending'>('all'); // Filter state
+  const [filter, setFilter] = useState<'all' | MembershipStatus>('all');
   const [sortConfig, setSortConfig] = useState<{ key: 'expiresAt' | 'role' | 'lastLoginAt' | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'desc' });
   
   // Bulk Selection State
@@ -264,7 +255,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
     const fetchCounts = async () => {
         try {
             // 1. Pending Users
-            const qUsers = query(collection(db, 'users'), where('role', '==', 'pending'));
+            const qUsers = query(collection(db, 'users'), where('status', '==', 'pending'));
             const snapUsers = await getDocs(qUsers);
             
             // 2. Unreplied Inquiries
@@ -592,8 +583,9 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
                const uChannelId = (u as any).channelId || '';
                return uChannelId && uChannelId === member.id;
             });
-            if (foundUser && foundUser.role === 'approved') {
+            if (foundUser && ['trial', 'silver', 'gold', 'platinum'].includes(foundUser.status || deriveStatusFromLegacy(foundUser as any))) {
                await updateDoc(doc(db, 'users', foundUser.uid), {
+                  status: 'pending',
                   role: 'pending',
                   plan: 'free',
                   membershipTier: null,
@@ -1129,12 +1121,16 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
       const querySnapshot = await getDocs(q);
       const userList: UserData[] = [];
       querySnapshot.forEach((doc) => {
-        userList.push({ uid: doc.id, ...doc.data() } as UserData);
+        const raw = { uid: doc.id, ...doc.data() } as UserData;
+        userList.push({
+          ...raw,
+          status: raw.status || deriveStatusFromLegacy(raw as any)
+        });
       });
       // Sort: Admin first, then by createdAt desc
       userList.sort((a, b) => {
-        if (a.role === 'admin' && b.role !== 'admin') return -1;
-        if (a.role !== 'admin' && b.role === 'admin') return 1;
+        if (getEffectiveStatus(a.status, a.email) === 'admin' && getEffectiveStatus(b.status, b.email) !== 'admin') return -1;
+        if (getEffectiveStatus(a.status, a.email) !== 'admin' && getEffectiveStatus(b.status, b.email) === 'admin') return 1;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
       setUsers(userList);
@@ -1176,10 +1172,11 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
           const results = await Promise.all(
             chunk.map(async (u) => {
               try {
-                const p = u.role === 'admin' ? 'admin'
-                  : (u.plan === 'platinum') ? 'platinum'
-                  : (u.plan === 'gold' || u.role === 'pro') ? 'gold'
-                  : (u.plan === 'silver') ? 'silver' : 'general';
+                const p = getEffectiveStatus(u.status, u.email) === 'admin'
+                  ? 'admin'
+                  : u.status === 'trial'
+                    ? 'silver'
+                    : u.status || 'pending';
                 const usage = await getUsageFromDb(u.uid, p);
                 return { uid: u.uid, usage };
               } catch { return { uid: u.uid, usage: null }; }
@@ -1217,7 +1214,12 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     try {
       const promises = Array.from(selectedIds).map(uid => {
         const userRef = doc(db, 'users', uid);
-        if (action === 'approve') return updateDoc(userRef, { role: 'approved' });
+        if (action === 'approve') return updateDoc(userRef, {
+          status: 'silver',
+          role: 'regular',
+          plan: 'silver',
+          membershipTier: '실버 버튼'
+        });
         if (action === 'delete') return deleteDoc(userRef);
         if (action === 'extend') {
            // Use selected duration for bulk extension
@@ -1343,9 +1345,14 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   };
 
   const handleApprove = async (uid: string) => {
-    if (!window.confirm("이 사용자를 승인하시겠습니까?")) return;
+    if (!window.confirm("이 사용자를 실버 상태로 변경하시겠습니까?")) return;
     try {
-      await updateDoc(doc(db, 'users', uid), { role: 'approved' });
+      await updateDoc(doc(db, 'users', uid), {
+        status: 'silver',
+        role: 'regular',
+        plan: 'silver',
+        membershipTier: '실버 버튼'
+      });
       fetchUsers(); // Refresh list
     } catch (error) {
       alert("승인 처리 중 오류가 발생했습니다.");
@@ -1405,8 +1412,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   };
 
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
-  const [editRole, setEditRole] = useState<'admin' | 'approved' | 'pending' | 'regular' | 'pro' | 'guest'>('pending');
-  const [editPlan, setEditPlan] = useState<string>('free'); // New Plan State
+  const [editStatus, setEditStatus] = useState<MembershipStatus>('pending');
   const [expiryDays, setExpiryDays] = useState<string>(''); // '' means no change or custom
   const [customExpiry, setCustomExpiry] = useState('');
 
@@ -1464,12 +1470,13 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
               const newExpiryDate = new Date();
               newExpiryDate.setDate(newExpiryDate.getDate() + days);
 
-              const resolvedPlan = resolvePlanFromTier(targetTier) || 'silver';
-              let newRole: 'regular' | 'pro' = resolvedPlan === 'silver' ? 'regular' : 'pro';
-              let newPlan: 'silver' | 'gold' | 'platinum' = resolvedPlan;
+              const resolvedStatus = resolveStatusFromTier(targetTier) || 'silver';
+              const newRole = getLegacyRoleFromStatus(resolvedStatus, foundUser.email);
+              const newPlan = getLegacyPlanFromStatus(resolvedStatus);
 
               // Update User Doc
               await updateDoc(doc(db, 'users', foundUser.uid), {
+                  status: resolvedStatus,
                   role: newRole,
                   plan: newPlan,
                   membershipTier: targetTier, // Store original display string
@@ -1531,7 +1538,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
         if (foundUser) {
             await updateDoc(doc(db, 'users', foundUser.uid), {
-                role: 'approved', // Downgrade to basic approved user
+                status: 'pending',
+                role: 'pending',
                 plan: 'free',
                 membershipTier: null,
                 expiresAt: null
@@ -1546,7 +1554,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                });
             } catch(e) {/* ignore log error */}
 
-            alert(`명단 삭제 완료.\n사용자(${foundUser.displayName})의 등급도 '무료승인'으로 변경되었습니다.`);
+            alert(`명단 삭제 완료.\n사용자(${foundUser.displayName})의 상태가 '대기'로 변경되었습니다.`);
             
             // Refresh to show updated status
             fetchUsers(); 
@@ -1584,8 +1592,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
   const handleEditClick = (u: UserData) => {
     setSelectedUser(u);
-    setEditRole(u.role);
-    setEditPlan(u.plan === 'free' ? 'general' : u.plan || 'general'); // Init plan (free -> general)
+    setEditStatus(u.status || deriveStatusFromLegacy(u as any));
     setExpiryDays('');
     setCustomExpiry(u.expiresAt ? new Date(u.expiresAt).toISOString().split('T')[0] : '');
   };
@@ -1600,21 +1607,36 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     } else if (customExpiry) {
       newExpiresAt = new Date(customExpiry).toISOString();
     }
+    if (editStatus === 'trial' && !newExpiresAt) {
+      newExpiresAt = selectedUser.trialExpiresAt || calculateExpiry(3);
+    }
 
     try {
+      const nextRole = getLegacyRoleFromStatus(editStatus, selectedUser.email);
+      const nextPlan = getLegacyPlanFromStatus(editStatus);
       const updates: any = { 
-        role: editRole,
-        plan: editPlan,
+        status: editStatus,
+        role: nextRole,
+        plan: nextPlan,
+        membershipTier: editStatus === 'silver' ? '실버 버튼' : editStatus === 'gold' ? '골드 버튼' : editStatus === 'platinum' ? '플래티넘 버튼' : null,
+        trialStatus: editStatus === 'trial' ? 'active' : ((selectedUser.trialStatus === 'active' && editStatus !== 'trial') ? 'converted' : selectedUser.trialStatus || null),
+        trialExpiresAt: editStatus === 'trial'
+          ? (selectedUser.trialExpiresAt || calculateExpiry(3))
+          : null,
         expiresAt: newExpiresAt || null
       };
+      if (editStatus === 'pending') {
+        updates.membershipTier = null;
+        updates.trialStatus = selectedUser.trialUsed ? 'expired' : null;
+        updates.trialExpiresAt = null;
+      }
       await updateDoc(doc(db, 'users', selectedUser.uid), updates);
       
       // Log History
       try {
          const historyRef = collection(db, 'users', selectedUser.uid, 'history');
          let actionDetails = [];
-         if (selectedUser.role !== editRole) actionDetails.push(`등급변경: ${selectedUser.role} -> ${editRole}`);
-         if ((selectedUser.plan || 'free') !== editPlan) actionDetails.push(`플랜변경: ${selectedUser.plan || 'free'} -> ${editPlan}`);
+         if ((selectedUser.status || deriveStatusFromLegacy(selectedUser as any)) !== editStatus) actionDetails.push(`상태변경: ${selectedUser.status || deriveStatusFromLegacy(selectedUser as any)} -> ${editStatus}`);
          if (selectedUser.expiresAt !== newExpiresAt) actionDetails.push(`만료일변경: ${selectedUser.expiresAt ? new Date(selectedUser.expiresAt).toLocaleDateString() : '없음'} -> ${newExpiresAt ? new Date(newExpiresAt).toLocaleDateString() : '없음'}`);
          
          if (actionDetails.length > 0) {
@@ -1639,13 +1661,13 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const filteredUsers = useMemo(() => {
     let result = users.filter(u => {
       if (filter === 'all') return true;
-      return u.role === filter;
+      return (u.status || deriveStatusFromLegacy(u as any)) === filter;
     });
 
     if (sortConfig.key) {
       result.sort((a, b) => {
-        let aValue: any = sortConfig.key === 'expiresAt' ? (a.expiresAt || '') : sortConfig.key === 'lastLoginAt' ? (a.lastLoginAt || '') : a.role;
-        let bValue: any = sortConfig.key === 'expiresAt' ? (b.expiresAt || '') : sortConfig.key === 'lastLoginAt' ? (b.lastLoginAt || '') : b.role;
+        let aValue: any = sortConfig.key === 'expiresAt' ? (a.expiresAt || '') : sortConfig.key === 'lastLoginAt' ? (a.lastLoginAt || '') : (a.status || deriveStatusFromLegacy(a as any));
+        let bValue: any = sortConfig.key === 'expiresAt' ? (b.expiresAt || '') : sortConfig.key === 'lastLoginAt' ? (b.lastLoginAt || '') : (b.status || deriveStatusFromLegacy(b as any));
 
         // Handle infinite/missing values
         if (sortConfig.key === 'expiresAt' || sortConfig.key === 'lastLoginAt') {
@@ -1802,7 +1824,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
             {activeTab === 'users' && (
               <>
                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                  {['all', 'approved', 'pending'].map((f) => (
+                  {(['all', 'pending', 'trial', 'silver', 'gold', 'platinum'] as const).map((f) => (
                     <button
                       key={f}
                       onClick={() => setFilter(f as any)}
@@ -1812,8 +1834,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                           : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                       }`}
                     >
-                      {f === 'all' ? '전체' : f === 'approved' ? '사용가능' : '대기중'} ({
-                        f === 'all' ? users.length : users.filter(u => u.role === f).length
+                      {f === 'all' ? '전체' : getDisplayLabelFromStatus(f)} ({
+                        f === 'all' ? users.length : users.filter(u => (u.status || deriveStatusFromLegacy(u as any)) === f).length
                       })
                     </button>
                   ))}
@@ -1825,7 +1847,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                      <div className="flex items-center gap-2 bg-slate-800 text-white px-3 py-1 rounded-lg animate-in fade-in slide-in-from-top-2 shadow-xl border border-slate-700/50">
                        <span className="text-xs font-bold mr-2 whitespace-nowrap">{selectedIds.size}명 선택됨</span>
                        <div className="h-4 w-px bg-slate-600 mx-1"></div>
-                       <button onClick={() => handleBulkAction('approve')} className="hover:bg-emerald-600 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-xs font-bold transition-colors">승인</button>
+                       <button onClick={() => handleBulkAction('approve')} className="hover:bg-emerald-600 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-xs font-bold transition-colors">실버</button>
                        <div className="flex items-center gap-1 bg-slate-700/50 rounded px-1 ml-1 border border-slate-600">
                          <select 
                            value={bulkExtendDuration}
@@ -1987,46 +2009,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     <td className="px-2 py-3 text-xs text-slate-600 dark:text-slate-400 hidden md:table-cell">{u.email}</td>
 
                     <td className="px-2 py-3 hidden md:table-cell">
-                      {(() => {
-                         let tier = '';
-                         // 1. Check Whitelist (Robust Matching: ID first, then Email)
-                         if (whitelistData?.memberDetails) {
-                            const safeEmail = (u.email || '').toLowerCase().trim();
-                            // Access channelId from 'u' as any to bypass TS error temporarily if interface not updated yet
-                            const safeChannelId = (u as any).channelId || '';
-
-                            const match = whitelistData.memberDetails.find((m: any) => {
-                               const mId = String(m.id || '').trim();
-                               if (!mId) return false;
-                               // Match by Channel ID (Exact)
-                               if (safeChannelId && mId === safeChannelId) return true;
-                               // Match by Email (Case-insensitive)
-                               const mIdLower = mId.toLowerCase();
-                               return safeEmail === mIdLower || safeEmail.split('@')[0] === mIdLower;
-                            });
-                            if (match && match.tier) tier = match.tier.trim(); // Keep original case for Korean
-                         }
-                         
-                         // 2. Check Role/Plan (Fallback)
-                         if (!tier || tier === '-') {
-                            if (u.role === 'admin') tier = 'admin';
-                            else if (u.plan === 'platinum') tier = 'platinum';
-                            else if (u.role === 'pro' || u.plan === 'gold') tier = 'gold';
-                            else if (u.role === 'regular' || u.plan === 'silver') tier = 'silver';
-                         }
-                         
-                         // 3. Render
-                         const badge = getUserAccessBadge({
-                            ...u,
-                            plan: tier === 'admin' ? u.plan : (resolvePlanFromTier(tier) || u.plan)
-                         });
-
-                         return (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${badge.style}`}>
-                            {badge.label}
-                          </span>
-                         );
-                      })()}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${getUserAccessBadge(u).style}`}>
+                        {getUserAccessBadge(u).label}
+                      </span>
                     </td>
                     <td className="px-2 py-3 text-xs font-mono text-slate-500 whitespace-nowrap hidden md:table-cell">
                       {u.lastLoginAt ? (
@@ -2084,14 +2069,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       })()}
                     </td>
                     <td className="px-2 py-3">
-                      {(() => {
-                        const badge = getUserAccessBadge(u);
-                        return (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-wide border ${badge.style}`}>
-                            {badge.label}
-                          </span>
-                        );
-                      })()}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-wide border ${getUserAccessBadge(u).style}`}>
+                        {getDisplayLabelFromStatus(getEffectiveStatus(u.status || deriveStatusFromLegacy(u as any), u.email))}
+                      </span>
 
                     </td>
                     <td className="px-2 py-3">
@@ -3104,42 +3084,23 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                
                <div className="space-y-4">
                  <div>
-                   <label className="block text-xs font-bold text-slate-500 mb-1">등급 (Role)</label>
+                   <label className="block text-xs font-bold text-slate-500 mb-1">상태 (Status)</label>
                    <div className="flex gap-2">
-                     {['pending', 'approved', 'admin'].map((r) => (
+                     {(['pending', 'trial', 'silver', 'gold', 'platinum'] as const).map((r) => (
                        <button
                          key={r}
-                         onClick={() => setEditRole(r as any)}
+                         onClick={() => setEditStatus(r)}
                          className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
-                           editRole === r 
+                           editStatus === r 
                              ? 'bg-primary text-white border-primary' 
                              : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
                          }`}
                        >
-                         {r === 'admin' ? '관리자' : r === 'approved' ? '무료승인' : '대기'}
+                         {r === 'pending' ? '대기' : r === 'trial' ? '체험' : r === 'silver' ? '실버' : r === 'gold' ? '골드' : '플래티넘'}
                        </button>
                      ))}
                    </div>
                  </div>
-
-                  <div>
-                     <label className="block text-xs font-bold text-slate-500 mb-1">등급 (Grade)</label>
-                     <div className="flex gap-2">
-                       {['general', 'silver', 'gold', 'platinum'].map((p) => (
-                         <button
-                           key={p}
-                           onClick={() => setEditPlan(p)}
-                           className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
-                             editPlan === p 
-                               ? 'bg-primary text-white border-primary' 
-                               : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                           }`}
-                         >
-                           {p === 'general' ? '일반' : p === 'silver' ? '실버' : p === 'gold' ? '골드' : '플래티넘'}
-                         </button>
-                       ))}
-                     </div>
-                   </div>
 
                  <div>
                    <label className="block text-xs font-bold text-slate-500 mb-1">이용 기간 연장</label>
