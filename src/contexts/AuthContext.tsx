@@ -6,6 +6,22 @@ import { fetchMyChannelId } from '../../services/youtubeService';
 
 export type UserRole = 'admin' | 'approved' | 'pending' | 'regular' | 'pro' | 'guest';
 
+const normalizeTierText = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[\s_-]+/g, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
+
+const resolvePlanFromTier = (value: unknown): 'silver' | 'gold' | 'platinum' | null => {
+  const tier = normalizeTierText(value);
+  if (!tier) return null;
+  if (tier.includes('platinum') || tier.includes('플래티넘')) return 'platinum';
+  if (tier.includes('gold') || tier.includes('골드') || tier.includes('pro') || tier.includes('vip')) return 'gold';
+  if (tier.includes('silver') || tier.includes('실버') || tier.includes('regular')) return 'silver';
+  return null;
+};
+
 interface AuthContextType {
   user: User | null;
   role: UserRole | null;
@@ -182,18 +198,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        // Determine Target Plan/Role based on Tier
                        // Role is always 'approved' for members. Separation is via 'plan'.
                        let targetRole: UserRole = 'approved';
-                       let targetPlan = 'free';
-
-                       const tier = (match.tier || '').toLowerCase();
-                       if (tier.includes('platinum') || tier.includes('플래티넘')) {
-                           targetPlan = 'platinum';
-                       }
-                       else if (tier.includes('gold') || tier.includes('pro') || tier.includes('골드')) {
-                           targetPlan = 'gold'; // Gold Plan
-                       }
-                       else if (tier.includes('silver') || tier.includes('regular') || tier.includes('실버')) {
-                           targetPlan = 'silver'; // Silver Plan
-                       }
+                       const currentPlanSafe = currentPlan || 'free';
+                       const resolvedPlan = resolvePlanFromTier(match.tier);
+                       const fallbackPlan =
+                         currentPlanSafe === 'silver' || currentPlanSafe === 'gold' || currentPlanSafe === 'platinum'
+                           ? currentPlanSafe
+                           : 'silver';
+                       const targetPlan = resolvedPlan || fallbackPlan;
 
                        // LOGIC: Calculate Expiry
                        let newExpiry = '';
@@ -234,7 +245,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
                        // Conditions to Update
                        const finalRole = currentRole === 'admin' ? 'admin' : targetRole;
-                       const currentPlanSafe = currentPlan || 'free';
 
                              // Check for Popup Trigger (Session based)
                              // Show if: New upgrade/change OR First time seen in this session

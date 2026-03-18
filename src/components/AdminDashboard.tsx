@@ -99,6 +99,22 @@ const getUserAccessBadge = (u: UserData) => {
   return { label: '대기중', style: 'bg-yellow-100 text-yellow-600 border-yellow-200' };
 };
 
+const normalizeTierText = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[\s_-]+/g, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
+
+const resolvePlanFromTier = (value: unknown): 'silver' | 'gold' | 'platinum' | null => {
+  const tier = normalizeTierText(value);
+  if (!tier) return null;
+  if (tier.includes('platinum') || tier.includes('플래티넘')) return 'platinum';
+  if (tier.includes('gold') || tier.includes('골드') || tier.includes('pro') || tier.includes('vip')) return 'gold';
+  if (tier.includes('silver') || tier.includes('실버') || tier.includes('regular')) return 'silver';
+  return null;
+};
+
 const formatDuration = (seconds: number) => {
   if (!seconds || seconds <= 0) return '0초';
   const h = Math.floor(seconds / 3600);
@@ -1448,16 +1464,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
               const newExpiryDate = new Date();
               newExpiryDate.setDate(newExpiryDate.getDate() + days);
 
-              let newRole: 'regular' | 'pro' = 'regular';
-              let newPlan: 'silver' | 'gold' | 'platinum' = 'silver';
-
-              if (targetTier.includes('플래티넘') || targetTier.includes('Platinum')) {
-                  newRole = 'pro';
-                  newPlan = 'platinum';
-              } else if (targetTier.includes('골드') || targetTier.includes('Gold') || targetTier.includes('pro')) {
-                  newRole = 'pro';
-                  newPlan = 'gold';
-              }
+              const resolvedPlan = resolvePlanFromTier(targetTier) || 'silver';
+              let newRole: 'regular' | 'pro' = resolvedPlan === 'silver' ? 'regular' : 'pro';
+              let newPlan: 'silver' | 'gold' | 'platinum' = resolvedPlan;
 
               // Update User Doc
               await updateDoc(doc(db, 'users', foundUser.uid), {
@@ -2009,12 +2018,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          // 3. Render
                          const badge = getUserAccessBadge({
                             ...u,
-                            plan:
-                              tier === 'admin' ? u.plan :
-                              (tier.includes('platinum') || tier.includes('플래티넘')) ? 'platinum' :
-                              (tier.includes('gold') || tier.includes('골드')) ? 'gold' :
-                              (tier.includes('silver') || tier.includes('실버')) ? 'silver' :
-                              u.plan
+                            plan: tier === 'admin' ? u.plan : (resolvePlanFromTier(tier) || u.plan)
                          });
 
                          return (
