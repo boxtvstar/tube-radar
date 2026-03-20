@@ -106,6 +106,14 @@ const getUserAccessBadge = (u: UserData) => {
   return { label: '대기', style: 'bg-yellow-100 text-yellow-600 border-yellow-200' };
 };
 
+const exportableUserStatuses: Array<'all' | MembershipStatus> = ['all', 'pending', 'trial', 'silver', 'gold', 'platinum'];
+
+const makeExportFileName = (status: 'all' | MembershipStatus) => {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const label = status === 'all' ? 'all' : status;
+  return `users-${label}-${stamp}.json`;
+};
+
 const formatDuration = (seconds: number) => {
   if (!seconds || seconds <= 0) return '0초';
   const h = Math.floor(seconds / 3600);
@@ -1192,6 +1200,50 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     }));
   };
 
+  const getUsersForExport = (status: 'all' | MembershipStatus) => {
+    if (status === 'all') return users;
+    return users.filter((u) => (u.status || deriveStatusFromLegacy(u as any)) === status);
+  };
+
+  const handleExportUsers = (status: 'all' | MembershipStatus) => {
+    const targetUsers = getUsersForExport(status);
+    if (targetUsers.length === 0) {
+      alert('내보낼 사용자가 없습니다.');
+      return;
+    }
+
+    const exportedAt = new Date().toISOString();
+    const payload = {
+      exportedAt,
+      filter: status,
+      filterLabel: status === 'all' ? '전체' : getDisplayLabelFromStatus(status),
+      total: targetUsers.length,
+      users: targetUsers.map((u) => {
+        const resolvedStatus = u.status || deriveStatusFromLegacy(u as any);
+        const effectiveStatus = getEffectiveStatus(resolvedStatus, u.email);
+        return {
+          ...u,
+          status: resolvedStatus,
+          effectiveStatus,
+          statusLabel: getDisplayLabelFromStatus(effectiveStatus),
+          dailyPointLimit: getDailyPointLimit(effectiveStatus),
+          dDay: calculateDDay(u.expiresAt),
+          pointUsage: userPointData[u.uid] || null,
+        };
+      }),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = makeExportFileName(status);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const fetchUsers = async () => {
     try {
       const q = query(collection(db, 'users'));
@@ -1762,6 +1814,20 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     return result;
   }, [users, filter, sortConfig]);
 
+  const userFilterCounts = useMemo(() => {
+    return exportableUserStatuses.reduce<Record<'all' | MembershipStatus, number>>((acc, status) => {
+      acc[status] = getUsersForExport(status).length;
+      return acc;
+    }, {
+      all: 0,
+      pending: 0,
+      trial: 0,
+      silver: 0,
+      gold: 0,
+      platinum: 0,
+    });
+  }, [users]);
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-50 dark:bg-black animate-in fade-in duration-200 overflow-hidden flex flex-col">
         {/* Header */}
@@ -1900,23 +1966,36 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
             {activeTab === 'users' && (
               <>
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                  {(['all', 'pending', 'trial', 'silver', 'gold', 'platinum'] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFilter(f as any)}
-                      className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
-                        filter === f 
-                          ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
-                          : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      {f === 'all' ? '전체' : getDisplayLabelFromStatus(f)} ({
-                        f === 'all' ? users.length : users.filter(u => (u.status || deriveStatusFromLegacy(u as any)) === f).length
-                      })
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-3 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    {exportableUserStatuses.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setFilter(f)}
+                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                          filter === f
+                            ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        {f === 'all' ? '전체' : getDisplayLabelFromStatus(f)} ({userFilterCounts[f]})
+                      </button>
+                    ))}
+                  </div>
 
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    {exportableUserStatuses.map((status) => (
+                      <button
+                        key={`export-${status}`}
+                        onClick={() => handleExportUsers(status)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-200 hover:border-primary/30 hover:text-primary transition-all whitespace-nowrap"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">download</span>
+                        {status === 'all' ? '전체 JSON' : `${getDisplayLabelFromStatus(status)} JSON`}
+                        <span className="text-slate-400">({userFilterCounts[status]})</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3">
