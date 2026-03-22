@@ -41,14 +41,83 @@ const stripCodeFence = (value: string) =>
 
 const extractJson = <T>(raw: string): T => JSON.parse(stripCodeFence(raw)) as T;
 
-const postToGemini = async (apiKey: string, parts: Array<Record<string, unknown>>) => {
+const YOUTUBE_ANALYSIS_MODEL = 'gemini-3-flash-preview';
+const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash';
+
+const toRestPart = (part: Record<string, unknown>) => {
+  if ('fileData' in part) {
+    const fileData = part.fileData as Record<string, unknown>;
+    return {
+      file_data: {
+        file_uri: fileData.fileUri,
+        ...(fileData.mimeType ? { mime_type: fileData.mimeType } : {}),
+      },
+    };
+  }
+
+  if ('inlineData' in part) {
+    const inlineData = part.inlineData as Record<string, unknown>;
+    return {
+      inline_data: {
+        mime_type: inlineData.mimeType,
+        data: inlineData.data,
+      },
+    };
+  }
+
+  return part;
+};
+
+const getGeminiErrorMessage = (status: number, errorText: string) => {
+  const parsed = (() => {
+    try {
+      return JSON.parse(errorText);
+    } catch {
+      return null;
+    }
+  })();
+
+  const apiMessage = String(parsed?.error?.message || '').trim();
+
+  if (status === 429) {
+    return 'Gemini API 오류 (429): 요청이 너무 많거나 API 키 쿼터가 초과되었습니다. 잠시 후 다시 시도하거나 Gemini 요금제/쿼터를 확인해주세요.';
+  }
+
+  if (status === 400) {
+    if (apiMessage.includes('public videos')) {
+      return 'Gemini API 오류 (400): 공개(Public) 상태의 YouTube 영상만 분석할 수 있습니다. 비공개/일부공개 영상은 지원되지 않습니다.';
+    }
+
+    return 'Gemini API 오류 (400): Gemini가 이 YouTube 영상을 처리하지 못했습니다. 공개 영상인지 확인하고, 잠시 후 다시 시도해주세요.';
+  }
+
+  return `Gemini API 오류 (${status})${apiMessage ? `: ${apiMessage}` : ''}`;
+};
+
+const normalizeYouTubeUrl = (url: string) => {
+  const value = url.trim();
+  const watchId = value.match(/[?&]v=([^&#]+)/)?.[1];
+  const shortId = value.match(/youtu\.be\/([^?&#/]+)/)?.[1];
+  const shortsId = value.match(/shorts\/([^?&#/]+)/)?.[1];
+  const embedId = value.match(/embed\/([^?&#/]+)/)?.[1];
+  const videoId = watchId || shortId || shortsId || embedId;
+
+  if (!videoId) return value;
+  return `https://www.youtube.com/watch?v=${videoId}`;
+};
+
+const postToGemini = async (
+  apiKey: string,
+  parts: Array<Record<string, unknown>>,
+  model = DEFAULT_TEXT_MODEL
+) => {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
+        contents: [{ role: 'user', parts: parts.map(toRestPart) }],
       }),
     }
   );
@@ -56,7 +125,7 @@ const postToGemini = async (apiKey: string, parts: Array<Record<string, unknown>
   if (!response.ok) {
     const errorText = await response.text();
     console.error('Format ideation Gemini error:', errorText);
-    throw new Error(`Gemini API 오류 (${response.status})`);
+    throw new Error(getGeminiErrorMessage(response.status, errorText));
   }
 
   const data = await response.json();
@@ -73,6 +142,7 @@ export const analyzeBenchmarkVideo = async (
   apiKey: string,
   video: BenchmarkVideoInput
 ): Promise<BenchmarkVideoInsight> => {
+  const normalizedUrl = normalizeYouTubeUrl(video.url);
   const prompt = `
 당신은 유튜브 기획 포맷 분석가다.
 전달된 YouTube URL 영상을 직접 보고, 문장 복제가 아니라 기획 구조와 형식만 분석해야 한다.
@@ -112,8 +182,8 @@ export const analyzeBenchmarkVideo = async (
 
   const raw = await postToGemini(apiKey, [
     { text: prompt },
-    { fileData: { fileUri: video.url } },
-  ]);
+    { fileData: { fileUri: normalizedUrl } },
+  ], YOUTUBE_ANALYSIS_MODEL);
   const parsed = extractJson<Partial<BenchmarkVideoInsight>>(raw);
 
   return {
