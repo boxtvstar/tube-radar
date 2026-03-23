@@ -138,6 +138,8 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
 
   const selectedIdea = ideas.find((idea) => idea.id === selectedIdeaId) || null;
   const hasGeminiKey = !!getGeminiKey();
+  const currentInputVideoId = extractVideoId(urlInput.trim());
+  const activeBenchmark = benchmark && currentInputVideoId === benchmark.videoId ? benchmark : null;
 
   const requireGoldPlan = () => {
     if (!hasGoldAccess) {
@@ -241,7 +243,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
 
   const handleGenerateIdeas = async () => {
     if (!requireGoldPlan()) return;
-    if (!benchmark) {
+    if (!activeBenchmark) {
       setError('먼저 영상 분석을 완료해주세요.');
       return;
     }
@@ -265,18 +267,18 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
       const nextIdeas = await generateBenchmarkTopics(
         geminiKey,
         {
-          url: benchmark.url,
-          title: benchmark.title,
-          channel: benchmark.channel,
-          durationText: benchmark.durationText,
-          insight: benchmark.analysis,
+          url: activeBenchmark.url,
+          title: activeBenchmark.title,
+          channel: activeBenchmark.channel,
+          durationText: activeBenchmark.durationText,
+          insight: activeBenchmark.analysis,
         },
         10
       );
 
       setIdeas(nextIdeas);
       setSelectedIdeaId(nextIdeas[0]?.id || null);
-      onUsageUpdate(300, 'script', `벤치마크 기반 새 주제 생성: ${benchmark.title}`);
+      onUsageUpdate(300, 'script', `벤치마크 기반 새 주제 생성: ${activeBenchmark.title}`);
     } catch (generateError: any) {
       console.error('Idea generation error:', generateError);
       setError(generateError.message || '주제 생성 중 오류가 발생했습니다.');
@@ -287,7 +289,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
 
   const handleGenerateScript = async () => {
     if (!requireGoldPlan()) return;
-    if (!benchmark || !selectedIdea) {
+    if (!activeBenchmark || !selectedIdea) {
       setError('주제를 먼저 선택해주세요.');
       return;
     }
@@ -308,11 +310,11 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
 
     try {
       const nextScript = await generateBenchmarkScript(geminiKey, {
-        url: benchmark.url,
-        title: benchmark.title,
-        channel: benchmark.channel,
-        durationText: benchmark.durationText,
-        insight: benchmark.analysis,
+        url: activeBenchmark.url,
+        title: activeBenchmark.title,
+        channel: activeBenchmark.channel,
+        durationText: activeBenchmark.durationText,
+        insight: activeBenchmark.analysis,
       }, selectedIdea);
 
       setGeneratedScript(nextScript);
@@ -436,7 +438,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
               </div>
             )}
 
-            {!benchmark ? (
+            {!activeBenchmark ? (
               <div className="rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 px-6 py-14 text-center">
                 <div className="mx-auto mb-4 size-16 rounded-3xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-600">
                   <span className="material-symbols-outlined text-4xl">smart_display</span>
@@ -450,26 +452,26 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
               <article className="rounded-[1.75rem] border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 p-4 md:p-5 space-y-5">
                 <div className="flex gap-4">
                   <img
-                    src={benchmark.thumbnail}
-                    alt={benchmark.title}
+                    src={activeBenchmark.thumbnail}
+                    alt={activeBenchmark.title}
                     className="w-40 h-[90px] rounded-2xl object-cover bg-slate-200 dark:bg-slate-800 shrink-0"
                   />
                   <div className="min-w-0 flex-1 space-y-2">
                     <h4 className="text-base font-black text-slate-900 dark:text-white line-clamp-2">
-                      {benchmark.title}
+                      {activeBenchmark.title}
                     </h4>
                     <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                      {benchmark.channel}
+                      {activeBenchmark.channel}
                     </p>
                     <div className="flex items-center gap-2 flex-wrap text-[11px] font-black">
                       <span className="px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
                         분석 완료
                       </span>
                       <span className="px-3 py-1 rounded-full bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-300">
-                        원본 길이 {benchmark.durationText}
+                        원본 길이 {activeBenchmark.durationText}
                       </span>
                       <span className="px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-300">
-                        생성 기준 {benchmark.analysis.durationGuide}
+                        생성 기준 {activeBenchmark.analysis.durationGuide}
                       </span>
                     </div>
                   </div>
@@ -481,7 +483,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                       Summary
                     </p>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-200 leading-relaxed">
-                      {benchmark.analysis.summary}
+                      {activeBenchmark.analysis.summary}
                     </p>
                   </div>
 
@@ -491,7 +493,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                         Hook Patterns
                       </p>
                       <div className="space-y-2">
-                        {benchmark.analysis.hookPatterns.map((item, index) => (
+                        {activeBenchmark.analysis.hookPatterns.map((item, index) => (
                           <p key={`hook_${index}`} className="text-sm font-medium text-slate-600 dark:text-slate-300">
                             {item}
                           </p>
@@ -503,7 +505,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                         Structure
                       </p>
                       <div className="space-y-2">
-                        {benchmark.analysis.structurePatterns.map((item, index) => (
+                        {activeBenchmark.analysis.structurePatterns.map((item, index) => (
                           <p key={`structure_${index}`} className="text-sm font-medium text-slate-600 dark:text-slate-300">
                             {item}
                           </p>
@@ -515,7 +517,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                         Audience
                       </p>
                       <div className="flex gap-2 flex-wrap">
-                        {benchmark.analysis.audienceTargets.map((item, index) => (
+                        {activeBenchmark.analysis.audienceTargets.map((item, index) => (
                           <span key={`audience_${index}`} className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300">
                             {item}
                           </span>
@@ -527,7 +529,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                         Tone
                       </p>
                       <div className="flex gap-2 flex-wrap">
-                        {benchmark.analysis.toneGuide.map((item, index) => (
+                        {activeBenchmark.analysis.toneGuide.map((item, index) => (
                           <span key={`tone_${index}`} className="px-3 py-1 rounded-full bg-fuchsia-50 dark:bg-fuchsia-500/10 text-xs font-bold text-fuchsia-600 dark:text-fuchsia-300">
                             {item}
                           </span>
@@ -539,7 +541,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                   <div className="flex gap-3 flex-wrap">
                     <button
                       onClick={handleGenerateIdeas}
-                      disabled={generatingIdeas}
+                      disabled={generatingIdeas || !activeBenchmark}
                       className="px-5 py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 font-bold text-sm transition"
                     >
                       {generatingIdeas ? '주제 생성 중...' : '새 주제 10개 생성'}
@@ -615,7 +617,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
                 </div>
                 <button
                   onClick={handleGenerateScript}
-                  disabled={!selectedIdea || generatingScript}
+                  disabled={!selectedIdea || generatingScript || !activeBenchmark}
                   className="px-5 py-3 rounded-2xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold text-sm shadow-lg shadow-fuchsia-500/20 disabled:opacity-40 transition"
                 >
                   {generatingScript ? '대본 생성 중...' : '선택 주제로 대본 작성'}
