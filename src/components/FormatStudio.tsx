@@ -44,10 +44,42 @@ const DEFAULT_WORKSPACE: StoredWorkspace = {
 };
 
 const extractVideoId = (url: string) => {
-  const regExp =
-    /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?/\\s]{11})/;
-  const match = url.match(regExp);
-  return match && match[1].length === 11 ? match[1] : null;
+  const value = url.trim().replace(/[<>]/g, '');
+  if (!value) return null;
+
+  if (/^[a-zA-Z0-9_-]{11}$/.test(value)) {
+    return value;
+  }
+
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.replace(/^www\./, '');
+
+    if (hostname === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0];
+      return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+
+    if (
+      hostname === 'youtube.com' ||
+      hostname === 'm.youtube.com' ||
+      hostname === 'music.youtube.com'
+    ) {
+      const watchId = parsed.searchParams.get('v');
+      if (watchId && /^[a-zA-Z0-9_-]{11}$/.test(watchId)) return watchId;
+
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const candidate = ['shorts', 'embed', 'live', 'v'].includes(segments[0] || '') ? segments[1] : null;
+      return candidate && /^[a-zA-Z0-9_-]{11}$/.test(candidate) ? candidate : null;
+    }
+  } catch {
+    // Fall back to regex parsing below for slightly malformed URLs.
+  }
+
+  const fallbackMatch = value.match(
+    /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|live\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?/\\s]{11})/
+  );
+  return fallbackMatch && fallbackMatch[1].length === 11 ? fallbackMatch[1] : null;
 };
 
 const buildStorageKey = (uid?: string) => `tube_radar_reference_studio_${uid || 'guest'}`;
