@@ -336,6 +336,23 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
     localStorage.removeItem(storageKey);
   };
 
+  const handleUrlInputChange = (nextValue: string) => {
+    setUrlInput(nextValue);
+
+    const nextVideoId = extractVideoId(nextValue.trim());
+    if (!benchmark) return;
+
+    // 새 영상으로 바뀌면 이전 분석 결과를 즉시 비워서 상태가 섞이지 않게 한다.
+    if (!nextVideoId || nextVideoId !== benchmark.videoId) {
+      setBenchmark(null);
+      setIdeas([]);
+      setSelectedIdeaId(null);
+      setGeneratedScript(null);
+      setLastAnalyzedAt(null);
+      setError('');
+    }
+  };
+
   return (
     <div className="w-full space-y-8 animate-in slide-in-from-right-4 duration-500 pb-20">
       <div className="space-y-3">
@@ -390,7 +407,7 @@ export const FormatStudio: React.FC<FormatStudioProps> = ({
 
               <textarea
                 value={urlInput}
-                onChange={(event) => setUrlInput(event.target.value)}
+                onChange={(event) => handleUrlInputChange(event.target.value)}
                 placeholder="https://www.youtube.com/watch?v=..."
                 className="w-full min-h-[110px] rounded-[1.5rem] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 px-5 py-4 text-sm font-medium text-slate-900 dark:text-white outline-none focus:border-fuchsia-400 focus:ring-4 focus:ring-fuchsia-500/10 transition"
               />
