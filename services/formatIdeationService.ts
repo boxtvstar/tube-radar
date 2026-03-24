@@ -91,6 +91,14 @@ const getGeminiErrorMessage = (status: number, errorText: string) => {
     return 'Gemini API 오류 (400): Gemini가 이 YouTube 영상을 처리하지 못했습니다. 공개 영상인지 확인하고, 잠시 후 다시 시도해주세요.';
   }
 
+  if (status === 403) {
+    if (apiMessage.toLowerCase().includes('blocked')) {
+      return 'Gemini API 오류 (403): 현재 등록된 Gemini API 키는 GenerateContent 호출이 차단되어 있습니다. Google AI Studio에서 새 키를 발급받아 다시 등록하거나, API 키 제한 설정을 확인해주세요.';
+    }
+
+    return 'Gemini API 오류 (403): 현재 등록된 Gemini API 키에 Gemini 호출 권한이 없거나 제한 설정이 잘못되었습니다. Google AI Studio에서 키를 다시 발급받아 등록해주세요.';
+  }
+
   return `Gemini API 오류 (${status})${apiMessage ? `: ${apiMessage}` : ''}`;
 };
 
