@@ -6,108 +6,140 @@ interface VideoDownloaderProps {
   onPreCheckQuota?: (estimatedCost: number) => Promise<void>;
 }
 
-interface SimilarItem {
+interface ThumbnailVariant {
+  key: string;
+  label: string;
+  url: string;
+}
+
+interface ThumbnailPreview {
   videoId: string;
-  title: string;
-  channelTitle: string;
-  thumbnailUrl: string;
-  duration: string;
-  views: number;
-  score: number;
-  thumbSimilarity: number;
+  videoUrl: string;
+  bestUrl: string;
+  bestLabel: string;
+  variants: ThumbnailVariant[];
 }
 
-interface SimilarResponse {
-  source: {
-    videoId: string;
-    title: string;
-    channelTitle: string;
-    thumbnailUrl: string;
-    duration: string;
-    views: number;
-  };
-  count: number;
-  items: SimilarItem[];
-}
+const THUMBNAIL_PRESETS = [
+  { key: 'maxresdefault', label: '최고화질' },
+  { key: 'sddefault', label: '고화질' },
+  { key: 'hqdefault', label: '기본 HD' },
+  { key: 'mqdefault', label: '중간 화질' },
+  { key: 'default', label: '기본 화질' },
+] as const;
 
-const formatViews = (value: number) => {
-  if (!Number.isFinite(value)) return '-';
-  if (value >= 100000000) return `${(value / 100000000).toFixed(1)}억`;
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}만`;
-  return value.toLocaleString();
+const extractVideoId = (value: string) => {
+  const input = value.trim().replace(/[<>]/g, '');
+  if (!input) return null;
+
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+
+  try {
+    const parsed = new URL(input);
+    const hostname = parsed.hostname.replace(/^www\./, '');
+
+    if (hostname === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0];
+      return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+
+    if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(hostname)) {
+      const watchId = parsed.searchParams.get('v');
+      if (watchId && /^[a-zA-Z0-9_-]{11}$/.test(watchId)) return watchId;
+
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const candidate = ['shorts', 'embed', 'live', 'v'].includes(segments[0] || '') ? segments[1] : null;
+      return candidate && /^[a-zA-Z0-9_-]{11}$/.test(candidate) ? candidate : null;
+    }
+  } catch {
+    // malformed URL fallback
+  }
+
+  const fallbackMatch = input.match(
+    /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|live\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?/\\s]{11})/
+  );
+  return fallbackMatch?.[1] || null;
 };
 
-const SIMILAR_THUMB_QUOTA_COST = 300;
+const buildThumbnailUrl = (videoId: string, preset: string) => `https://i.ytimg.com/vi/${videoId}/${preset}.jpg`;
 
-export const VideoDownloader: React.FC<VideoDownloaderProps> = ({ apiKey, onTrackUsage, onPreCheckQuota }) => {
+const verifyThumbnail = (url: string) =>
+  new Promise<boolean>((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth >= 120 && img.naturalHeight >= 90);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+
+const downloadImage = async (url: string, filename: string) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('download_failed');
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
+
+export const VideoDownloader: React.FC<VideoDownloaderProps> = () => {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<SimilarResponse | null>(null);
-  const [selectedItem, setSelectedItem] = useState<SimilarItem | null>(null);
+  const [preview, setPreview] = useState<ThumbnailPreview | null>(null);
 
-  const apiBase = useMemo(() => {
-    const raw = (import.meta.env.VITE_BACKEND_URL || '').trim();
-    if (raw) return raw.endsWith('/') ? raw.slice(0, -1) : raw;
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') return 'http://127.0.0.1:4000';
-    return '';
-  }, []);
+  const currentVideoId = useMemo(() => extractVideoId(url), [url]);
 
-  const findSimilar = async () => {
+  const resolveThumbnail = async () => {
     if (!url.trim()) return;
-    if (!apiKey.trim()) {
-      setError('마이페이지에서 YouTube API 키를 먼저 입력해주세요.');
+
+    const videoId = extractVideoId(url);
+    if (!videoId) {
+      setError('올바른 유튜브 영상 주소 또는 영상 ID를 입력해주세요.');
+      setPreview(null);
       return;
     }
 
     setLoading(true);
     setError('');
-    setResult(null);
+    setPreview(null);
 
     try {
-      // 포인트 사전 체크 — 부족하면 API 호출 차단
-      if (onPreCheckQuota) {
-        await onPreCheckQuota(SIMILAR_THUMB_QUOTA_COST);
-      }
+      const variants = THUMBNAIL_PRESETS.map((preset) => ({
+        key: preset.key,
+        label: preset.label,
+        url: buildThumbnailUrl(videoId, preset.key),
+      }));
 
-      const endpoint = `${apiBase}/api/video/similar-thumbnails?url=${encodeURIComponent(url.trim())}&apiKey=${encodeURIComponent(apiKey)}&limit=20`;
-      const res = await fetch(endpoint);
-      const raw = await res.text();
-      let data: unknown = null;
-      if (raw) {
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          data = null;
+      let bestVariant: ThumbnailVariant | null = null;
+      for (const variant of variants) {
+        const ok = await verifyThumbnail(variant.url);
+        if (ok) {
+          bestVariant = variant;
+          break;
         }
       }
 
-      if (!res.ok) {
-        const message =
-          (typeof data === 'object' && data !== null && 'detail' in data && typeof (data as { detail?: unknown }).detail === 'string')
-            ? (data as { detail: string }).detail
-            : raw || '유사 썸네일 검색에 실패했습니다.';
-        throw new Error(message);
+      if (!bestVariant) {
+        throw new Error('이 영상의 썸네일을 찾지 못했습니다.');
       }
 
-      if (!data || typeof data !== 'object') {
-        throw new Error('서버 응답 형식이 올바르지 않습니다.');
-      }
-
-      setResult(data as SimilarResponse);
-      // 성공 시 300 쿼터 차감
-      if (onTrackUsage) {
-        onTrackUsage('list', SIMILAR_THUMB_QUOTA_COST, '유사 썸네일 검색');
-      }
+      setPreview({
+        videoId,
+        videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        bestUrl: bestVariant.url,
+        bestLabel: bestVariant.label,
+        variants,
+      });
     } catch (e) {
-      if (e instanceof Error && e.message.startsWith('QUOTA_INSUFFICIENT')) {
-        setError('포인트가 부족합니다. 내일 오후 5시(KST)에 충전됩니다.');
-      } else if (e instanceof TypeError) {
-        setError('썸네일 분석 서버에 연결하지 못했습니다. 백엔드 실행 상태를 확인해주세요.');
-      } else {
-        setError(e instanceof Error ? e.message : '유사 썸네일 검색에 실패했습니다.');
-      }
+      setError(e instanceof Error ? e.message : '썸네일을 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
@@ -117,35 +149,48 @@ export const VideoDownloader: React.FC<VideoDownloaderProps> = ({ apiKey, onTrac
     <div className="w-full space-y-8 animate-in slide-in-from-right-4 duration-500 pb-20">
       <div className="space-y-2">
         <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-500 uppercase flex items-center gap-3">
-          <span className="material-symbols-outlined text-2xl md:text-3xl">image_search</span>
-          Similar By Video
+          <span className="material-symbols-outlined text-2xl md:text-3xl">download</span>
+          Thumbnail Downloader
         </h2>
         <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
-          영상 URL을 입력하면 썸네일 유사도를 기준으로 상위 20개 영상을 찾아줍니다.
+          유튜브 영상 주소를 넣으면 가능한 가장 높은 화질의 썸네일을 찾아서 바로 저장할 수 있습니다.
         </p>
       </div>
 
-      <div className="max-w-4xl space-y-6">
-        <div className="relative group">
-          <div className="absolute inset-y-0 left-4 flex items-center text-slate-400 group-focus-within:text-indigo-500 transition-colors">
-            <span className="material-symbols-outlined">link</span>
+      <div className="max-w-5xl space-y-6">
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] p-5 md:p-6 space-y-5 shadow-sm">
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-4 flex items-center text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+              <span className="material-symbols-outlined">link</span>
+            </div>
+            <input
+              type="text"
+              placeholder="https://www.youtube.com/watch?v=... 또는 영상 ID"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && resolveThumbnail()}
+              className="w-full pl-12 pr-36 py-4 bg-slate-50 dark:bg-slate-950/60 border-2 border-slate-100 dark:border-slate-800 rounded-2xl focus:border-indigo-500 dark:focus:border-indigo-500 outline-none text-slate-900 dark:text-white font-bold transition-all shadow-inner"
+            />
+            <button
+              onClick={resolveThumbnail}
+              disabled={loading || !url.trim()}
+              className="absolute right-2 top-2 bottom-2 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20 active:scale-95"
+            >
+              {loading ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span className="material-symbols-outlined text-lg">image_search</span>}
+              썸네일 찾기
+            </button>
           </div>
-          <input
-            type="text"
-            placeholder="https://www.youtube.com/watch?v=..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && findSimilar()}
-            className="w-full pl-12 pr-36 py-4 bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-2xl focus:border-indigo-500 dark:focus:border-indigo-500 outline-none text-slate-900 dark:text-white font-bold transition-all shadow-sm"
-          />
-          <button
-            onClick={findSimilar}
-            disabled={loading || !url}
-            className="absolute right-2 top-2 bottom-2 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20 active:scale-95"
-          >
-            {loading ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span className="material-symbols-outlined text-lg">search</span>}
-            찾기
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+            <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
+              지원 형식: watch / youtu.be / shorts / live / embed / 영상 ID
+            </span>
+            {currentVideoId && (
+              <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                영상 ID {currentVideoId}
+              </span>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -155,152 +200,81 @@ export const VideoDownloader: React.FC<VideoDownloaderProps> = ({ apiKey, onTrac
           </div>
         )}
 
-        {result && (
-          <>
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 md:p-5 flex gap-4 items-start">
-              <img src={result.source.thumbnailUrl} alt="source thumbnail" className="w-44 aspect-video object-cover rounded-xl shadow-md" />
-              <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-1">Source Video</p>
-                <h3 className="text-base md:text-lg font-black leading-tight text-slate-900 dark:text-white line-clamp-2 mb-1">{result.source.title}</h3>
-                <p className="text-sm text-slate-500 font-bold">{result.source.channelTitle}</p>
-                <p className="text-xs text-slate-400 font-semibold mt-1">길이 {result.source.duration} · 조회수 {formatViews(result.source.views)}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {result.items.map((item) => (
-                <div
-                  key={item.videoId}
-                  onClick={() => setSelectedItem(item)}
-                  className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-3 space-y-2 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-lg transition-all cursor-pointer"
-                >
-                  <div className="relative">
-                    <img src={item.thumbnailUrl} alt={item.title} className="w-full aspect-video rounded-xl object-cover" />
-                    <span className="absolute left-2 bottom-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-black">{item.thumbSimilarity.toFixed(1)}%</span>
-                  </div>
-                  <h4 className="text-sm font-black text-slate-900 dark:text-white line-clamp-2 leading-tight">{item.title}</h4>
-                  <p className="text-[11px] font-bold text-slate-500 truncate">{item.channelTitle}</p>
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold">
-                    <span>{item.duration}</span>
-                    <span>{formatViews(item.views)} views</span>
-                  </div>
-                  <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, Math.max(0, item.score))}%` }} />
-                  </div>
+        {preview && (
+          <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] overflow-hidden shadow-sm">
+              <div className="relative bg-black">
+                <img src={preview.bestUrl} alt="thumbnail preview" className="w-full aspect-video object-cover" />
+                <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs font-black">
+                  {preview.bestLabel}
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Video Detail Modal */}
-      {selectedItem && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setSelectedItem(null)}
-        >
-          <div
-            className="bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[90vh] rounded-[2rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Thumbnail */}
-            <div className="relative bg-black">
-              <img
-                src={selectedItem.thumbnailUrl}
-                alt={selectedItem.title}
-                className="w-full aspect-video object-cover"
-              />
-              <button
-                onClick={() => setSelectedItem(null)}
-                className="absolute top-4 right-4 size-10 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-              <div className="absolute bottom-4 left-4 flex items-center gap-2">
-                <span className="px-3 py-1.5 rounded-lg bg-indigo-500 text-white text-xs font-black shadow-lg">
-                  유사도 {selectedItem.thumbSimilarity.toFixed(1)}%
-                </span>
-                <span className="px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm text-white text-xs font-bold">
-                  {selectedItem.duration}
-                </span>
+              </div>
+              <div className="p-5 md:p-6 space-y-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-widest text-slate-400 font-black mb-1">Preview</p>
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300 break-all">{preview.videoUrl}</p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => downloadImage(preview.bestUrl, `youtube-thumbnail-${preview.videoId}-${preview.bestLabel}.jpg`)}
+                    className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98] flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined">download</span>
+                    최고 화질 저장
+                  </button>
+                  <a
+                    href={preview.videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-black transition-all flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined">open_in_new</span>
+                    영상 보기
+                  </a>
+                </div>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="p-6 md:p-8 space-y-5 overflow-y-auto">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2rem] p-5 md:p-6 shadow-sm space-y-4">
               <div>
-                <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white leading-tight mb-3">
-                  {selectedItem.title}
-                </h2>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{selectedItem.channelTitle}</span>
-                </div>
+                <p className="text-[11px] uppercase tracking-widest text-slate-400 font-black mb-1">Available Sizes</p>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">해상도별 썸네일 저장</h3>
               </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 text-center">
-                  <span className="material-symbols-outlined text-indigo-500 text-xl mb-1 block">visibility</span>
-                  <div className="text-lg font-black text-slate-900 dark:text-white">{formatViews(selectedItem.views)}</div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">조회수</div>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 text-center">
-                  <span className="material-symbols-outlined text-indigo-500 text-xl mb-1 block">image_search</span>
-                  <div className="text-lg font-black text-slate-900 dark:text-white">{selectedItem.thumbSimilarity.toFixed(1)}%</div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">썸네일 유사도</div>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 text-center">
-                  <span className="material-symbols-outlined text-indigo-500 text-xl mb-1 block">star</span>
-                  <div className="text-lg font-black text-slate-900 dark:text-white">{selectedItem.score.toFixed(1)}</div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">종합 점수</div>
-                </div>
-              </div>
-
-              {/* Similarity Bar */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                  <span>종합 유사도</span>
-                  <span className="text-indigo-500">{Math.min(100, Math.max(0, selectedItem.score)).toFixed(1)}%</span>
-                </div>
-                <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(0, selectedItem.score))}%` }} />
-                </div>
-              </div>
-
-              {/* Source Comparison */}
-              {result && (
-                <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-3">원본 영상과 비교</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-slate-400">원본</p>
-                      <img src={result.source.thumbnailUrl} alt="source" className="w-full aspect-video rounded-lg object-cover" />
-                      <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 line-clamp-1">{result.source.title}</p>
+              <div className="space-y-3">
+                {preview.variants.map((variant) => (
+                  <div key={variant.key} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-slate-900 dark:text-white">{variant.label}</p>
+                      <p className="text-[11px] font-medium text-slate-400 truncate">{variant.key}.jpg</p>
                     </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-indigo-500">유사 영상</p>
-                      <img src={selectedItem.thumbnailUrl} alt="similar" className="w-full aspect-video rounded-lg object-cover" />
-                      <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 line-clamp-1">{selectedItem.title}</p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <a
+                        href={variant.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-2 rounded-xl text-xs font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-200"
+                      >
+                        미리보기
+                      </a>
+                      <button
+                        onClick={() => downloadImage(variant.url, `youtube-thumbnail-${preview.videoId}-${variant.key}.jpg`)}
+                        className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white"
+                      >
+                        저장
+                      </button>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {/* Action Button */}
-              <a
-                href={`https://www.youtube.com/watch?v=${selectedItem.videoId}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full bg-rose-500 hover:bg-rose-600 text-white py-3.5 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20 transition-all active:scale-[0.98]"
-              >
-                <span className="material-symbols-outlined text-lg">play_arrow</span>
-                YouTube에서 보기
-              </a>
+                ))}
+              </div>
+              <div className="rounded-2xl border border-dashed border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/60 dark:bg-indigo-500/5 p-4">
+                <p className="text-xs font-bold text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                  YouTube에 `maxresdefault`가 없는 영상은 자동으로 다음 화질로 내려갑니다. 그래서 항상 가능한 가장 높은 화질을 먼저 잡습니다.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

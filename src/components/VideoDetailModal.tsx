@@ -6,6 +6,9 @@ interface VideoDetailModalProps {
   onClose: () => void;
   onRemixTitle?: () => void;
   onRemixThumbnail?: () => void;
+  channelDescription?: string;
+  recentChannelVideos?: Array<{ id: string; title: string; thumbnail: string; views: string; duration: string; publishedAt?: string; date?: string; }>;
+  isChannelVideosLoading?: boolean;
   channelGroups?: Array<{ id: string; name: string; }>;
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
   onExtractTranscript?: (videoUrl: string) => void;
@@ -23,6 +26,9 @@ const CATEGORY_NAMES: Record<string, string> = {
 export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ 
   video, 
   onClose, 
+  channelDescription = '',
+  recentChannelVideos = [],
+  isChannelVideosLoading = false,
   channelGroups = [], 
   onAddChannel,
   onExtractTranscript,
@@ -140,6 +146,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   };
 
   const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+  const isChannelMode = video.duration === '0:00';
+  const channelUrl = video.channelId ? `https://www.youtube.com/channel/${video.channelId}` : videoUrl;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
@@ -219,14 +227,14 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
           <div className="flex gap-2 mb-1">
             <div className="flex-1">
               <a
-                href={videoUrl}
+                href={isChannelMode ? channelUrl : videoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full px-2 py-2.5 bg-red-600 hover:bg-red-500 rounded-xl text-white text-[11px] font-black transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-red-600/20 active:scale-[0.98]"
-                title="유튜브에서 영상 보기"
+                title={isChannelMode ? "유튜브에서 채널 보기" : "유튜브에서 영상 보기"}
               >
-                <span className="material-symbols-outlined text-[18px]">play_circle</span>
-                <span className="whitespace-nowrap">영상보기</span>
+                <span className="material-symbols-outlined text-[18px]">{isChannelMode ? 'account_circle' : 'play_circle'}</span>
+                <span className="whitespace-nowrap">{isChannelMode ? '채널보기' : '영상보기'}</span>
               </a>
             </div>
             
@@ -557,6 +565,61 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {channelDescription && (
+                <div className="bg-slate-900/50 border border-white/5 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="material-symbols-outlined text-cyan-400 text-sm">info</span>
+                    <span className="text-xs font-bold text-slate-400">채널 소개</span>
+                  </div>
+                  <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line line-clamp-5">
+                    {channelDescription}
+                  </p>
+                </div>
+              )}
+
+              <div className="bg-slate-900/50 border border-white/5 rounded-xl p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-amber-400 text-sm">movie</span>
+                    <span className="text-xs font-bold text-slate-400">최근 영상</span>
+                  </div>
+                  {isChannelVideosLoading && (
+                    <span className="text-[10px] font-bold text-slate-500">불러오는 중...</span>
+                  )}
+                </div>
+
+                {recentChannelVideos.length > 0 ? (
+                  <div className="space-y-2">
+                    {recentChannelVideos.slice(0, 6).map((item) => (
+                      <a
+                        key={item.id}
+                        href={`https://www.youtube.com/watch?v=${item.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-950/70 p-2.5 hover:border-cyan-500/30 hover:bg-slate-900 transition-colors"
+                      >
+                        <img src={item.thumbnail} alt={item.title} className="w-24 h-14 rounded-lg object-cover bg-slate-800 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-white line-clamp-2 leading-snug">{item.title}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-400 font-medium">
+                            <span>{item.views} 조회</span>
+                            <span>•</span>
+                            <span>{item.duration}</span>
+                            <span>•</span>
+                            <span>{new Date(item.publishedAt || item.date || '').toLocaleDateString('ko-KR')}</span>
+                          </div>
+                        </div>
+                        <span className="material-symbols-outlined text-slate-500 shrink-0">open_in_new</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/10 px-4 py-6 text-center text-xs text-slate-500">
+                    {isChannelVideosLoading ? '채널 영상을 불러오는 중입니다.' : '표시할 최근 영상이 없습니다.'}
+                  </div>
+                )}
+              </div>
             </>
           )}
 

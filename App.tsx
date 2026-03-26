@@ -16,6 +16,7 @@ import { MembershipWelcomeModal } from './src/components/MembershipWelcomeModal'
 import { MyPageModal } from './src/components/MyPageModal';
 import { 
   getChannelInfo, 
+  fetchChannelPopularVideos,
   fetchRealVideos,
   searchChannelsByKeyword,
   autoDetectShortsChannels,
@@ -633,13 +634,6 @@ const Sidebar = ({
         </div>
 
         <SidebarSectionLabel label="AI 스튜디오" isCollapsed={isCollapsed} className="mt-2" />
-        {!isCollapsed && (
-          <div className="px-3 pb-2">
-            <p className="rounded-2xl border border-fuchsia-200/70 dark:border-fuchsia-500/20 bg-gradient-to-r from-fuchsia-50 to-orange-50 dark:from-fuchsia-500/10 dark:to-orange-500/10 px-4 py-3 text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-300">
-              영상 하나를 벤치마킹해서 새 주제 10개와 새 대본까지 만드는 단일 입력형 작업 공간입니다.
-            </p>
-          </div>
-        )}
         <div className="px-2 space-y-0.5">
           <SidebarItem
             icon="schema"
@@ -713,7 +707,7 @@ const Sidebar = ({
             icon="download"
             label={
               <span className="flex items-center gap-1.5">
-                유사 썸네일 찾기
+                썸네일 다운로드
                 <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
                   <span className="material-symbols-outlined text-[10px]">
                     {!hasGoldAccess ? 'lock' : 'stars'}
@@ -1461,6 +1455,9 @@ export default function App() {
   const [explorerStaging, setExplorerStaging] = useState<SavedChannel[]>([]);
   const [explorerTargetGroupId, setExplorerTargetGroupId] = useState('unassigned');
   const [isExplorerSearching, setIsExplorerSearching] = useState(false);
+  const [detailedChannelDescription, setDetailedChannelDescription] = useState('');
+  const [detailedChannelVideos, setDetailedChannelVideos] = useState<any[]>([]);
+  const [isDetailedChannelLoading, setIsDetailedChannelLoading] = useState(false);
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
   // Batch & Suggestion State
   const [batchResult, setBatchResult] = useState<{ added: number; duplicates: string[] } | null>(null);
@@ -3002,6 +2999,63 @@ export default function App() {
     }
   };
 
+  const openChannelDetail = async (channel: SavedChannel) => {
+    setDetailedVideo({
+      id: channel.id,
+      title: channel.title,
+      channelName: channel.title,
+      channelId: channel.id,
+      thumbnailUrl: channel.thumbnail,
+      duration: '0:00',
+      views: '0',
+      avgViews: channel.customAvgViews ? formatNumber(channel.customAvgViews) : '0',
+      subscribers: channel.subscriberCount || '0',
+      viralScore: '0x',
+      uploadTime: '',
+      category: '채널',
+      reachPercentage: 0,
+      tags: [],
+      channelTotalViews: channel.totalViews,
+      channelJoinDate: channel.joinDate,
+      channelCountry: channel.country,
+    });
+    setDetailedChannelDescription(channel.description || '');
+    setDetailedChannelVideos(channel.topVideos || []);
+
+    if (isApiKeyMissing) return;
+
+    setIsDetailedChannelLoading(true);
+    try {
+      await preCheckQuota(5, isAdmin ? 'admin' : userGrade);
+
+      const [info, videos] = await Promise.all([
+        getChannelInfo(ytKey, channel.id),
+        fetchChannelPopularVideos(ytKey, channel.id),
+      ]);
+
+      setDetailedVideo(prev => {
+        if (!prev || prev.channelId !== channel.id) return prev;
+        return {
+          ...prev,
+          title: info?.title || prev.title,
+          channelName: info?.title || prev.channelName,
+          thumbnailUrl: info?.thumbnail || prev.thumbnailUrl,
+          subscribers: info?.subscriberCount || prev.subscribers,
+          avgViews: info?.customAvgViews ? formatNumber(info.customAvgViews) : prev.avgViews,
+          channelTotalViews: info?.totalViews || prev.channelTotalViews,
+          channelJoinDate: info?.joinDate || prev.channelJoinDate,
+          channelCountry: info?.country || prev.channelCountry,
+        };
+      });
+      setDetailedChannelDescription(info?.description || channel.description || '');
+      setDetailedChannelVideos(videos);
+    } catch (e) {
+      console.error('Channel detail load failed:', e);
+    } finally {
+      setIsDetailedChannelLoading(false);
+    }
+  };
+
   const commitStagingToSaved = () => {
     if (isReadOnly) return handleActionRestricted(() => {});
     if (explorerStaging.length === 0) return;
@@ -4298,16 +4352,23 @@ export default function App() {
                         const isAlreadySaved = savedChannels.some(sc => sc.id === ch.id);
                         return (
                           <div key={ch.id} className={`flex items-center gap-3 bg-slate-50 dark:bg-white/5 border p-3 rounded-2xl transition-all group ${isInStaging ? 'border-emerald-500 ring-1 ring-emerald-500/20' : 'border-slate-100 dark:border-white/5'}`}>
-                            <div className="relative shrink-0">
-                               <img src={ch.thumbnail} className="size-10 rounded-full border border-black/5 dark:border-white/10 object-cover" alt="" />
+                            <button type="button" onClick={() => openChannelDetail(ch)} className="relative shrink-0">
+                               <img src={ch.thumbnail} className="size-10 rounded-full border border-black/5 dark:border-white/10 object-cover transition-transform group-hover:scale-105" alt={ch.title} />
                                {isAlreadySaved && (
                                   <div className="absolute -bottom-1 -right-1 size-4 bg-primary text-white rounded-full flex items-center justify-center border-2 border-white dark:border-slate-card">
                                      <span className="material-symbols-outlined text-[10px] font-black">check</span>
                                   </div>
                                )}
-                            </div>
+                            </button>
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-[11px] font-black text-slate-800 dark:text-slate-200 truncate leading-tight" title={ch.title}>{ch.title}</h4>
+                              <button
+                                type="button"
+                                onClick={() => openChannelDetail(ch)}
+                                className="text-left w-full text-[11px] font-black text-slate-800 dark:text-slate-200 truncate leading-tight hover:text-emerald-500 transition-colors"
+                                title={ch.title}
+                              >
+                                {ch.title}
+                              </button>
                               <p className="text-[8px] text-slate-400 uppercase tracking-tighter truncate">{isAlreadySaved ? '모니터링 중' : '탐색됨'}</p>
                             </div>
                             <button 
@@ -5109,11 +5170,22 @@ export default function App() {
       {detailedVideo && (
         <VideoDetailModal
           video={detailedVideo}
-          onClose={() => setDetailedVideo(null)}
+          onClose={() => {
+            setDetailedVideo(null);
+            setDetailedChannelDescription('');
+            setDetailedChannelVideos([]);
+            setIsDetailedChannelLoading(false);
+          }}
           channelGroups={groups}
+          channelDescription={detailedChannelDescription}
+          recentChannelVideos={detailedChannelVideos}
+          isChannelVideosLoading={isDetailedChannelLoading}
           onAddChannel={handleAddChannelFromVideo}
           onExtractTranscript={(url) => {
             setDetailedVideo(null);
+            setDetailedChannelDescription('');
+            setDetailedChannelVideos([]);
+            setIsDetailedChannelLoading(false);
             setIsScriptMode(true);
             setIsVideoDownloadMode(false);
             setIsSourceFinderMode(false);
@@ -5136,6 +5208,9 @@ export default function App() {
           }}
           onAnalyzeChannel={(channelId) => {
             setDetailedVideo(null);
+            setDetailedChannelDescription('');
+            setDetailedChannelVideos([]);
+            setIsDetailedChannelLoading(false);
             setRadarInitialQuery(channelId);
             setIsRadarMode(true);
             
