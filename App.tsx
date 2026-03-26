@@ -13,6 +13,7 @@ import { UserRole } from './src/contexts/AuthContext';
 import { getEffectiveStatus, getLegacyPlanFromStatus, hasSilverAccess } from './src/lib/membership';
 import { GuestNoticeModal } from './src/components/GuestNoticeModal';
 import { MembershipWelcomeModal } from './src/components/MembershipWelcomeModal';
+import { TrialMembershipVerificationModal } from './src/components/TrialMembershipVerificationModal';
 import { MyPageModal } from './src/components/MyPageModal';
 import { 
   getChannelInfo, 
@@ -916,8 +917,10 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onDeleteNotif,
   onOpenMyPage,
   onOpenMembership,
+  onOpenTrialVerification,
   onMobileMenuToggle,
-  ytKey
+  ytKey,
+  isTrialUser
 }: {
   region: string,
   count: number,
@@ -937,9 +940,11 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
   onOpenAdmin: () => void,
   onOpenMyPage: (tab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage') => void,
   onOpenMembership: () => void,
+  onOpenTrialVerification: () => void,
   onMarkRead?: (id: string) => void,
   onMobileMenuToggle: () => void,
-  ytKey: string
+  ytKey: string,
+  isTrialUser: boolean
 }) => {
   // D-Day calculation
   const dDay = expiresAt ? calculateDDay(expiresAt) : null;
@@ -1092,6 +1097,24 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
       )}
     </div>
     <div className="flex items-center gap-4">
+      {isTrialUser && (
+        <div className="hidden md:flex items-center gap-2">
+          <button
+            onClick={() => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank', 'noopener,noreferrer')}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-black tracking-tight hover:bg-amber-100 dark:hover:bg-amber-500/15 transition-all"
+          >
+            <span className="material-symbols-outlined text-[16px]">card_membership</span>
+            멤버십가입
+          </button>
+          <button
+            onClick={onOpenTrialVerification}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-sky-200 dark:border-sky-500/20 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 text-xs font-black tracking-tight hover:bg-sky-100 dark:hover:bg-sky-500/15 transition-all"
+          >
+            <span className="material-symbols-outlined text-[16px]">verified_user</span>
+            멤버십인증
+          </button>
+        </div>
+      )}
       
       {role === 'admin' && (
         <button 
@@ -1372,6 +1395,7 @@ export default function App() {
   const [importModeModal, setImportModeModal] = useState(false);
   
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
+  const [isTrialVerificationOpen, setIsTrialVerificationOpen] = useState(false);
   const [myPageInitialTab, setMyPageInitialTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>('dashboard');
 
   const [groups, setGroups] = useState<ChannelGroup[]>(DEFAULT_GROUPS);
@@ -3514,6 +3538,7 @@ export default function App() {
           onOpenAdmin={() => setIsAdminOpen(true)}
           notifications={notifications}
           ytKey={ytKey}
+          isTrialUser={effectiveStatus === 'trial'}
            onMarkRead={async (id) => {
              if (user) {
                await markNotificationAsRead(user.uid, id);
@@ -3540,6 +3565,7 @@ export default function App() {
             setIsCategoryTrendMode(false);
             setIsMaterialsExplorerMode(false);
           }}
+          onOpenTrialVerification={() => setIsTrialVerificationOpen(true)}
         />
 
         {/* One-line Announcement Banner */}
@@ -3598,6 +3624,10 @@ export default function App() {
               setIsUsageMode(true);
             }}
           />
+        )}
+
+        {isTrialVerificationOpen && effectiveStatus === 'trial' && (
+          <TrialMembershipVerificationModal onClose={() => setIsTrialVerificationOpen(false)} />
         )}
 
 

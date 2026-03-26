@@ -210,7 +210,7 @@ export const PendingApproval = () => {
         matches: true,
         daysLeft: 3,
         name: user.displayName || 'Member',
-        plan: 'silver',
+        plan: 'trial',
         limit: 2000
       });
 

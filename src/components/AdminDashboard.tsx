@@ -163,6 +163,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   const [userPointData, setUserPointData] = useState<Record<string, ApiUsage>>({});
   const [pointDataLoading, setPointDataLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | MembershipStatus>('all');
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: 'expiresAt' | 'role' | 'lastLoginAt' | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'desc' });
   
   // Bulk Selection State
@@ -1788,9 +1789,12 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
   // Filter users based on selected tab
   const filteredUsers = useMemo(() => {
+    const normalizedSearch = userSearchTerm.trim().toLowerCase();
+
     let result = users.filter(u => {
-      if (filter === 'all') return true;
-      return (u.status || deriveStatusFromLegacy(u as any)) === filter;
+      const matchesFilter = filter === 'all' ? true : (u.status || deriveStatusFromLegacy(u as any)) === filter;
+      const matchesSearch = normalizedSearch ? (u.email || '').toLowerCase().includes(normalizedSearch) : true;
+      return matchesFilter && matchesSearch;
     });
 
     if (sortConfig.key) {
@@ -1812,7 +1816,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     }
 
     return result;
-  }, [users, filter, sortConfig]);
+  }, [users, filter, sortConfig, userSearchTerm]);
 
   const userFilterCounts = useMemo(() => {
     return exportableUserStatuses.reduce<Record<'all' | MembershipStatus, number>>((acc, status) => {
@@ -1981,6 +1985,36 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         {f === 'all' ? '전체' : getDisplayLabelFromStatus(f)} ({userFilterCounts[f]})
                       </button>
                     ))}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="relative w-full max-w-md">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                        search
+                      </span>
+                      <input
+                        type="text"
+                        value={userSearchTerm}
+                        onChange={(e) => setUserSearchTerm(e.target.value)}
+                        placeholder="이메일로 사용자 검색"
+                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 pl-10 pr-10 py-2 text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                      {userSearchTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setUserSearchTerm('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                          aria-label="검색어 지우기"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">close</span>
+                        </button>
+                      )}
+                    </div>
+                    {userSearchTerm && (
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {filteredUsers.length}명
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">

@@ -10,6 +10,7 @@ interface MembershipWelcomeModalProps {
 
 export const MembershipWelcomeModal: React.FC<MembershipWelcomeModalProps> = ({ onClose, userName, daysLeft, plan, limit }) => {
   const getTierName = (p?: string) => {
+     if (p === 'trial') return '무료 체험(Free Trial)';
      if (p === 'platinum') return '플래티넘 버튼(Platinum)';
      if (p === 'gold') return '골드 버튼(Gold)';
      if (p === 'silver') return '실버 버튼(Silver)';
@@ -41,11 +42,11 @@ export const MembershipWelcomeModal: React.FC<MembershipWelcomeModalProps> = ({ 
 
            <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 text-center space-y-4 mb-6">
               <div>
-                <span className={`text-xs font-black px-2 py-1 rounded text-white ${plan === 'platinum' ? 'bg-violet-500' : plan === 'gold' ? 'bg-amber-500' : 'bg-slate-400'}`}>
+                <span className={`text-xs font-black px-2 py-1 rounded text-white ${plan === 'platinum' ? 'bg-violet-500' : plan === 'gold' ? 'bg-amber-500' : plan === 'trial' ? 'bg-sky-500' : 'bg-slate-400'}`}>
                   {getTierName(plan)}
                 </span>
                 <p className="text-sm font-bold text-slate-900 dark:text-white mt-2">
-                  멤버십 등급이 적용되었습니다.
+                  {plan === 'trial' ? '무료 체험이 시작되었습니다.' : '멤버십 등급이 적용되었습니다.'}
                 </p>
               </div>
               
@@ -59,7 +60,9 @@ export const MembershipWelcomeModal: React.FC<MembershipWelcomeModalProps> = ({ 
               )}
 
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed word-keep-all pt-2">
-                명단 확인되어 <span className="text-indigo-500 font-black">즉시 승인</span>처리 되었습니다.
+                {plan === 'trial'
+                  ? <>지금부터 <span className="text-sky-500 font-black">{daysLeft}일 무료 체험</span>을 사용할 수 있습니다.</>
+                  : <>명단 확인되어 <span className="text-indigo-500 font-black">즉시 승인</span>처리 되었습니다.</>}
               </p>
            </div>
            
