@@ -9,6 +9,7 @@ interface VideoDownloaderProps {
 interface ThumbnailVariant {
   key: string;
   label: string;
+  size: string;
   url: string;
 }
 
@@ -21,11 +22,11 @@ interface ThumbnailPreview {
 }
 
 const THUMBNAIL_PRESETS = [
-  { key: 'maxresdefault', label: '최고화질' },
-  { key: 'sddefault', label: '고화질' },
-  { key: 'hqdefault', label: '기본 HD' },
-  { key: 'mqdefault', label: '중간 화질' },
-  { key: 'default', label: '기본 화질' },
+  { key: 'maxresdefault', label: '최고화질', size: '1280x720' },
+  { key: 'sddefault', label: '고화질', size: '640x480' },
+  { key: 'hqdefault', label: '기본 HD', size: '480x360' },
+  { key: 'mqdefault', label: '중간 화질', size: '320x180' },
+  { key: 'default', label: '기본 화질', size: '120x90' },
 ] as const;
 
 const extractVideoId = (value: string) => {
@@ -115,6 +116,7 @@ export const VideoDownloader: React.FC<VideoDownloaderProps> = () => {
       const variants = THUMBNAIL_PRESETS.map((preset) => ({
         key: preset.key,
         label: preset.label,
+        size: preset.size,
         url: buildThumbnailUrl(videoId, preset.key),
       }));
 
@@ -216,7 +218,11 @@ export const VideoDownloader: React.FC<VideoDownloaderProps> = () => {
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <button
-                    onClick={() => downloadImage(preview.bestUrl, `youtube-thumbnail-${preview.videoId}-${preview.bestLabel}.jpg`)}
+                    onClick={() => {
+                      const bestVariant = preview.variants.find((variant) => variant.url === preview.bestUrl);
+                      const sizeLabel = bestVariant?.size || 'thumbnail';
+                      downloadImage(preview.bestUrl, `youtube-thumbnail-${preview.videoId}-${sizeLabel}.jpg`);
+                    }}
                     className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98] flex items-center gap-2"
                   >
                     <span className="material-symbols-outlined">download</span>
@@ -245,7 +251,7 @@ export const VideoDownloader: React.FC<VideoDownloaderProps> = () => {
                   <div key={variant.key} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-3">
                     <div className="min-w-0">
                       <p className="text-sm font-black text-slate-900 dark:text-white">{variant.label}</p>
-                      <p className="text-[11px] font-medium text-slate-400 truncate">{variant.key}.jpg</p>
+                      <p className="text-[11px] font-medium text-slate-400 truncate">{variant.size}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <a
@@ -257,7 +263,7 @@ export const VideoDownloader: React.FC<VideoDownloaderProps> = () => {
                         미리보기
                       </a>
                       <button
-                        onClick={() => downloadImage(variant.url, `youtube-thumbnail-${preview.videoId}-${variant.key}.jpg`)}
+                        onClick={() => downloadImage(variant.url, `youtube-thumbnail-${preview.videoId}-${variant.size}.jpg`)}
                         className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white"
                       >
                         저장
