@@ -786,7 +786,8 @@ export const fetchRealVideos = async (
   }
 };
 
-function parseISO8601Duration(duration: string) {
+function parseISO8601Duration(duration?: string | null) {
+  if (typeof duration !== 'string' || !duration) return '00:00';
   const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
   const hours = (match?.[1] || "").replace('H', '');
   const mins = (match?.[2] || "").replace('M', '');
@@ -890,7 +891,8 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   if (allVideos.length === 0) return [];
 
   // 2. Filter for Shorts (Duration <= 60s) & High Performance
-  const parseDurationSec = (duration: string) => {
+  const parseDurationSec = (duration?: string | null) => {
+      if (typeof duration !== 'string' || !duration) return 0;
       const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
       if (!matches) return 0;
       const hours = parseInt(matches[1] || '0');
@@ -1445,7 +1447,8 @@ export function getCategoryName(id: string): string {
   return categories[id] || 'General';
 }
 
-export function parseISO8601DurationToSeconds(duration: string): number {
+export function parseISO8601DurationToSeconds(duration?: string | null): number {
+  if (typeof duration !== 'string' || !duration) return 0;
   const matches = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!matches) return 0;
   const hours = parseInt(matches[1] || '0');
@@ -1572,5 +1575,4 @@ export const searchVideosForMaterials = async (
     return [];
   }
 };
-
 
