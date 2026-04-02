@@ -29,7 +29,6 @@ const CACHE_TTL = 3600 * 1000; // 1 hour in ms
 const SOURCES = [
   { id: 'all', label: '전체' },
   { id: 'dcinside', label: '디시인사이드' },
-  { id: 'fmkorea', label: '에펨코리아' },
   { id: 'ruliweb', label: '루리웹' },
   { id: 'theqoo', label: '더쿠' },
   { id: 'arca_live', label: '아카라이브' },
@@ -49,7 +48,6 @@ const SOURCES = [
 
 const SOURCE_COLORS: Record<string, string> = {
   dcinside: 'bg-blue-500',
-  fmkorea: 'bg-sky-500',
   ruliweb: 'bg-indigo-500',
   theqoo: 'bg-pink-500',
   arca_live: 'bg-teal-500',
@@ -233,7 +231,7 @@ export const CommunityHotPosts: React.FC<CommunityHotPostsProps> = ({ onTrackUsa
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-bold hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-all disabled:opacity-50 border border-orange-200 dark:border-orange-500/30"
         >
           <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>refresh</span>
-          새로고침 (200P)
+          새로고침
         </button>
       </div>
 

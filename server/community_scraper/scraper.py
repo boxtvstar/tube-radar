@@ -1040,7 +1040,6 @@ def _scrape_hygall() -> list[dict]:
 
 SCRAPERS = [
     _scrape_dcinside,
-    _scrape_fmkorea,
     _scrape_ruliweb,
     _scrape_theqoo,
     _scrape_arca_live,

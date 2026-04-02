@@ -581,7 +581,7 @@ def _scrape_todayhumor() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _ALL_SCRAPERS = [
-    _scrape_dcinside, _scrape_fmkorea, _scrape_ruliweb, _scrape_theqoo,
+    _scrape_dcinside, _scrape_ruliweb, _scrape_theqoo,
     _scrape_arca_live, _scrape_inven, _scrape_ppomppu, _scrape_mlbpark,
     _scrape_clien, _scrape_nate_pann,
     # Phase 2 (일베/인스티즈/오르비/다모앙/해연갤은 SPA/JS렌더링/차단으로 제외)
