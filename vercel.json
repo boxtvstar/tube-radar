@@ -1,5 +1,14 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "framework": "vite"
+  "framework": "vite",
+  "functions": {
+    "api/community.py": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/api/community/hot-posts", "destination": "/api/community" },
+    { "source": "/api/community/preview", "destination": "/api/preview" }
+  ]
 }

@@ -839,11 +839,21 @@ export interface AutoDetectResult extends SavedChannel {
 // 1: Film, 2: Autos, 10: Music, 15: Pets, 17: Sports, 19: Travel, 20: Gaming, 
 // 22: People, 23: Comedy, 24: Entertainment, 25: News, 26: Style, 28: Science
 const TARGET_CATEGORY_IDS = ['1', '2', '10', '15', '17', '19', '20', '22', '23', '24', '25', '26', '28'];
+const AUTO_DETECT_SEARCH_KEYWORDS: Record<string, string[]> = {
+  KR: ['쇼츠', '인기 쇼츠'],
+  US: ['shorts', 'viral shorts'],
+  JP: ['ショート', '人気 ショート'],
+  GB: ['shorts', 'trending shorts'],
+  FR: ['shorts', 'shorts tendance'],
+  ES: ['shorts', 'shorts virales'],
+  DE: ['shorts', 'trending shorts'],
+};
+const AUTO_DETECT_SEARCH_WINDOW_DAYS = 7;
 
 // Updated Auto Detect: Scan Popular Videos by Category (Cost Efficient: ~15 Quota)
 export const autoDetectShortsChannels = async (apiKey: string, regionCode: string = 'KR'): Promise<AutoDetectResult[]> => {
   console.log(`Starting Auto Detect for Region: ${regionCode} using Category Scan...`);
-  const cacheKey = `yt_shorts_autodetect_v3_${regionCode}_${new Date().toDateString()}`;
+  const cacheKey = `yt_shorts_autodetect_v4_${regionCode}_${new Date().toDateString()}`;
   const cached = localStorage.getItem(cacheKey);
 
   if (cached) {
@@ -886,7 +896,59 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   });
 
   const results = await Promise.all(promises);
-  const allVideos = results.flat();
+  const popularVideos = results.flat();
+
+  // 1-b. Low-noise search mix: limited keyword search to surface videos
+  // that have not yet fully entered the mostPopular chart.
+  const searchKeywords = AUTO_DETECT_SEARCH_KEYWORDS[regionCode] || AUTO_DETECT_SEARCH_KEYWORDS.US;
+  const cutoffDate = new Date(Date.now() - AUTO_DETECT_SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const searchResults = await Promise.all(
+    searchKeywords.slice(0, 1).map(async (keyword) => {
+      try {
+        let searchUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&videoDuration=short&maxResults=50&order=viewCount&publishedAfter=${cutoffDate.toISOString()}&regionCode=${regionCode}&q=${encodeURIComponent(keyword)}&key=${apiKey}`;
+        if (regionCode === 'KR') searchUrl += '&relevanceLanguage=ko';
+        else if (regionCode === 'US' || regionCode === 'GB') searchUrl += '&relevanceLanguage=en';
+        else if (regionCode === 'JP') searchUrl += '&relevanceLanguage=ja';
+        else if (regionCode === 'FR') searchUrl += '&relevanceLanguage=fr';
+        else if (regionCode === 'ES') searchUrl += '&relevanceLanguage=es';
+        else if (regionCode === 'DE') searchUrl += '&relevanceLanguage=de';
+
+        const searchRes = await fetch(searchUrl);
+        trackUsage(apiKey, 'search', 1);
+        const searchData = await searchRes.json();
+
+        if (searchData.error) {
+          if (searchData.error.errors?.some((err: any) => err.reason === 'quotaExceeded') || searchData.error.message?.toLowerCase().includes('quota')) {
+            throw new Error('QUOTA_EXCEEDED');
+          }
+          console.warn('Auto detect search error:', searchData.error);
+          return [];
+        }
+
+        const ids = (searchData.items || []).map((item: any) => item.id?.videoId).filter(Boolean);
+        if (ids.length === 0) return [];
+
+        const detailRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,contentDetails,statistics&id=${ids.join(',')}&key=${apiKey}`);
+        trackUsage(apiKey, 'list', 1);
+        const detailData = await detailRes.json();
+
+        if (detailData.error) {
+          if (detailData.error.errors?.some((err: any) => err.reason === 'quotaExceeded') || detailData.error.message?.toLowerCase().includes('quota')) {
+            throw new Error('QUOTA_EXCEEDED');
+          }
+          console.warn('Auto detect detail error:', detailData.error);
+          return [];
+        }
+
+        return detailData.items || [];
+      } catch (e: any) {
+        if (e.message === 'QUOTA_EXCEEDED') throw e;
+        return [];
+      }
+    })
+  );
+
+  const allVideos = [...popularVideos, ...searchResults.flat()];
   
   if (allVideos.length === 0) return [];
 
@@ -913,6 +975,9 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   shortVideos.forEach((v: any) => {
     const cid = v.snippet.channelId;
     const views = parseInt(v.statistics?.viewCount || '0');
+    const publishedAt = v.snippet.publishedAt ? new Date(v.snippet.publishedAt).getTime() : Date.now();
+    const ageHours = Math.max((Date.now() - publishedAt) / (1000 * 60 * 60), 1);
+    const freshnessBoost = Math.max(0, 72 - ageHours) / 72;
     
     // We prioritize channels with viral videos (high views)
     if (!channelMap.has(cid)) {
@@ -921,37 +986,53 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
         title: v.snippet.channelTitle,
         totalRecentViews: views,
         bestVideo: v, // Keep the best video found
-        videoCount: 1
+        videoCount: 1,
+        freshnessScore: freshnessBoost,
       });
     } else {
       const current = channelMap.get(cid);
       current.totalRecentViews += views;
       current.videoCount += 1;
+      current.freshnessScore = Math.max(current.freshnessScore || 0, freshnessBoost);
       if (views > parseInt(current.bestVideo.statistics.viewCount)) {
           current.bestVideo = v; // Update best video
       }
     }
   });
 
-  // 4. Sort by Impact (Total Views in recent Popular Chart)
+  // 4. Sort by Impact with freshness weighting
   const candidates = Array.from(channelMap.values())
-    .sort((a, b) => b.totalRecentViews - a.totalRecentViews)
-    .slice(0, 50); // Top 50 candidates
+    .sort((a, b) => {
+      const scoreA = a.totalRecentViews * (1 + (a.freshnessScore || 0) * 0.35);
+      const scoreB = b.totalRecentViews * (1 + (b.freshnessScore || 0) * 0.35);
+      return scoreB - scoreA;
+    })
+    .slice(0, 100); // Expand candidate pool so more channels can surface
 
   if (candidates.length === 0) return [];
 
   // 5. Fetch Real Channel Details (Subscribers, Thumbnail, Country)
-  // Batch request: 50 IDs = 1 unit.
-  // Total Cost: 13 (Video List) + 1 (Channels) = 14 units.
+  // YouTube channels.list accepts max 50 IDs per request, so batch if needed.
   const channelIds = candidates.map(c => c.id);
-  
-  const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${channelIds.join(',')}&key=${apiKey}`);
-  trackUsage(apiKey, 'list', 1);
-  const chData = await chRes.json();
-  
-  if (!chData.items) return [];
+  const BATCH_SIZE = 50;
+  const channelBatches: string[][] = [];
+  for (let i = 0; i < channelIds.length; i += BATCH_SIZE) {
+    channelBatches.push(channelIds.slice(i, i + BATCH_SIZE));
+  }
 
-  const finalResults: AutoDetectResult[] = chData.items
+  const batchResults = await Promise.all(
+    channelBatches.map(async (batch) => {
+      const chRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${batch.join(',')}&key=${apiKey}`);
+      trackUsage(apiKey, 'list', 1);
+      const chData = await chRes.json();
+      return chData.items || [];
+    })
+  );
+  const allChannelItems = batchResults.flat();
+
+  if (allChannelItems.length === 0) return [];
+
+  const finalResults: AutoDetectResult[] = allChannelItems
     .filter((ch: any) => {
        const subs = parseInt(ch.statistics?.subscriberCount || '0');
        // Filter: At least 100 subs (Minimal quality)
@@ -1575,4 +1656,3 @@ export const searchVideosForMaterials = async (
     return [];
   }
 };
-
