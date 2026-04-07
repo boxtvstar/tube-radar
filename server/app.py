@@ -11,6 +11,8 @@ from downloader import get_video_info, stream_video_process, build_download_file
 from similar_thumbnail import find_similar_thumbnails
 from source_finder import find_source_from_video_url, find_source_from_image
 from community_scraper import fetch_all_hot_posts
+from shorts_music import fetch_shorts_music, search_shorts
+from rising_channels import fetch_rising_channels
 
 app = FastAPI(title="YouTube Transcript API")
 
@@ -122,6 +124,27 @@ def community_hot_posts(force: bool = False):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"커뮤니티 스크래핑 실패: {str(e)}")
+
+
+@app.get("/api/shorts-music")
+def shorts_music(force: bool = False, q: str | None = None):
+    """쇼츠 인기 음악 차트 (2시간 캐시) / q 파라미터 있으면 쇼츠 검색"""
+    try:
+        if q:
+            return {"videos": search_shorts(q)}
+        result = fetch_shorts_music(force=force)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"쇼츠 음악 차트 조회 실패: {str(e)}")
+
+
+@app.get("/api/rising-channels")
+def rising_channels(force: bool = False, apiKey: str = ""):
+    """신규 발굴 — 급성장 채널 목록 (24시간 캐시)"""
+    try:
+        return fetch_rising_channels(force=force, api_key=apiKey)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"신규 발굴 조회 실패: {str(e)}")
 
 
 import requests as _req

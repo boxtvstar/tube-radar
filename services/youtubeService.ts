@@ -21,16 +21,16 @@ export const cleanupOldCaches = () => {
     const MAX_CACHE_AGE = 7 * 24 * 60 * 60 * 1000; // 7일
     const now = Date.now();
     let removedCount = 0;
-    
+
     // YouTube 캐시 정리
     Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('yt_v7_cache') || key.startsWith('yt_shorts_autodetect') || key.startsWith('viral_analysis_cache_')) {
+      if (key.startsWith('yt_v7_cache') || key.startsWith('yt_shorts_autodetect') || key.startsWith('viral_analysis_cache_') || key.startsWith('tuberadar_')) {
         try {
           const cached = localStorage.getItem(key);
           if (cached) {
             const parsed = JSON.parse(cached);
-            const cacheAge = now - (parsed.timestamp || 0);
-            
+            const cacheAge = now - (parsed.timestamp || parsed.savedAt || 0);
+
             if (cacheAge > MAX_CACHE_AGE) {
               localStorage.removeItem(key);
               removedCount++;
@@ -43,12 +43,49 @@ export const cleanupOldCaches = () => {
         }
       }
     });
-    
+
     if (removedCount > 0) {
       console.log(`✅ 오래된 캐시 ${removedCount}개 정리 완료`);
     }
   } catch (error) {
     console.error('캐시 정리 중 오류:', error);
+  }
+};
+
+// localStorage 안전 저장 — 용량 초과 시 오래된 캐시 정리 후 재시도
+export const safeSetLocalStorage = (key: string, value: string): boolean => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    // QuotaExceededError — 공격적 정리 후 재시도
+    console.warn('⚠️ localStorage 용량 초과, 캐시 정리 중...');
+    try {
+      const cacheKeys = Object.keys(localStorage).filter(k =>
+        k.startsWith('yt_v7_cache') || k.startsWith('yt_shorts_autodetect') ||
+        k.startsWith('viral_analysis_cache_') || k.startsWith('tuberadar_')
+      );
+      // 타임스탬프 기준 오래된 순 정렬
+      const entries = cacheKeys.map(k => {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(k) || '{}');
+          return { key: k, ts: parsed.timestamp || parsed.savedAt || 0 };
+        } catch { return { key: k, ts: 0 }; }
+      }).sort((a, b) => a.ts - b.ts);
+
+      // 오래된 것부터 절반 삭제
+      const removeCount = Math.max(Math.ceil(entries.length / 2), 1);
+      for (let i = 0; i < removeCount && i < entries.length; i++) {
+        localStorage.removeItem(entries[i].key);
+      }
+      console.log(`✅ 캐시 ${removeCount}개 정리 완료, 재시도...`);
+
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e2) {
+      console.error('❌ localStorage 저장 실패 (정리 후에도 용량 초과):', e2);
+      return false;
+    }
   }
 };
 
@@ -778,7 +815,7 @@ export const fetchRealVideos = async (
     videos.sort((a, b) => parseFloat(b.viralScore) - parseFloat(a.viralScore));
     // 빈 결과로 기존 캐시를 덮어쓰지 않음
     if (videos.length > 0) {
-      localStorage.setItem(cacheKey, JSON.stringify({ data: videos, timestamp: Date.now() }));
+      safeSetLocalStorage(cacheKey, JSON.stringify({ data: videos, timestamp: Date.now() }));
     }
     return videos;
   } catch (error: any) {
@@ -1088,9 +1125,223 @@ export const autoDetectShortsChannels = async (apiKey: string, regionCode: strin
   finalResults.sort((a, b) => b.viralScore - a.viralScore);
   
   // Cache result
-  localStorage.setItem(cacheKey, JSON.stringify({ data: finalResults, timestamp: Date.now() }));
+  safeSetLocalStorage(cacheKey, JSON.stringify({ data: finalResults, timestamp: Date.now() }));
 
   return finalResults;
+};
+
+// --- Rising Creators Discovery ---
+
+export interface RisingChannel {
+  id: string;
+  title: string;
+  thumbnail: string;
+  subscriberCount: number;
+  videoCount: number;
+  totalViews: number;
+  avgViews: number;
+  joinDate: string;
+  country?: string;
+  topVideos: {
+    videoId: string;
+    title: string;
+    thumbnail: string;
+    views: number;
+    publishedAt: string;
+  }[];
+}
+
+export const discoverRisingChannels = async (
+  apiKey: string,
+  onProgress?: (step: string, progress: number) => void
+): Promise<RisingChannel[]> => {
+  const cacheKey = 'tuberadar_rising_channels';
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    try {
+      const { data, timestamp } = JSON.parse(cached);
+      if (data && data.length > 0 && Date.now() - timestamp < CACHE_DURATION) {
+        onProgress?.('캐시 데이터 로드 완료', 100);
+        return data;
+      }
+    } catch (e) { localStorage.removeItem(cacheKey); }
+  }
+
+  const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+
+  // Step 1: Fetch popular videos from each category (~13 units)
+  onProgress?.('인기 동영상 수집 중... (1/6)', 5);
+  const categoryPromises = TARGET_CATEGORY_IDS.map(async (catId) => {
+    try {
+      const res = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics&chart=mostPopular&regionCode=KR&videoCategoryId=${catId}&maxResults=50&key=${apiKey}`);
+      trackUsage(apiKey, 'list', 1);
+      const data = await res.json();
+      if (data.error) {
+        if (data.error.errors?.some((err: any) => err.reason === 'quotaExceeded') || data.error.message?.toLowerCase().includes('quota')) {
+          throw new Error('QUOTA_EXCEEDED');
+        }
+        return [];
+      }
+      return data.items || [];
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') throw e;
+      return [];
+    }
+  });
+  const categoryResults = await Promise.all(categoryPromises);
+  const popularVideos = categoryResults.flat();
+
+  // Step 2: Keyword search for rising creators (~300 units via search)
+  onProgress?.('키워드 검색 중... (2/6)', 20);
+  const searchKeywords = ['유튜버 브이로그', '일상 브이로그', '먹방 리뷰'];
+  const searchPromises = searchKeywords.map(async (keyword) => {
+    try {
+      const searchUrl = `${YOUTUBE_BASE_URL}/search?part=snippet&type=video&order=viewCount&publishedAfter=${sixMonthsAgo.toISOString()}&maxResults=50&regionCode=KR&relevanceLanguage=ko&q=${encodeURIComponent(keyword)}&key=${apiKey}`;
+      const searchRes = await fetch(searchUrl);
+      trackUsage(apiKey, 'search', 100);
+      const searchData = await searchRes.json();
+      if (searchData.error) {
+        if (searchData.error.errors?.some((err: any) => err.reason === 'quotaExceeded') || searchData.error.message?.toLowerCase().includes('quota')) {
+          throw new Error('QUOTA_EXCEEDED');
+        }
+        return [];
+      }
+      return searchData.items || [];
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') throw e;
+      return [];
+    }
+  });
+  const searchResults = await Promise.all(searchPromises);
+
+  // Step 3: Extract unique channel IDs
+  onProgress?.('채널 ID 수집 중... (3/6)', 40);
+  const channelIdSet = new Set<string>();
+  for (const v of popularVideos) {
+    if (v.snippet?.channelId) channelIdSet.add(v.snippet.channelId);
+  }
+  for (const items of searchResults) {
+    for (const item of items) {
+      const cid = item.snippet?.channelId;
+      if (cid) channelIdSet.add(cid);
+    }
+  }
+  const allChannelIds = Array.from(channelIdSet);
+
+  // Step 4: Fetch channel statistics in batches of 50
+  onProgress?.('채널 통계 조회 중... (4/6)', 50);
+  const BATCH_SIZE = 50;
+  const channelBatches: string[][] = [];
+  for (let i = 0; i < allChannelIds.length; i += BATCH_SIZE) {
+    channelBatches.push(allChannelIds.slice(i, i + BATCH_SIZE));
+  }
+  const channelBatchResults = await Promise.all(
+    channelBatches.map(async (batch) => {
+      const res = await fetch(`${YOUTUBE_BASE_URL}/channels?part=snippet,statistics&id=${batch.join(',')}&key=${apiKey}`);
+      trackUsage(apiKey, 'list', 1);
+      const data = await res.json();
+      if (data.error) {
+        if (data.error.errors?.some((err: any) => err.reason === 'quotaExceeded') || data.error.message?.toLowerCase().includes('quota')) {
+          throw new Error('QUOTA_EXCEEDED');
+        }
+        return [];
+      }
+      return data.items || [];
+    })
+  );
+  const allChannels = channelBatchResults.flat();
+
+  // Step 5: Filter channels
+  onProgress?.('필터링 중... (5/6)', 65);
+  const qualifiedChannels = allChannels.filter((ch: any) => {
+    const publishedAt = new Date(ch.snippet.publishedAt);
+    const videoCount = parseInt(ch.statistics.videoCount || '0');
+    const totalViews = parseInt(ch.statistics.viewCount || '0');
+    const avgViews = videoCount > 0 ? totalViews / videoCount : 0;
+
+    return (
+      publishedAt >= oneYearAgo &&
+      videoCount <= 100 &&
+      videoCount > 0 &&
+      avgViews >= 500000
+    );
+  });
+
+  if (qualifiedChannels.length === 0) {
+    onProgress?.('조건에 맞는 채널이 없습니다', 100);
+    safeSetLocalStorage(cacheKey, JSON.stringify({ data: [], timestamp: Date.now() }));
+    return [];
+  }
+
+  // Step 6: Fetch top 4 videos per channel
+  onProgress?.(`대표 영상 조회 중... (6/6) - ${qualifiedChannels.length}개 채널`, 75);
+  const risingChannels: RisingChannel[] = [];
+
+  for (let i = 0; i < qualifiedChannels.length; i++) {
+    const ch = qualifiedChannels[i];
+    const progress = 75 + (i / qualifiedChannels.length) * 20;
+    onProgress?.(`대표 영상 조회 중... (6/6) - ${i + 1}/${qualifiedChannels.length}`, Math.round(progress));
+
+    try {
+      // Get uploads playlist
+      const chDetailRes = await fetch(`${YOUTUBE_BASE_URL}/channels?part=contentDetails&id=${ch.id}&key=${apiKey}`);
+      trackUsage(apiKey, 'list', 1);
+      const chDetailData = await chDetailRes.json();
+      const uploadsPlaylistId = chDetailData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploadsPlaylistId) continue;
+
+      // Get recent videos
+      const plRes = await fetch(`${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=20&key=${apiKey}`);
+      trackUsage(apiKey, 'list', 1);
+      const plData = await plRes.json();
+      const videoIds = (plData.items || []).map((item: any) => item.snippet?.resourceId?.videoId).filter(Boolean);
+      if (videoIds.length === 0) continue;
+
+      // Get video stats
+      const vRes = await fetch(`${YOUTUBE_BASE_URL}/videos?part=snippet,statistics&id=${videoIds.join(',')}&key=${apiKey}`);
+      trackUsage(apiKey, 'list', 1);
+      const vData = await vRes.json();
+      const videos = (vData.items || [])
+        .map((v: any) => ({
+          videoId: v.id,
+          title: v.snippet.title,
+          thumbnail: v.snippet.thumbnails?.high?.url || v.snippet.thumbnails?.medium?.url || v.snippet.thumbnails?.default?.url,
+          views: parseInt(v.statistics?.viewCount || '0'),
+          publishedAt: v.snippet.publishedAt,
+        }))
+        .sort((a: any, b: any) => b.views - a.views)
+        .slice(0, 4);
+
+      const videoCount = parseInt(ch.statistics.videoCount || '0');
+      const totalViews = parseInt(ch.statistics.viewCount || '0');
+
+      risingChannels.push({
+        id: ch.id,
+        title: ch.snippet.title,
+        thumbnail: ch.snippet.thumbnails?.high?.url || ch.snippet.thumbnails?.medium?.url || ch.snippet.thumbnails?.default?.url,
+        subscriberCount: parseInt(ch.statistics.subscriberCount || '0'),
+        videoCount,
+        totalViews,
+        avgViews: videoCount > 0 ? Math.round(totalViews / videoCount) : 0,
+        joinDate: ch.snippet.publishedAt,
+        country: ch.snippet.country,
+        topVideos: videos,
+      });
+    } catch (e: any) {
+      if (e.message === 'QUOTA_EXCEEDED') throw e;
+      console.warn(`Failed to fetch videos for channel ${ch.id}:`, e);
+    }
+  }
+
+  // Sort by average views (descending)
+  risingChannels.sort((a, b) => b.avgViews - a.avgViews);
+
+  // Cache result
+  safeSetLocalStorage(cacheKey, JSON.stringify({ data: risingChannels, timestamp: Date.now() }));
+  onProgress?.('스캔 완료!', 100);
+
+  return risingChannels;
 };
 
 // Helper for formatting subscriber counts

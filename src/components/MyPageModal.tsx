@@ -472,11 +472,9 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                         type="password" 
                         value={ytKey} 
                         onChange={(e) => onYtKeyChange(e.target.value)}
-                        disabled={status === 'pending' || role === 'guest'}
-                        placeholder={status === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "YouTube Data API v3 키를 입력하세요"}
+                        placeholder="YouTube Data API v3 키를 입력하세요"
                         className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
-                          status === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
-                          ytApiStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
+                                                    ytApiStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
                           ytApiStatus === 'invalid' ? 'border-rose-200 focus:border-rose-500 text-rose-700 dark:text-rose-400' :
                           'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
                         }`}
@@ -487,13 +485,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       
                       {ytApiStatus === 'valid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
                     </div>
-                    {status === 'pending' || role === 'guest' ? (
-                        <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
-                          <span className="material-symbols-outlined text-[14px] mt-0.5">lock</span>
-                          <span>API 키 입력은 관리자 승인 후 가능합니다.</span>
-                        </p>
-                    ) : (
-                        <div className="flex justify-between items-start mt-3 px-1">
+                    <div className="flex justify-between items-start mt-3 px-1">
                            <p className="text-[11px] text-slate-400 flex items-start gap-1.5 leading-snug">
                              <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">info</span>
                              <span>개인 API 키를 사용하면 공용 할당량 제한 없이 더 안정적인 분석이 가능합니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
@@ -506,7 +498,6 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                               API 설정하는 법
                            </button>
                         </div>
-                    )}
                   </div>
                 </div>
 
@@ -549,11 +540,9 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                             (window as any).__geminiValidateTimer = setTimeout(() => validateGeminiKey(val), 800);
                           }
                         }}
-                        disabled={status === 'pending' || role === 'guest'}
-                        placeholder={status === 'pending' || role === 'guest' ? "승인된 회원만 이용 가능합니다" : "Google Gemini API Key 입력..."}
+                        placeholder="Google Gemini API Key 입력..."
                         className={`w-full p-4 pl-12 rounded-xl bg-slate-50 dark:bg-slate-950 border outline-none font-mono text-sm transition-all ${
-                          status === 'pending' || role === 'guest' ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800' :
-                          geminiKeyStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
+                                                    geminiKeyStatus === 'valid' ? 'border-emerald-200 focus:border-emerald-500 text-emerald-700 dark:text-emerald-400' :
                           geminiKeyStatus === 'invalid' ? 'border-rose-200 focus:border-rose-500 text-rose-700 dark:text-rose-400' :
                           'border-slate-200 dark:border-slate-700 focus:border-indigo-500 text-slate-900 dark:text-white'
                         }`}
@@ -565,19 +554,12 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       {geminiKeyStatus === 'valid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-emerald-500 animate-in zoom-in">check_circle</span>}
                       {geminiKeyStatus === 'invalid' && <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-rose-500 animate-in zoom-in">error</span>}
                     </div>
-                    {status === 'pending' || role === 'guest' ? (
-                        <p className="text-[11px] text-rose-500 mt-3 ml-1 flex items-start gap-1.5 font-bold animate-pulse">
-                          <span className="material-symbols-outlined text-[14px] mt-0.5">lock</span>
-                          <span>API 키 입력은 관리자 승인 후 가능합니다.</span>
-                        </p>
-                    ) : (
-                        <div className="flex justify-between items-start mt-3 px-1">
+                    <div className="flex justify-between items-start mt-3 px-1">
                            <p className="text-[11px] text-slate-400 flex items-start gap-1.5 leading-snug">
                              <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">info</span>
                              <span>Gemini API 키를 입력하면 대본 번역, 요약 등 AI 기능을 사용할 수 있습니다.<br/>키는 브라우저에만 안전하게 저장됩니다.</span>
                            </p>
                         </div>
-                    )}
                   </div>
                 </div>
 

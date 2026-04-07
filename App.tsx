@@ -15,8 +15,8 @@ import { GuestNoticeModal } from './src/components/GuestNoticeModal';
 import { MembershipWelcomeModal } from './src/components/MembershipWelcomeModal';
 import { TrialMembershipVerificationModal } from './src/components/TrialMembershipVerificationModal';
 import { MyPageModal } from './src/components/MyPageModal';
-import { 
-  getChannelInfo, 
+import {
+  getChannelInfo,
   fetchChannelPopularVideos,
   fetchRealVideos,
   searchChannelsByKeyword,
@@ -28,7 +28,7 @@ import { analyzeVideoVirality } from './services/geminiService';
 import { createAnalyticsSession, heartbeatAnalyticsSession, trackAnalyticsPageView } from './services/analyticsService';
 import { MembershipPage } from './src/components/MembershipPage';
 import { RecommendedPackageList } from './src/components/RecommendedPackageList';
-import { 
+import {
   saveChannelToDb,
   removeChannelFromDb,
   getChannelsFromDb,
@@ -48,6 +48,7 @@ import {
   getUserPreferences,
   saveUserPreferences,
   subscribeToAnnouncement,
+  resetUserUsage,
   Announcement
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification } from './types';
@@ -65,6 +66,8 @@ import UploadTimeAnalysis from './src/components/UploadTimeAnalysis';
 import { ChannelRevenueAnalyzer } from './src/components/ChannelRevenueAnalyzer';
 import { FormatStudio } from './src/components/FormatStudio';
 import { CommunityHotPosts } from './src/components/CommunityHotPosts';
+import { ShortsTrendingMusic } from './src/components/ShortsTrendingMusic';
+import { RisingCreators } from './src/components/RisingCreators';
 
 
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
@@ -392,6 +395,10 @@ const Sidebar = ({
   onToggleRevenueMode,
   isCommunityMode,
   onToggleCommunityMode,
+  isShortsMusicMode,
+  onToggleShortsMusicMode,
+  isRisingMode,
+  onToggleRisingMode,
   userGrade, // Added userGrade
   onShowAlert, // Added onShowAlert
   isAdmin // Added isAdmin
@@ -452,6 +459,10 @@ const Sidebar = ({
   onToggleRevenueMode: (val: boolean) => void;
   isCommunityMode: boolean;
   onToggleCommunityMode: (val: boolean) => void;
+  isShortsMusicMode: boolean;
+  onToggleShortsMusicMode: (val: boolean) => void;
+  isRisingMode: boolean;
+  onToggleRisingMode: (val: boolean) => void | Promise<void>;
   userGrade?: string;
   onShowAlert?: (alert: { title: string, message: string, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => void;
   isAdmin?: boolean;
@@ -516,7 +527,7 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`w-full relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-xl text-xs font-bold transition-all ${
-              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isCommunityMode && !isRadarMode && !isMaterialsExplorerMode && !isFormatStudioMode && !isUploadTimeMode
+              isMyMode && !isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isMembershipMode && !isComparisonMode && !isNationalTrendMode && !isCategoryTrendMode && !isCommunityMode && !isRisingMode && !isRadarMode && !isMaterialsExplorerMode && !isFormatStudioMode && !isUploadTimeMode
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm border border-indigo-200 dark:border-indigo-500/20' 
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -532,8 +543,43 @@ const Sidebar = ({
             {isCollapsed && hasPendingSync && <span className="absolute top-2 right-2 flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span></span>}
           </button>
 
-          <SidebarItem 
-            icon="compare_arrows" 
+          <SidebarItem
+            icon="search"
+            label={
+              <span className="flex items-center gap-1.5">
+                채널 신규 발굴
+                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">
+                     {!hasGoldAccess ? 'lock' : 'search'}
+                   </span>
+                </span>
+              </span>
+            }
+            active={isRisingMode}
+            onClick={() => {
+              if (!hasGoldAccess) {
+                 if (onShowAlert) {
+                    onShowAlert({
+                       title: "권한 제한",
+                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                       type: 'error',
+                       showSubscribeButton: true,
+                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                    });
+                 } else {
+                    alert("이 기능은 골드 등급 전용입니다.");
+                 }
+                 return;
+              }
+              onToggleRisingMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isRisingMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+            isCollapsed={isCollapsed}
+          />
+
+          <SidebarItem
+            icon="compare_arrows"
             label="채널 비교 분석" 
             active={!!isComparisonMode} 
             onClick={() => {
@@ -854,6 +900,40 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }}
             className={`${isCommunityMode ? 'bg-orange-50 dark:bg-orange-500/10 !text-orange-600 dark:!text-orange-400 border border-orange-200 dark:border-orange-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-orange-500'}`}
+            isCollapsed={isCollapsed}
+          />
+          <SidebarItem
+            icon="music_note"
+            label={
+              <span className="flex items-center gap-1.5">
+                쇼츠 인기 음악
+                <span className="text-[9px] bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">
+                     {!hasGoldAccess ? 'lock' : 'music_note'}
+                   </span>
+                </span>
+              </span>
+            }
+            active={isShortsMusicMode}
+            onClick={() => {
+              if (!hasGoldAccess) {
+                 if (onShowAlert) {
+                    onShowAlert({
+                       title: "권한 제한",
+                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                       type: 'error',
+                       showSubscribeButton: true,
+                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                    });
+                 } else {
+                    alert("이 기능은 골드 등급 전용입니다.");
+                 }
+                 return;
+              }
+              onToggleShortsMusicMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isShortsMusicMode ? 'bg-violet-50 dark:bg-violet-500/10 !text-violet-600 dark:!text-violet-400 border border-violet-200 dark:border-violet-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-violet-500'}`}
             isCollapsed={isCollapsed}
           />
         </div>
@@ -1508,6 +1588,10 @@ export default function App() {
   const [shortsDetectorResults, setShortsDetectorResults] = useState<AutoDetectResult[]>([]);
   const [isDetectingShorts, setIsDetectingShorts] = useState(false);
   const [detectorStatus, setDetectorStatus] = useState<string | null>(null);
+  const [detectorAddDropdownId, setDetectorAddDropdownId] = useState<string | null>(null);
+  const [detectorNewGroupName, setDetectorNewGroupName] = useState('');
+  const [detectorIsCreatingGroup, setDetectorIsCreatingGroup] = useState(false);
+  const [detectorIsAdding, setDetectorIsAdding] = useState(false);
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
 
@@ -1613,6 +1697,8 @@ export default function App() {
   const [isNationalTrendMode, setIsNationalTrendMode] = useState(false);
   const [isCategoryTrendMode, setIsCategoryTrendMode] = useState(false);
   const [isCommunityMode, setIsCommunityMode] = useState(false);
+  const [isShortsMusicMode, setIsShortsMusicMode] = useState(false);
+  const [isRisingMode, setIsRisingMode] = useState(false);
   const [isApiQuotaExceeded, setIsApiQuotaExceeded] = useState(false);
 
   // Removed isUsageMode state (integrated into MyPage)
@@ -1646,6 +1732,8 @@ export default function App() {
     if (isNationalTrendMode) return 'national_trend';
     if (isCategoryTrendMode) return `category_trend_${selectedCategory || 'all'}`;
     if (isCommunityMode) return 'community_hot_posts';
+    if (isShortsMusicMode) return 'shorts_music';
+    if (isRisingMode) return 'rising_creators';
     if (isUsageMode) return 'usage';
     if (isMyMode) return `my_mode_${activeGroupId || 'all'}`;
     return selectedCategory ? `trend_${selectedCategory}` : 'home';
@@ -1668,6 +1756,8 @@ export default function App() {
     isNationalTrendMode,
     isCategoryTrendMode,
     isCommunityMode,
+    isShortsMusicMode,
+    isRisingMode,
     isUsageMode,
     isMyMode,
     activeGroupId,
@@ -1681,6 +1771,18 @@ export default function App() {
       const unsubscribe = subscribeToUsage(user.uid, targetPlan, (newUsage) => {
         setUsage(newUsage);
       });
+      // 관리자용 포인트 리셋 함수를 콘솔에서 사용 가능하게 노출
+      if (isAdmin) {
+        (window as any).__resetMyUsage = () => resetUserUsage(user.uid, 'admin').then(() => console.log('✅ 관리자 포인트 리셋 완료'));
+        // 일회성 관리자 포인트 리셋
+        const resetKey = 'admin_usage_reset_20260405';
+        if (!localStorage.getItem(resetKey)) {
+          resetUserUsage(user.uid, 'admin').then(() => {
+            localStorage.setItem(resetKey, '1');
+            console.log('✅ 관리자 포인트 자동 리셋 완료');
+          });
+        }
+      }
       return () => unsubscribe();
     }
   }, [user, isPending, isAdmin, effectivePlan]);
@@ -1859,14 +1961,25 @@ export default function App() {
         const res = await fetch(`https://www.googleapis.com/youtube/v3/videoCategories?part=snippet&regionCode=KR&key=${ytKey}`);
         const data = await res.json();
         if (!isActive) return;
-        
-        if (data.error) throw new Error();
-        setYtApiStatus('valid');
+
+        if (data.error) {
+          // 쿼터 초과는 키 자체는 유효 — invalid 처리하지 않음
+          const reason = data.error.errors?.[0]?.reason || '';
+          if (reason === 'quotaExceeded' || data.error.code === 429 || (data.error.code === 403 && data.error.message?.toLowerCase().includes('quota'))) {
+            setYtApiStatus('valid');
+            setIsApiQuotaExceeded(true);
+          } else {
+            setYtApiStatus('invalid');
+          }
+        } else {
+          setYtApiStatus('valid');
+          setIsApiQuotaExceeded(false);
+        }
       } catch {
+        if (!isActive) return;
         setYtApiStatus('invalid');
       } finally {
         if (!ytKey || ytKey.length < 20) setYtApiStatus('invalid');
-        // Do not force set to valid here, trust the try/catch flow
       }
     };
     validateYtKey();
@@ -3367,17 +3480,27 @@ export default function App() {
     }
   };
 
-  const handleAddDetectedChannel = async (result: import('./services/youtubeService').AutoDetectResult) => {
+  const handleAddDetectedChannel = async (result: import('./services/youtubeService').AutoDetectResult, groupId?: string, newGroupName?: string) => {
+    let targetGroupId = groupId || (activeGroupId === 'all' ? 'unassigned' : activeGroupId);
+
+    // 새 그룹 생성
+    if (newGroupName && newGroupName.trim()) {
+      const newGroup = { id: `group_${Date.now()}`, name: newGroupName.trim() };
+      setGroups(prev => [...prev, newGroup]);
+      if (user) await saveGroupToDb(user.uid, newGroup);
+      targetGroupId = newGroup.id;
+    }
+
     const newChannel: SavedChannel = {
       id: result.id,
       title: result.title,
       thumbnail: result.thumbnail,
       subscriberCount: result.subscriberCount,
       videoCount: result.videoCount,
-      groupId: activeGroupId === 'all' ? 'unassigned' : activeGroupId,
+      groupId: targetGroupId,
       addedAt: Date.now()
     };
-    
+
     // Add to state
     setSavedChannels(prev => [...prev, newChannel]);
     setHasPendingSync(true);
@@ -3579,15 +3702,15 @@ export default function App() {
         ytKey={ytKey} onYtKeyChange={setYtKey} ytApiStatus={ytApiStatus}
         region={region} onRegionChange={(val) => { setVideos([]); setRegion(val); }}
         selectedCategory={selectedCategory} onCategoryChange={(val) => { setVideos([]); setSelectedCategory(val); }}
-        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
-        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
-        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
-        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
-        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
-        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
-        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
-        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
-        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
+        isMyMode={isMyMode} onToggleMyMode={(val) => { if(val) { setLoading(false); setVideos([]); setIsRadarMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsMyMode(val); }}
+        isExplorerMode={isExplorerMode} onToggleExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsExplorerMode(val); }}
+        isUsageMode={isUsageMode} onToggleUsageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsUsageMode(val); }}
+        isPackageMode={isPackageMode} onTogglePackageMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsPackageMode(val); }}
+        isShortsDetectorMode={isShortsDetectorMode} onToggleShortsDetectorMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); handleAutoDetectShorts(); } setIsShortsDetectorMode(val); }}
+        isTopicMode={isTopicMode} onToggleTopicMode={(val) => { if (val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsTopicMode(val); }}
+        isMembershipMode={isMembershipMode} onToggleMembershipMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsMembershipMode(val); }}
+        isComparisonMode={isComparisonMode} onToggleComparisonMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsComparisonMode(val); }}
+        isRadarMode={isRadarMode} onToggleRadarMode={(val) => { if(val) { setLoading(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsRadarMode(val); }}
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
@@ -3601,25 +3724,51 @@ export default function App() {
         onOpenMyPage={(tab) => { setMyPageInitialTab(tab || 'dashboard'); setIsMyPageOpen(true); }}
         
         isNationalTrendMode={isNationalTrendMode}
-        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
+        onToggleNationalTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsNationalTrendMode(val); }}
         isCategoryTrendMode={isCategoryTrendMode}
-        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
+        onToggleCategoryTrendMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsCategoryTrendMode(val); }}
         isMaterialsExplorerMode={isMaterialsExplorerMode}
-        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
+        onToggleMaterialsExplorerMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsMaterialsExplorerMode(val); }}
         isScriptMode={isScriptMode}
-        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
+        onToggleScriptMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsScriptMode(val); }}
         isVideoDownloadMode={isVideoDownloadMode}
-        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
+        onToggleVideoDownloadMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsVideoDownloadMode(val); }}
         isSourceFinderMode={isSourceFinderMode}
-        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
+        onToggleSourceFinderMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsSourceFinderMode(val); }}
         isFormatStudioMode={isFormatStudioMode}
-        onToggleFormatStudioMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsFormatStudioMode(val); }}
+        onToggleFormatStudioMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsFormatStudioMode(val); }}
         isUploadTimeMode={isUploadTimeMode}
-        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
+        onToggleUploadTimeMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsUploadTimeMode(val); }}
         isRevenueMode={isRevenueMode}
-        onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
+        onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
         isCommunityMode={isCommunityMode}
-        onToggleCommunityMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setScriptModeUrl(''); } setIsCommunityMode(val); }}
+        onToggleCommunityMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsCommunityMode(val); }}
+        isShortsMusicMode={isShortsMusicMode}
+        onToggleShortsMusicMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsShortsMusicMode(val); }}
+        isRisingMode={isRisingMode}
+        onToggleRisingMode={async (val) => {
+          if (val) {
+            // 오늘 이미 300P 차감했는지 확인
+            const todayKey = 'tuberadar_rising_charged_' + new Date().toISOString().slice(0, 10);
+            const alreadyCharged = localStorage.getItem(todayKey) === '1';
+            if (!alreadyCharged) {
+              try {
+                await preCheckQuota(300, isAdmin ? 'admin' : userGrade);
+                await trackUsage(ytKey, 'list', 300, '채널 신규 발굴 이용');
+                localStorage.setItem(todayKey, '1');
+              } catch (e: any) {
+                if (e.message?.startsWith('QUOTA_INSUFFICIENT')) {
+                  setAlertMessage({ title: '포인트 부족', message: '포인트가 부족합니다. (1회 이용 = 300P)', type: 'error' });
+                } else {
+                  setAlertMessage({ title: '오류', message: e.message || '포인트 차감 중 오류가 발생했습니다.', type: 'error' });
+                }
+                return;
+              }
+            }
+            setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setScriptModeUrl('');
+          }
+          setIsRisingMode(val);
+        }}
         userGrade={userGrade}
         isAdmin={isAdmin}
         onShowAlert={setAlertMessage}
@@ -3671,6 +3820,8 @@ export default function App() {
             setIsCategoryTrendMode(false);
             setIsMaterialsExplorerMode(false);
             setIsCommunityMode(false);
+            setIsShortsMusicMode(false);
+            setIsRisingMode(false);
           }}
           onOpenTrialVerification={() => setIsTrialVerificationOpen(true)}
         />
@@ -3818,6 +3969,38 @@ export default function App() {
         ) : isCommunityMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <CommunityHotPosts onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
+          </div>
+        ) : isShortsMusicMode ? (
+          <div className="w-full p-6 md:p-10 flex flex-col relative">
+            <ShortsTrendingMusic onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
+          </div>
+        ) : isRisingMode ? (
+          <div className="w-full p-6 md:p-10 flex flex-col relative">
+            <RisingCreators
+              apiKey={ytKey}
+              groups={groups}
+              savedChannels={savedChannels}
+              isAdmin={isAdmin}
+              onAddToMonitoring={async (channel) => {
+                if (!user) return;
+                // 중복 확인
+                if (savedChannels.some(c => c.id === channel.id)) {
+                  setAlertMessage({ title: '알림', message: '이미 모니터링 리스트에 추가된 채널입니다.', type: 'info' });
+                  return;
+                }
+                try {
+                  await saveChannelToDb(user.uid, channel);
+                  setSavedChannels(prev => [channel, ...prev]);
+                  setNewlyAddedIds(prev => [...prev, channel.id]);
+                  setHasPendingSync(true);
+                  setIsSyncNoticeDismissed(false);
+                  const groupName = groups.find(g => g.id === channel.groupId)?.name || '미지정';
+                  setAlertMessage({ title: '채널 추가 완료', message: `${channel.title}\n[${groupName}] 그룹에 추가되었습니다.`, type: 'info' });
+                } catch (e: any) {
+                  setAlertMessage({ title: '오류', message: e.message || '채널 추가에 실패했습니다.', type: 'error' });
+                }
+              }}
+            />
           </div>
         ) : isMaterialsExplorerMode ? (
             <div className="w-full">
@@ -4073,21 +4256,128 @@ export default function App() {
                                  <span className="text-[9px] text-slate-400">{getTimeAgo(result.representativeVideo.publishedAt || result.stats.publishedAt)}</span>
                               </div>
 
-                             <button 
-                               onClick={() => handleAddDetectedChannel(result)}
-                               disabled={isAdded}
-                               className={`w-full py-2 rounded-lg text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
-                                 isAdded 
-                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                                 : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 dark:hover:text-white'
-                               }`}
-                             >
-                               {isAdded ? (
-                                 <><span className="material-symbols-outlined text-[10px]">check</span> 추가됨</>
-                               ) : (
-                                 <>내 리스트에 채널 추가</>
+                             <div className="relative">
+                               <button
+                                 onClick={(e) => { e.stopPropagation(); if (!isAdded) setDetectorAddDropdownId(detectorAddDropdownId === result.id ? null : result.id); }}
+                                 disabled={isAdded || detectorIsAdding}
+                                 className={`w-full py-2 rounded-lg text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
+                                   isAdded
+                                   ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                                   : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 dark:hover:text-white'
+                                 }`}
+                               >
+                                 {isAdded ? (
+                                   <><span className="material-symbols-outlined text-[10px]">check</span> 추가됨</>
+                                 ) : detectorIsAdding && detectorAddDropdownId === result.id ? (
+                                   <><span className="material-symbols-outlined text-[10px] animate-spin">sync</span> 추가 중...</>
+                                 ) : (
+                                   <><span className="material-symbols-outlined text-[10px]">add</span> 내 채널에 담기</>
+                                 )}
+                               </button>
+                               {detectorAddDropdownId === result.id && !isAdded && (
+                                 <div className="absolute bottom-full mb-1 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden z-[100] animate-in slide-in-from-bottom-2 fade-in duration-200" onClick={(e) => e.stopPropagation()}>
+                                   <div className="p-1.5 max-h-48 overflow-y-auto">
+                                     <div className="px-2 py-1 text-[9px] font-black text-slate-400 uppercase tracking-wider">그룹 선택</div>
+                                     {groups.filter(g => g.id !== 'all').map(group => (
+                                       <button
+                                         key={group.id}
+                                         onClick={async () => {
+                                           setDetectorIsAdding(true);
+                                           try {
+                                             await handleAddDetectedChannel(result, group.id);
+                                             setDetectorAddDropdownId(null);
+                                           } catch (e) { console.error(e); }
+                                           finally { setDetectorIsAdding(false); }
+                                         }}
+                                         className="w-full px-2 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors flex items-center gap-1.5 text-left"
+                                       >
+                                         <span className="material-symbols-outlined text-[12px] text-rose-400">folder</span>
+                                         <span className="truncate">{group.name}</span>
+                                       </button>
+                                     ))}
+                                     {groups.filter(g => g.id !== 'all').length === 0 && (
+                                       <div className="px-2 py-1.5 text-[10px] text-slate-400 text-center">그룹이 없습니다</div>
+                                     )}
+                                     <button
+                                       onClick={async () => {
+                                         setDetectorIsAdding(true);
+                                         try {
+                                           await handleAddDetectedChannel(result, 'unassigned');
+                                           setDetectorAddDropdownId(null);
+                                         } catch (e) { console.error(e); }
+                                         finally { setDetectorIsAdding(false); }
+                                       }}
+                                       className="w-full px-2 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-left"
+                                     >
+                                       <span className="material-symbols-outlined text-[12px] text-slate-400">inbox</span>
+                                       미분류
+                                     </button>
+                                   </div>
+                                   <div className="border-t border-slate-100 dark:border-slate-800 p-1.5">
+                                     {!detectorIsCreatingGroup ? (
+                                       <button
+                                         onClick={() => setDetectorIsCreatingGroup(true)}
+                                         className="w-full px-2 py-1.5 rounded-lg text-[10px] font-bold text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-1"
+                                       >
+                                         <span className="material-symbols-outlined text-[12px]">add_circle</span>
+                                         새 그룹 만들기
+                                       </button>
+                                     ) : (
+                                       <div className="space-y-1.5">
+                                         <input
+                                           type="text"
+                                           value={detectorNewGroupName}
+                                           onChange={(e) => setDetectorNewGroupName(e.target.value)}
+                                           placeholder="그룹명 입력..."
+                                           className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-400"
+                                           autoFocus
+                                           onKeyDown={(e) => {
+                                             if (e.key === 'Enter' && detectorNewGroupName.trim()) {
+                                               (async () => {
+                                                 setDetectorIsAdding(true);
+                                                 try {
+                                                   await handleAddDetectedChannel(result, undefined, detectorNewGroupName.trim());
+                                                   setDetectorAddDropdownId(null);
+                                                   setDetectorIsCreatingGroup(false);
+                                                   setDetectorNewGroupName('');
+                                                 } catch (e) { console.error(e); }
+                                                 finally { setDetectorIsAdding(false); }
+                                               })();
+                                             }
+                                             if (e.key === 'Escape') { setDetectorIsCreatingGroup(false); setDetectorNewGroupName(''); }
+                                           }}
+                                         />
+                                         <div className="flex gap-1">
+                                           <button
+                                             onClick={async () => {
+                                               if (!detectorNewGroupName.trim()) return;
+                                               setDetectorIsAdding(true);
+                                               try {
+                                                 await handleAddDetectedChannel(result, undefined, detectorNewGroupName.trim());
+                                                 setDetectorAddDropdownId(null);
+                                                 setDetectorIsCreatingGroup(false);
+                                                 setDetectorNewGroupName('');
+                                               } catch (e) { console.error(e); }
+                                               finally { setDetectorIsAdding(false); }
+                                             }}
+                                             disabled={!detectorNewGroupName.trim()}
+                                             className="flex-1 py-1 rounded-md text-[9px] font-bold bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 transition-colors"
+                                           >
+                                             만들기
+                                           </button>
+                                           <button
+                                             onClick={() => { setDetectorIsCreatingGroup(false); setDetectorNewGroupName(''); }}
+                                             className="flex-1 py-1 rounded-md text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                           >
+                                             취소
+                                           </button>
+                                         </div>
+                                       </div>
+                                     )}
+                                   </div>
+                                 </div>
                                )}
-                             </button>
+                             </div>
                            </div>
                         </div>
                       );
@@ -4969,7 +5259,7 @@ export default function App() {
               </div>
             </div>
           </>)}
-        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isCommunityMode && !isRadarMode && !isMaterialsExplorerMode && (
+        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isCommunityMode && !isShortsMusicMode && !isRisingMode && !isRadarMode && !isMaterialsExplorerMode && (
             <div className="space-y-4 pb-20">
                {isMyMode && isPending && (
                   <RestrictedOverlay 

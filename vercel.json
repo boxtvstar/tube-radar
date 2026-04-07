@@ -5,10 +5,15 @@
   "functions": {
     "api/community.py": {
       "maxDuration": 30
+    },
+    "api/rising_channels.py": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     { "source": "/api/community/hot-posts", "destination": "/api/community" },
-    { "source": "/api/community/preview", "destination": "/api/preview" }
+    { "source": "/api/community/preview", "destination": "/api/preview" },
+    { "source": "/api/shorts-music", "destination": "/api/shorts_music" },
+    { "source": "/api/rising-channels", "destination": "/api/rising_channels" }
   ]
 }

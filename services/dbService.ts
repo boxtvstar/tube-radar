@@ -694,3 +694,17 @@ export const subscribeToAnnouncement = (callback: (a: Announcement | null) => vo
     console.error('Announcement listener error:', error);
   });
 };
+
+export const resetUserUsage = async (userId: string, plan: string = 'admin'): Promise<void> => {
+  const docRef = doc(db, "users", userId, "usage", "daily");
+  const total = getDailyPointLimit(plan);
+  const currentResetTime = getQuotaResetTime();
+  await setDoc(docRef, {
+    total,
+    used: 0,
+    bonusPoints: 0,
+    lastReset: currentResetTime.toISOString(),
+    details: { search: 0, list: 0, script: 0 },
+    logs: [{ timestamp: new Date().toISOString(), type: 'system', cost: 0, details: '관리자 수동 리셋' }]
+  });
+};
