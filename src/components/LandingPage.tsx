@@ -363,7 +363,7 @@ export const LandingPage = () => {
                 </div>
               </div>
               <ul className="space-y-3 mb-8">
-                {['매일 5,000 포인트 지급', '실버 버튼 모든 기능 포함', '유튜브 추천 소재', '추천 채널 팩', '유튜브 대본 추출 & AI 번역', '유사 썸네일 찾기', '우선 고객 지원'].map(f => (
+                {['매일 5,000 포인트 지급', '실버 버튼 모든 기능 포함', '시크릿 추천 소재', '추천 채널 팩', '유튜브 대본 추출 & AI 번역', '유사 썸네일 찾기', '우선 고객 지원'].map(f => (
                   <li key={f} className="flex items-center gap-3 text-sm text-slate-300">
                     <span className="material-symbols-outlined text-sm text-amber-500">check_circle</span>
                     {f}

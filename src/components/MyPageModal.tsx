@@ -371,7 +371,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${activeTab === 'activity' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-500' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               <span className="material-symbols-outlined text-[20px]">history_edu</span>
-              내 활동 내역
+              내 제안 내역
             </button>
             <button
               onClick={() => setActiveTab('notifications')}

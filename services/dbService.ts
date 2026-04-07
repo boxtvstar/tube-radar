@@ -117,6 +117,46 @@ export const getTopicsFromDb = async (): Promise<RecommendedPackage[]> => {
     .sort((a, b) => b.createdAt - a.createdAt);
 };
 
+// --- Rising Channels (Admin Manual Adds) ---
+
+export interface AdminRisingChannel {
+  id: string;
+  title: string;
+  thumbnail: string;
+  subscriberCount: number;
+  videoCount: number;
+  totalViews: number;
+  avgViews: number;
+  joinDate: string;
+  country?: string;
+  addedAt: number;
+  addedBy?: string;
+  topVideos: {
+    videoId: string;
+    title: string;
+    thumbnail: string;
+    views: number;
+    publishedAt: string;
+  }[];
+}
+
+export const saveRisingChannelToDb = async (channel: AdminRisingChannel) => {
+  const sanitized = removeUndefinedFields(channel);
+  await setDoc(doc(db, "rising_channels", channel.id), sanitized);
+};
+
+export const deleteRisingChannelFromDb = async (channelId: string) => {
+  await deleteDoc(doc(db, "rising_channels", channelId));
+};
+
+export const getRisingChannelsFromDb = async (): Promise<AdminRisingChannel[]> => {
+  const q = query(collection(db, "rising_channels"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs
+    .map(doc => doc.data() as AdminRisingChannel)
+    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+};
+
 // --- View Count ---
 
 export const incrementPackageViewCount = async (pkgId: string, type: 'package' | 'topic') => {

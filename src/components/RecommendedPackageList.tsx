@@ -31,12 +31,17 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
 
   const [selectedPackage, setSelectedPackage] = React.useState<RecommendedPackage | null>(null);
   const [selectedChannelIds, setSelectedChannelIds] = React.useState<string[]>([]);
-  
+
   // Group selection state
   const [targetGroupId, setTargetGroupId] = React.useState<string>(activeGroupId === 'all' ? (groups[0]?.id || 'default') : activeGroupId);
   const [isCreatingNewGroup, setIsCreatingNewGroup] = React.useState(false);
   const [newGroupName, setNewGroupName] = React.useState('');
   const [isGroupSelectOpen, setIsGroupSelectOpen] = React.useState(false);
+
+  // Inline group picker state for Topic mode (per-card)
+  const [pickerForPkgId, setPickerForPkgId] = React.useState<string | null>(null);
+  const [pickerCreatingNew, setPickerCreatingNew] = React.useState(false);
+  const [pickerNewGroupName, setPickerNewGroupName] = React.useState('');
 
   // Reset group selection when modal opens
   React.useEffect(() => {
@@ -291,23 +296,42 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
   return (
     <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
        <div className="relative overflow-hidden">
+          {mode === 'topic' && (
+            <>
+              {/* Luxury background glow */}
+              <div className="pointer-events-none absolute -top-32 -left-32 size-96 bg-amber-500/10 dark:bg-amber-400/5 rounded-full blur-3xl"></div>
+              <div className="pointer-events-none absolute -top-32 -right-32 size-96 bg-yellow-500/10 dark:bg-yellow-400/5 rounded-full blur-3xl"></div>
+            </>
+          )}
           <div className="w-full relative z-10">
              <div className="flex items-center justify-between">
                <div className="space-y-2">
-                 <h2 className={`text-xl md:text-2xl font-black italic tracking-tighter uppercase flex items-center gap-3 ${mode === 'topic' ? 'text-amber-500' : 'text-indigo-500'}`}>
-                   <span className="material-symbols-outlined text-2xl md:text-3xl">{mode === 'topic' ? 'lightbulb' : 'inventory_2'}</span>
-                   {mode === 'topic' ? '유튜브 추천 소재' : '추천 채널 팩'}
-                 </h2>
-                 {mode !== 'topic' ? (
-                   <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed hidden md:block">
-                     <span className="text-indigo-500 dark:text-indigo-400 font-bold">우리들끼리 공유하는 유튜브 채널 모음</span>을 확인하세요.<br />
-                     원하는 팩을 선택하면 내 모니터링 리스트로 <span className="text-rose-500 font-bold">일괄 추가</span>할 수 있습니다.
-                   </p>
+                 {mode === 'topic' ? (
+                   <>
+                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-amber-500/30 mb-1">
+                       <span className="material-symbols-outlined text-amber-500 text-[14px]">workspace_premium</span>
+                       <span className="text-[10px] font-black tracking-[0.2em] uppercase bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 bg-clip-text text-transparent">EXCLUSIVE · MEMBERS ONLY</span>
+                     </div>
+                     <h2 className="text-2xl md:text-4xl font-black italic tracking-tighter uppercase flex items-center gap-3 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 bg-clip-text text-transparent drop-shadow-[0_0_25px_rgba(245,158,11,0.25)]">
+                       <span className="material-symbols-outlined text-3xl md:text-5xl text-amber-500">diamond</span>
+                       시크릿 추천 소재
+                     </h2>
+                     <p className="text-slate-500 dark:text-slate-400 text-xs font-medium leading-relaxed hidden md:block">
+                       오직 멤버에게만 공개되는 <span className="bg-gradient-to-r from-amber-500 to-yellow-400 bg-clip-text text-transparent font-black">엄선된 시크릿 소재</span>를 만나보세요.<br />
+                       전문가가 큐레이션한 <span className="text-amber-500 font-black">프리미엄 인사이트</span>로 새로운 영감을 얻을 수 있습니다.
+                     </p>
+                   </>
                  ) : (
-                   <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed hidden md:block">
-                     콘텐츠 제작을 위한 <span className="text-amber-500 font-bold">참신한 소재와 아이디어</span>를 발견하세요.<br />
-                     엄선된 주제별 채널들을 통해 <span className="text-rose-500 font-bold">새로운 영감</span>을 얻을 수 있습니다.
-                   </p>
+                   <>
+                     <h2 className="text-xl md:text-2xl font-black italic tracking-tighter uppercase flex items-center gap-3 text-indigo-500">
+                       <span className="material-symbols-outlined text-2xl md:text-3xl">inventory_2</span>
+                       추천 채널 팩
+                     </h2>
+                     <p className="text-slate-500 dark:text-slate-400 text-[11px] font-medium leading-relaxed hidden md:block">
+                       <span className="text-indigo-500 dark:text-indigo-400 font-bold">우리들끼리 공유하는 유튜브 채널 모음</span>을 확인하세요.<br />
+                       원하는 팩을 선택하면 내 모니터링 리스트로 <span className="text-rose-500 font-bold">일괄 추가</span>할 수 있습니다.
+                     </p>
+                   </>
                  )}
                </div>
                {mode === 'topic' && (
@@ -338,7 +362,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
             </div>
           </div>
          
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-12 relative z-10">
+         <div className={`grid mt-12 relative z-10 ${mode === 'topic' ? 'grid-cols-1 gap-10' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'}`}>
             {approvedPackages.length === 0 ? (
                <div className="col-span-full py-20 text-center text-slate-400 text-sm font-medium">
                   {mode === 'topic' ? '등록된 추천 소재가 없습니다.' : '등록된 추천 팩이 없습니다.'}
@@ -360,19 +384,40 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                    else countdown = `${m}분 후 공개`;
                 }
 
+                // For topic mode: compute popular videos inline (top 6 by views)
+                const cardPopularVideos = (mode === 'topic' && !isScheduled)
+                  ? pkg.channels
+                      .flatMap(ch => ch.topVideos || [])
+                      .sort((a, b) => parseInt((b.views || '0').replace(/,/g, '')) - parseInt((a.views || '0').replace(/,/g, '')))
+                      .slice(0, 6)
+                  : [];
+
                 return (
-                  <div 
-                    key={pkg.id} 
+                  <div
+                    key={pkg.id}
                     onClick={() => {
-                      if (!isScheduled) {
+                      if (!isScheduled && mode !== 'topic') {
                         setSelectedPackage(pkg);
-                        incrementPackageViewCount(pkg.id, mode === 'topic' ? 'topic' : 'package');
+                        incrementPackageViewCount(pkg.id, 'package');
                       }
                     }}
-                    className={`group bg-white dark:bg-slate-900 rounded-[2rem] p-6 border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 transition-all duration-300 relative flex flex-col h-full ${
-                       isScheduled ? 'cursor-not-allowed select-none' : 'hover:shadow-2xl hover:shadow-indigo-500/10 cursor-pointer hover:-translate-y-1'
+                    className={`group relative flex flex-col h-full transition-all duration-300 ${
+                      mode === 'topic'
+                        ? `bg-gradient-to-br from-white via-amber-50/40 to-yellow-50/30 dark:from-slate-900 dark:via-amber-950/20 dark:to-yellow-950/10 rounded-[2.5rem] p-8 md:p-10 border-2 border-amber-500/20 dark:border-amber-400/15 ${isScheduled ? 'cursor-not-allowed select-none' : 'hover:border-amber-500/60 hover:shadow-[0_20px_60px_-15px_rgba(245,158,11,0.45)] dark:hover:shadow-[0_20px_60px_-15px_rgba(245,158,11,0.35)]'}`
+                        : `bg-white dark:bg-slate-900 rounded-[2rem] p-6 border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 ${isScheduled ? 'cursor-not-allowed select-none' : 'hover:shadow-2xl hover:shadow-indigo-500/10 cursor-pointer hover:-translate-y-1'}`
                     }`}
                   >
+                    {mode === 'topic' && !isScheduled && (
+                      <>
+                        {/* Gold corner ornaments */}
+                        <div className="pointer-events-none absolute top-0 left-0 size-16 border-l-2 border-t-2 border-amber-500/30 rounded-tl-[2.5rem]"></div>
+                        <div className="pointer-events-none absolute top-0 right-0 size-16 border-r-2 border-t-2 border-amber-500/30 rounded-tr-[2.5rem]"></div>
+                        <div className="pointer-events-none absolute bottom-0 left-0 size-16 border-l-2 border-b-2 border-amber-500/30 rounded-bl-[2.5rem]"></div>
+                        <div className="pointer-events-none absolute bottom-0 right-0 size-16 border-r-2 border-b-2 border-amber-500/30 rounded-br-[2.5rem]"></div>
+                        {/* Subtle shimmer overlay */}
+                        <div className="pointer-events-none absolute inset-0 rounded-[2.5rem] bg-gradient-to-tr from-transparent via-amber-200/5 to-yellow-200/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                      </>
+                    )}
                      {/* Locked Overlay for Scheduled Items */}
                      {isScheduled && (
                         <div className="absolute inset-0 z-20 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-[2rem] flex flex-col items-center justify-center text-center p-6 border border-white/20">
@@ -389,20 +434,25 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                         </div>
                      )}
 
-                     <div className={`flex flex-col h-full ${isScheduled ? 'opacity-20 grayscale' : ''}`}>
+                     <div className={`relative z-10 flex flex-col h-full ${isScheduled ? 'opacity-20 grayscale' : ''}`}>
                        <div className="flex items-start justify-between mb-4">
-                          <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                            {pkg.creatorName || (pkg.category === 'Community' ? '사용자 제안' : '관리자')}
-                          </span>
-                          {/* <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                            {pkg.category}
-                          </span> */ }
+                          <div className="flex items-center gap-2">
+                            {mode === 'topic' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-amber-500/30">
+                                <span className="material-symbols-outlined text-[12px]">workspace_premium</span>
+                                SECRET
+                              </span>
+                            )}
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${mode === 'topic' ? 'bg-amber-500/10 dark:bg-amber-400/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                              {pkg.creatorName || (pkg.category === 'Community' ? '사용자 제안' : '관리자')}
+                            </span>
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-300">
                               {new Date(pkg.createdAt).toLocaleDateString()}
                             </span>
                             {!isScheduled && (
-                              <button 
+                              <button
                                onClick={(e) => {
                                  e.stopPropagation();
                                  onDismiss(pkg.id);
@@ -415,16 +465,93 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                             )}
                           </div>
                        </div>
-                       
-                       <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2 leading-tight group-hover:text-indigo-500 transition-colors">
-                          {pkg.title}
-                       </h3>
-                       
-                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6 line-clamp-2 min-h-[32px]">
-                          {pkg.description}
-                       </p>
-                       
-                       {pkg.channels.length === 1 ? (
+
+                       {mode === 'topic' ? (
+                         <>
+                           <h3 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-3 leading-tight tracking-tight transition-all duration-500">
+                             {pkg.title}
+                           </h3>
+                           <div className="h-px w-16 bg-gradient-to-r from-amber-500 via-yellow-400 to-transparent mb-4"></div>
+                           <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 leading-relaxed mb-6 font-medium">
+                             {pkg.description}
+                           </p>
+                         </>
+                       ) : (
+                         <>
+                           <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2 leading-tight group-hover:text-indigo-500 transition-colors">
+                             {pkg.title}
+                           </h3>
+                           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6 line-clamp-2 min-h-[32px]">
+                             {pkg.description}
+                           </p>
+                         </>
+                       )}
+
+                       {mode === 'topic' ? (
+                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                           {/* Channels — left column */}
+                           <div className="lg:col-span-1">
+                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400 mb-3 flex items-center gap-1.5">
+                               <span className="material-symbols-outlined text-base">subscriptions</span>
+                               채널 {pkg.channels.length}개
+                             </h4>
+                             <div className="space-y-2 max-h-[480px] overflow-y-auto custom-scrollbar pr-1">
+                               {pkg.channels.map((ch, idx) => (
+                                 <a
+                                   key={`${ch.id}-${idx}`}
+                                   href={`https://youtube.com/${ch.customUrl || 'channel/' + ch.id}`}
+                                   target="_blank"
+                                   rel="noreferrer"
+                                   onClick={(e) => e.stopPropagation()}
+                                   className="flex items-center gap-3 p-2.5 rounded-xl border border-amber-500/15 dark:border-amber-400/10 bg-white/70 dark:bg-slate-800/40 hover:border-amber-500/50 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 hover:shadow-md hover:shadow-amber-500/10 transition-all"
+                                 >
+                                   <img src={ch.thumbnail} alt={ch.title} className="size-9 rounded-full bg-slate-100 object-cover shrink-0 ring-1 ring-amber-500/20" />
+                                   <div className="flex-1 min-w-0">
+                                     <h5 className="font-bold text-xs text-slate-900 dark:text-white truncate">{ch.title}</h5>
+                                     <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                                       구독 {ch.subscriberCount || '-'} · 영상 {ch.videoCount || '-'}개
+                                     </div>
+                                   </div>
+                                   <span className="material-symbols-outlined text-amber-500 text-sm shrink-0">open_in_new</span>
+                                 </a>
+                               ))}
+                             </div>
+                           </div>
+
+                           {/* Popular videos — right 2/3 */}
+                           {cardPopularVideos.length > 0 && (
+                             <div className="lg:col-span-2">
+                               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500 mb-3 flex items-center gap-1.5">
+                                 <span className="material-symbols-outlined text-base">local_fire_department</span>
+                                 핫 트렌드 영상
+                               </h4>
+                               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                 {cardPopularVideos.map(video => (
+                                   <a
+                                     key={video.id}
+                                     href={`https://www.youtube.com/watch?v=${video.id}`}
+                                     target="_blank"
+                                     rel="noreferrer"
+                                     onClick={(e) => e.stopPropagation()}
+                                     className="group/video bg-white dark:bg-slate-800 rounded-xl overflow-hidden border border-amber-500/15 dark:border-amber-400/10 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/15 transition-all flex flex-col"
+                                   >
+                                     <div className="aspect-video relative overflow-hidden bg-slate-200">
+                                       <img src={video.thumbnail} className="w-full h-full object-cover group-hover/video:scale-105 transition-transform duration-500" loading="lazy" />
+                                       {video.duration && (
+                                         <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[9px] px-1 rounded font-bold">{video.duration}</div>
+                                       )}
+                                     </div>
+                                     <div className="p-2.5 flex-1 flex flex-col">
+                                       <h5 className="font-bold text-[11px] text-slate-900 dark:text-white line-clamp-2 leading-snug mb-1.5">{video.title}</h5>
+                                       <div className="mt-auto text-[10px] text-slate-500 font-bold">조회수 {video.views}</div>
+                                     </div>
+                                   </a>
+                                 ))}
+                               </div>
+                             </div>
+                           )}
+                         </div>
+                       ) : pkg.channels.length === 1 ? (
                           <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl flex items-center gap-4 border border-slate-100 dark:border-white/5 mt-auto group/channel">
                              <img src={pkg.channels[0].thumbnail} className="size-14 rounded-full border-2 border-white dark:border-slate-800 shadow-md object-cover" />
                              <div className="flex-1 min-w-0">
@@ -454,16 +581,31 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                           </div>
                        )}
 
-                       <button 
+                       <button
                          onClick={(e) => {
                            e.stopPropagation();
-                           if (!isScheduled) {
+                           if (isScheduled) return;
+                           if (mode === 'topic') {
+                             // Toggle inline group picker (channels already visible inline)
+                             if (pickerForPkgId === pkg.id) {
+                               setPickerForPkgId(null);
+                             } else {
+                               setPickerForPkgId(pkg.id);
+                               setPickerCreatingNew(false);
+                               setPickerNewGroupName('');
+                               incrementPackageViewCount(pkg.id, 'topic');
+                             }
+                           } else {
                              setSelectedPackage(pkg);
-                             incrementPackageViewCount(pkg.id, mode === 'topic' ? 'topic' : 'package');
+                             incrementPackageViewCount(pkg.id, 'package');
                            }
                          }}
                          disabled={isAdding || isScheduled}
-                         className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3 rounded-xl text-xs font-black uppercase hover:bg-indigo-600 dark:hover:bg-indigo-400 dark:hover:text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50 mt-4"
+                         className={`w-full py-3 md:py-4 rounded-xl text-xs md:text-sm font-black uppercase transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-4 ${
+                           mode === 'topic'
+                             ? 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 text-white tracking-[0.15em] shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/50 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-600'
+                             : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-indigo-600 dark:hover:bg-indigo-400 dark:hover:text-white'
+                         }`}
                        >
                           {isScheduled ? (
                             <>
@@ -472,11 +614,125 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                             </>
                           ) : (
                             <>
-                              <span className="material-symbols-outlined text-sm">add_circle</span>
-                              {isAdding ? '추가 중...' : '내 리스트에 담기'}
+                              <span className="material-symbols-outlined text-sm">{mode === 'topic' ? (pickerForPkgId === pkg.id ? 'expand_less' : 'playlist_add') : 'add_circle'}</span>
+                              {isAdding ? '추가 중...' : (mode === 'topic' ? (pickerForPkgId === pkg.id ? '닫기' : '내 모니터링 리스트에 담기') : '내 리스트에 담기')}
                             </>
                           )}
                        </button>
+
+                       {/* Inline Group Picker (Topic Mode Only) */}
+                       {mode === 'topic' && pickerForPkgId === pkg.id && !isScheduled && (
+                         <div
+                           onClick={(e) => e.stopPropagation()}
+                           className="mt-3 bg-white dark:bg-slate-900 rounded-2xl border-2 border-amber-500/30 p-4 shadow-2xl shadow-amber-500/20 animate-in slide-in-from-top-2 duration-300"
+                         >
+                           <div className="flex items-center justify-between mb-3">
+                             <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                               <span className="material-symbols-outlined text-amber-500 text-base">folder_special</span>
+                               담을 그룹 선택
+                               <span className="text-[10px] font-bold text-slate-400 normal-case tracking-normal">
+                                 (채널 {pkg.channels.length}개 일괄 추가)
+                               </span>
+                             </h4>
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 setPickerForPkgId(null);
+                                 setPickerCreatingNew(false);
+                                 setPickerNewGroupName('');
+                               }}
+                               className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                             >
+                               <span className="material-symbols-outlined text-base">close</span>
+                             </button>
+                           </div>
+
+                           {pickerCreatingNew ? (
+                             <div className="flex items-center gap-2">
+                               <input
+                                 type="text"
+                                 value={pickerNewGroupName}
+                                 onChange={(e) => setPickerNewGroupName(e.target.value)}
+                                 onKeyDown={(e) => {
+                                   if (e.key === 'Enter') {
+                                     const name = pickerNewGroupName.trim();
+                                     if (!name) return;
+                                     onAdd(pkg, 'new', name);
+                                     setPickerForPkgId(null);
+                                     setPickerCreatingNew(false);
+                                     setPickerNewGroupName('');
+                                   }
+                                 }}
+                                 placeholder="새 그룹명 입력"
+                                 autoFocus
+                                 className="flex-1 px-3 py-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-amber-500/30 text-sm font-bold outline-none focus:ring-2 focus:ring-amber-500/30 text-slate-900 dark:text-white"
+                               />
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   const name = pickerNewGroupName.trim();
+                                   if (!name) return alert('새 그룹 이름을 입력해주세요.');
+                                   onAdd(pkg, 'new', name);
+                                   setPickerForPkgId(null);
+                                   setPickerCreatingNew(false);
+                                   setPickerNewGroupName('');
+                                 }}
+                                 disabled={isAdding}
+                                 className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-md disabled:opacity-50"
+                               >
+                                 담기
+                               </button>
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setPickerCreatingNew(false);
+                                   setPickerNewGroupName('');
+                                 }}
+                                 className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                               >
+                                 <span className="material-symbols-outlined text-base">close</span>
+                               </button>
+                             </div>
+                           ) : (
+                             <>
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setPickerCreatingNew(true);
+                                 }}
+                                 className="w-full mb-2 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-xs font-black uppercase shadow-md hover:shadow-lg hover:from-amber-600 hover:to-yellow-600 transition-all"
+                               >
+                                 <span className="material-symbols-outlined text-base">create_new_folder</span>
+                                 새 그룹 만들기
+                               </button>
+                               <div className="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
+                                 {groups.length === 0 ? (
+                                   <div className="text-center py-4 text-xs text-slate-400">그룹이 없습니다. 새 그룹을 만들어주세요.</div>
+                                 ) : (
+                                   groups.map(g => (
+                                     <button
+                                       key={g.id}
+                                       onClick={(e) => {
+                                         e.stopPropagation();
+                                         onAdd(pkg, g.id);
+                                         setPickerForPkgId(null);
+                                       }}
+                                       disabled={isAdding}
+                                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700 dark:hover:text-amber-400 transition-colors text-left disabled:opacity-50 group/grpitem"
+                                     >
+                                       <span className="material-symbols-outlined text-base text-amber-500">folder</span>
+                                       <span className="flex-1 truncate">{g.name}</span>
+                                       <span className="text-[10px] font-bold text-slate-400 group-hover/grpitem:text-amber-600 dark:group-hover/grpitem:text-amber-400">
+                                         {pkg.channels.length}개 추가 →
+                                       </span>
+                                     </button>
+                                   ))
+                                 )}
+                               </div>
+                             </>
+                           )}
+                         </div>
+                       )}
                      </div>
                   </div>
                 );

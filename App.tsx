@@ -163,9 +163,67 @@ const VelocitySpeedometer = ({ score }: { score: string }) => {
   );
 };
 
+// "1.5만" / "1.2억" / "100,000" 같은 표시 문자열을 숫자로 파싱 (정렬용)
+const parseFormattedNumber = (str: string | undefined): number => {
+  if (!str) return 0;
+  const cleaned = String(str).replace(/,/g, '').trim();
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return 0;
+  if (cleaned.includes('억')) return num * 100_000_000;
+  if (cleaned.includes('만')) return num * 10_000;
+  if (cleaned.includes('천')) return num * 1_000;
+  return num;
+};
+
+// 제목에서 키워드 추출 (한국어/영어 명사형 단어, 2글자 이상, 불용어 제거)
+const KEYWORD_STOPWORDS = new Set([
+  '그리고','하지만','그래서','그런데','이렇게','저렇게','우리','너무','정말','진짜','지금','오늘','내일','어제','이거','저거','그거','이것','저것','그것','입니다','합니다','했어요','해요','하는','된다','되는','대해','대한','위한','위해','부터','까지','에서','으로','이지만','했습니다','됐습니다','입니다','이라는','하면','하면서',
+  'and','or','the','for','with','this','that','from','your','have','has','been','will','was','were','are','you','our','out','about','into','what','when','where','how','why','which','more','than','then','they','them','their','also','some','just','very','really','most','only','these','those','every','make','made','like','over','here','there'
+]);
+
+const extractKeywordsFromTitle = (title: string, max = 4): string[] => {
+  if (!title) return [];
+  const tokens = title
+    .replace(/[\[\]\(\)\{\}<>\|\/\\!?,.;:'"·…―—–\-+=*&%$#@~`^]/g, ' ')
+    .split(/\s+/)
+    .map(w => w.trim())
+    .filter(w => {
+      if (w.length < 2) return false;
+      if (KEYWORD_STOPWORDS.has(w.toLowerCase())) return false;
+      // 숫자만 있는 토큰 제외
+      if (/^\d+$/.test(w)) return false;
+      return true;
+    });
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const t of tokens) {
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    result.push(t);
+    if (result.length >= max) break;
+  }
+  return result;
+};
+
+// ISO 날짜를 "2026-04-07 14:30" 형식으로 변환 (로컬 시간)
+const formatAbsoluteTime = (iso?: string): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+};
+
 const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video, onClick }) => {
   const isExtremeViral = parseFloat(video.viralScore) > 10;
   const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+  const absoluteTime = formatAbsoluteTime(video.publishedAt);
+  const keywords = extractKeywordsFromTitle(video.title);
   
   return (
     <div 
@@ -205,7 +263,11 @@ const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video
                   {video.title}
                 </h3>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium truncate mb-2">{video.channelName} • {video.uploadTime}</p>
+              <p className="text-[11px] text-slate-500 font-medium truncate mb-2">
+                {video.channelName}
+                {absoluteTime && <span className="text-slate-400 dark:text-slate-600"> • {absoluteTime}</span>}
+                {video.uploadTime && <span className="text-slate-400 dark:text-slate-600"> ({video.uploadTime})</span>}
+              </p>
             </div>
             <div className="shrink-0">
               <VelocitySpeedometer score={video.viralScore} />
@@ -231,16 +293,26 @@ const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video
           </div>
         </div>
         
-        <div className="flex justify-between items-center h-10 mt-2">
-          <div className="flex gap-2 overflow-hidden h-full items-center">
-            {video.tags && video.tags.length > 0 ? (
-              video.tags.slice(0, 3).map((tag, i) => (
-                <span key={i} className="text-slate-400 dark:text-slate-600 text-[10px] font-bold truncate">#{tag.replace('#', '')}</span>
-              ))
-            ) : (
-              <span className="text-slate-300 dark:text-slate-800 text-[10px] font-bold italic">No Signals</span>
-            )}
-          </div>
+        <div className="flex flex-col gap-1.5 mt-2">
+          {video.tags && video.tags.length > 0 && (
+            <div className="flex gap-1.5 overflow-hidden items-center flex-wrap">
+              <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-600 shrink-0">TAG</span>
+              {video.tags.slice(0, 4).map((tag, i) => (
+                <span key={i} className="text-primary/70 dark:text-primary/80 text-[10px] font-bold truncate">#{tag.replace('#', '')}</span>
+              ))}
+            </div>
+          )}
+          {keywords.length > 0 && (
+            <div className="flex gap-1.5 overflow-hidden items-center flex-wrap">
+              <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-600 shrink-0">KEYWORD</span>
+              {keywords.map((kw, i) => (
+                <span key={i} className="text-emerald-600 dark:text-emerald-400 text-[10px] font-bold truncate">{kw}</span>
+              ))}
+            </div>
+          )}
+          {(!video.tags || video.tags.length === 0) && keywords.length === 0 && (
+            <span className="text-slate-300 dark:text-slate-800 text-[10px] font-bold italic">No Signals</span>
+          )}
         </div>
       </div>
     </div>
@@ -249,6 +321,8 @@ const VideoCard: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video
 
 const VideoCardGrid: React.FC<{ video: VideoData; onClick?: () => void }> = ({ video, onClick }) => {
   const isExtremeViral = parseFloat(video.viralScore) > 10;
+  const absoluteTime = formatAbsoluteTime(video.publishedAt);
+  const keywords = extractKeywordsFromTitle(video.title, 3);
   return (
     <div
       onClick={onClick}
@@ -274,7 +348,28 @@ const VideoCardGrid: React.FC<{ video: VideoData; onClick?: () => void }> = ({ v
       </div>
       <div className="p-3 flex flex-col gap-2 flex-1">
         <h3 className="font-bold text-xs leading-tight dark:text-white text-slate-900 line-clamp-2 min-h-[2.2rem]">{video.title}</h3>
-        <p className="text-[10px] text-slate-500 font-medium truncate">{video.channelName} • {video.uploadTime}</p>
+        <p className="text-[10px] text-slate-500 font-medium truncate">
+          {video.channelName}
+          {absoluteTime && <span className="text-slate-400 dark:text-slate-600"> • {absoluteTime}</span>}
+        </p>
+        {(video.tags && video.tags.length > 0) || keywords.length > 0 ? (
+          <div className="flex flex-col gap-0.5">
+            {video.tags && video.tags.length > 0 && (
+              <div className="flex gap-1 overflow-hidden flex-wrap">
+                {video.tags.slice(0, 3).map((tag, i) => (
+                  <span key={i} className="text-primary/70 dark:text-primary/80 text-[9px] font-bold truncate">#{tag.replace('#', '')}</span>
+                ))}
+              </div>
+            )}
+            {keywords.length > 0 && (
+              <div className="flex gap-1 overflow-hidden flex-wrap">
+                {keywords.map((kw, i) => (
+                  <span key={i} className="text-emerald-600 dark:text-emerald-400 text-[9px] font-bold truncate">{kw}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
         <div className="flex items-center justify-between text-[9px] font-black text-slate-500 mt-auto">
           <span>조회수 <span className={isExtremeViral ? 'text-accent-neon' : 'text-slate-700 dark:text-slate-400'}>{video.views}</span></span>
           <span className={isExtremeViral ? 'text-accent-hot' : 'text-slate-700 dark:text-slate-400'}>{video.reachPercentage}%</span>
@@ -543,40 +638,26 @@ const Sidebar = ({
             {isCollapsed && hasPendingSync && <span className="absolute top-2 right-2 flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span></span>}
           </button>
 
-          <SidebarItem
-            icon="search"
-            label={
-              <span className="flex items-center gap-1.5">
-                채널 신규 발굴
-                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
-                   <span className="material-symbols-outlined text-[10px]">
-                     {!hasGoldAccess ? 'lock' : 'search'}
-                   </span>
+          {isAdmin && (
+            <SidebarItem
+              icon="search"
+              label={
+                <span className="flex items-center gap-1.5">
+                  채널 신규 발굴
+                  <span className="text-[9px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                     <span className="material-symbols-outlined text-[10px]">search</span>
+                  </span>
                 </span>
-              </span>
-            }
-            active={isRisingMode}
-            onClick={() => {
-              if (!hasGoldAccess) {
-                 if (onShowAlert) {
-                    onShowAlert({
-                       title: "권한 제한",
-                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
-                       type: 'error',
-                       showSubscribeButton: true,
-                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
-                    });
-                 } else {
-                    alert("이 기능은 골드 등급 전용입니다.");
-                 }
-                 return;
               }
-              onToggleRisingMode(true);
-              if (onCloseMobileMenu) onCloseMobileMenu();
-            }}
-            className={`${isRisingMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
-            isCollapsed={isCollapsed}
-          />
+              active={isRisingMode}
+              onClick={() => {
+                onToggleRisingMode(true);
+                if (onCloseMobileMenu) onCloseMobileMenu();
+              }}
+              className={`${isRisingMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+              isCollapsed={isCollapsed}
+            />
+          )}
 
           <SidebarItem
             icon="compare_arrows"
@@ -655,11 +736,11 @@ const Sidebar = ({
         {/* 3. 아이디어·추천 */}
         <SidebarSectionLabel label="아이디어·추천" isCollapsed={isCollapsed} className="mt-1" />
         <div className="px-2 space-y-0.5">
-          <SidebarItem 
-            icon="lightbulb" 
+          <SidebarItem
+            icon="diamond"
             label={
               <span className="flex items-center gap-1.5">
-                유튜브 추천 소재
+                시크릿 추천 소재
                 <span className="text-[9px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
                    <span className="material-symbols-outlined text-[10px]">
                      {!hasGoldAccess ? 'lock' : 'stars'}
@@ -902,40 +983,26 @@ const Sidebar = ({
             className={`${isCommunityMode ? 'bg-orange-50 dark:bg-orange-500/10 !text-orange-600 dark:!text-orange-400 border border-orange-200 dark:border-orange-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-orange-500'}`}
             isCollapsed={isCollapsed}
           />
-          <SidebarItem
-            icon="music_note"
-            label={
-              <span className="flex items-center gap-1.5">
-                쇼츠 인기 음악
-                <span className="text-[9px] bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
-                   <span className="material-symbols-outlined text-[10px]">
-                     {!hasGoldAccess ? 'lock' : 'music_note'}
-                   </span>
+          {isAdmin && (
+            <SidebarItem
+              icon="music_note"
+              label={
+                <span className="flex items-center gap-1.5">
+                  쇼츠 인기 음악
+                  <span className="text-[9px] bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                     <span className="material-symbols-outlined text-[10px]">music_note</span>
+                  </span>
                 </span>
-              </span>
-            }
-            active={isShortsMusicMode}
-            onClick={() => {
-              if (!hasGoldAccess) {
-                 if (onShowAlert) {
-                    onShowAlert({
-                       title: "권한 제한",
-                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
-                       type: 'error',
-                       showSubscribeButton: true,
-                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
-                    });
-                 } else {
-                    alert("이 기능은 골드 등급 전용입니다.");
-                 }
-                 return;
               }
-              onToggleShortsMusicMode(true);
-              if (onCloseMobileMenu) onCloseMobileMenu();
-            }}
-            className={`${isShortsMusicMode ? 'bg-violet-50 dark:bg-violet-500/10 !text-violet-600 dark:!text-violet-400 border border-violet-200 dark:border-violet-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-violet-500'}`}
-            isCollapsed={isCollapsed}
-          />
+              active={isShortsMusicMode}
+              onClick={() => {
+                onToggleShortsMusicMode(true);
+                if (onCloseMobileMenu) onCloseMobileMenu();
+              }}
+              className={`${isShortsMusicMode ? 'bg-violet-50 dark:bg-violet-500/10 !text-violet-600 dark:!text-violet-400 border border-violet-200 dark:border-violet-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-violet-500'}`}
+              isCollapsed={isCollapsed}
+            />
+          )}
         </div>
 
       </nav>
@@ -1360,7 +1427,7 @@ const Header = ({ region, count, theme, onToggleTheme, hasPendingSync, isApiKeyM
                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                  >
                    <span className="material-symbols-outlined text-[18px] text-indigo-500">history_edu</span>
-                   내 활동 내역
+                   내 제안 내역
                  </button>
 
                  <button 
@@ -1532,6 +1599,67 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [timeRange, setTimeRange] = useState(7);
   const [feedViewMode, setFeedViewMode] = useState<'list' | 'grid'>('list');
+  type FeedSortMode = 'viral' | 'date' | 'views' | 'subscribers' | 'ratio';
+  const [feedSortMode, setFeedSortMode] = useState<FeedSortMode>('viral');
+  const [feedSearchQuery, setFeedSearchQuery] = useState('');
+
+  // 필터 + 정렬 + 검색이 적용된 피드 비디오 리스트
+  const processedFeedVideos = useMemo(() => {
+    const now = Date.now();
+    const q = feedSearchQuery.trim().toLowerCase();
+
+    // 1) 기간 필터
+    let list = videos.filter((video) => {
+      const publishedDate = new Date(video.publishedAt || video.uploadTime);
+      const daysDiff = Math.floor((now - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysDiff <= timeRange;
+    });
+
+    // 2) 검색 필터 (제목/채널/태그/키워드)
+    if (q) {
+      list = list.filter((video) => {
+        if (video.title?.toLowerCase().includes(q)) return true;
+        if (video.channelName?.toLowerCase().includes(q)) return true;
+        if (video.tags?.some(t => t.toLowerCase().includes(q))) return true;
+        const kws = extractKeywordsFromTitle(video.title);
+        if (kws.some(k => k.toLowerCase().includes(q))) return true;
+        return false;
+      });
+    }
+
+    // 3) 채널당 최대 2개 (지수 3.0 이상은 예외)
+    list = list.filter((video, index, self) => {
+      if (parseFloat(video.viralScore) >= 3.0) return true;
+      return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
+    });
+
+    // 4) 정렬
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      switch (feedSortMode) {
+        case 'date': {
+          const ta = new Date(a.publishedAt || 0).getTime();
+          const tb = new Date(b.publishedAt || 0).getTime();
+          return tb - ta;
+        }
+        case 'views':
+          return parseFormattedNumber(b.views) - parseFormattedNumber(a.views);
+        case 'subscribers':
+          return parseFormattedNumber(b.subscribers) - parseFormattedNumber(a.subscribers);
+        case 'ratio': {
+          const ra = parseFormattedNumber(a.views) / Math.max(parseFormattedNumber(a.subscribers), 1);
+          const rb = parseFormattedNumber(b.views) / Math.max(parseFormattedNumber(b.subscribers), 1);
+          return rb - ra;
+        }
+        case 'viral':
+        default:
+          return parseFloat(b.viralScore) - parseFloat(a.viralScore);
+      }
+    });
+
+    return sorted;
+  }, [videos, timeRange, feedSearchQuery, feedSortMode]);
+
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -5316,6 +5444,45 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* 정렬 + 검색 바 */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5">
+                    {([
+                      { key: 'viral', label: '지수순', icon: 'whatshot' },
+                      { key: 'date', label: '최신순', icon: 'schedule' },
+                      { key: 'views', label: '조회수순', icon: 'visibility' },
+                      { key: 'subscribers', label: '구독자순', icon: 'group' },
+                      { key: 'ratio', label: '구독자대비', icon: 'trending_up' },
+                    ] as { key: FeedSortMode; label: string; icon: string }[]).map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => setFeedSortMode(opt.key)}
+                        className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 ${feedSortMode === opt.key ? 'bg-white dark:bg-slate-800 text-primary shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                        title={opt.label}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">{opt.icon}</span>
+                        <span>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative flex-1 min-w-0 sm:max-w-xs">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[16px]">search</span>
+                    <input
+                      type="text"
+                      value={feedSearchQuery}
+                      onChange={(e) => setFeedSearchQuery(e.target.value)}
+                      placeholder="제목, 채널, 태그, 키워드 검색..."
+                      className="w-full pl-9 pr-9 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-[11px] font-bold focus:ring-1 focus:ring-primary focus:border-primary transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
+                    />
+                    {feedSearchQuery && (
+                      <button onClick={() => setFeedSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500">
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <section className="flex flex-col gap-6">
@@ -5371,48 +5538,32 @@ export default function App() {
                     ) : videos.length > 0 ? (
                       <>
                         <div className={feedViewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pb-24' : 'space-y-6 pb-24'}>
-                          {videos
-                            .filter((video) => {
-                              // Filter by timeRange (published within selected days)
-                              const publishedDate = new Date(video.publishedAt || video.uploadTime);
-                              const now = new Date();
-                              const daysDiff = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
-                              return daysDiff <= timeRange;
-                            })
-                            .filter((video, index, self) => {
-                               // Exception: Always show "Super Viral" videos (Score >= 3.0) regardless of the limit
-                               if (parseFloat(video.viralScore) >= 3.0) return true;
-                               // Default: Limit to max 2 videos per channel
-                               return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
-                            })
-                            .slice(0, visibleVideoCount)
-                            .map((video) => (
-                              feedViewMode === 'grid' ? (
-                                <VideoCardGrid
-                                  key={video.id}
-                                  video={video}
-                                  onClick={() => setDetailedVideo(video)}
-                                />
-                              ) : (
-                                <VideoCard
-                                  key={video.id}
-                                  video={video}
-                                  onClick={() => setDetailedVideo(video)}
-                                />
-                              )
+                          {processedFeedVideos.slice(0, visibleVideoCount).map((video) => (
+                            feedViewMode === 'grid' ? (
+                              <VideoCardGrid
+                                key={video.id}
+                                video={video}
+                                onClick={() => setDetailedVideo(video)}
+                              />
+                            ) : (
+                              <VideoCard
+                                key={video.id}
+                                video={video}
+                                onClick={() => setDetailedVideo(video)}
+                              />
+                            )
                           ))}
                         </div>
-                        
+
+                        {processedFeedVideos.length === 0 && (
+                          <div className="py-20 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900/10 shadow-sm flex flex-col items-center gap-3">
+                            <span className="material-symbols-outlined text-slate-300 dark:text-slate-700 text-5xl">search_off</span>
+                            <p className="text-slate-400 dark:text-slate-500 text-xs font-bold">조건에 맞는 영상이 없습니다.</p>
+                          </div>
+                        )}
+
                         {/* Load More Button */}
-                        {videos.filter((video) => {
-                          const publishedDate = new Date(video.publishedAt || video.uploadTime);
-                          const now = new Date();
-                          const daysDiff = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
-                          return daysDiff <= timeRange;
-                        }).filter((video, index, self) => {
-                          if (parseFloat(video.viralScore) >= 3.0) return true;
-                          return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
-                        }).length > visibleVideoCount && (
+                        {processedFeedVideos.length > visibleVideoCount && (
                           <div className="flex justify-center pt-8 pb-4">
                             <button
                               onClick={() => setVisibleVideoCount(prev => prev + 20)}
@@ -5421,15 +5572,7 @@ export default function App() {
                               <span className="material-symbols-outlined text-xl group-hover:animate-bounce">expand_more</span>
                               <span>더보기 (20개 더 로드)</span>
                               <span className="text-xs font-medium opacity-80">
-                                ({visibleVideoCount} / {videos.filter((video) => {
-                                  const publishedDate = new Date(video.publishedAt || video.uploadTime);
-                                  const now = new Date();
-                                  const daysDiff = Math.floor((now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24));
-                                  return daysDiff <= timeRange;
-                                }).filter((video, index, self) => {
-                                  if (parseFloat(video.viralScore) >= 3.0) return true;
-                                  return self.slice(0, index).filter(v => (v.channelId || v.channelName) === (video.channelId || video.channelName)).length < 2;
-                                }).length})
+                                ({visibleVideoCount} / {processedFeedVideos.length})
                               </span>
                             </button>
                           </div>
