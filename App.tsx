@@ -804,6 +804,40 @@ const Sidebar = ({
             className={`${isPackageMode ? 'bg-amber-50 dark:bg-amber-500/10 !text-amber-600 dark:!text-amber-400 border border-amber-200 dark:border-amber-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-amber-500'}`}
             isCollapsed={isCollapsed}
           />
+          <SidebarItem
+            icon="local_fire_department"
+            label={
+              <span className="flex items-center gap-1.5">
+                커뮤니티 핫게시글
+                <span className="text-[9px] bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">
+                     {!hasGoldAccess ? 'lock' : 'local_fire_department'}
+                   </span>
+                </span>
+              </span>
+            }
+            active={isCommunityMode}
+            onClick={() => {
+              if (!hasGoldAccess) {
+                 if (onShowAlert) {
+                    onShowAlert({
+                       title: "권한 제한",
+                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                       type: 'error',
+                       showSubscribeButton: true,
+                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                    });
+                 } else {
+                    alert("이 기능은 골드 등급 전용입니다.");
+                 }
+                 return;
+              }
+              onToggleCommunityMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isCommunityMode ? 'bg-orange-50 dark:bg-orange-500/10 !text-orange-600 dark:!text-orange-400 border border-orange-200 dark:border-orange-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-orange-500'}`}
+            isCollapsed={isCollapsed}
+          />
         </div>
 
         <SidebarSectionLabel label="AI 스튜디오" isCollapsed={isCollapsed} className="mt-2" />
@@ -947,40 +981,6 @@ const Sidebar = ({
               if (onCloseMobileMenu) onCloseMobileMenu();
             }} 
             className={`${isCategoryTrendMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
-            isCollapsed={isCollapsed}
-          />
-          <SidebarItem
-            icon="local_fire_department"
-            label={
-              <span className="flex items-center gap-1.5">
-                커뮤니티 핫게시글
-                <span className="text-[9px] bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
-                   <span className="material-symbols-outlined text-[10px]">
-                     {!hasGoldAccess ? 'lock' : 'local_fire_department'}
-                   </span>
-                </span>
-              </span>
-            }
-            active={isCommunityMode}
-            onClick={() => {
-              if (!hasGoldAccess) {
-                 if (onShowAlert) {
-                    onShowAlert({
-                       title: "권한 제한",
-                       message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
-                       type: 'error',
-                       showSubscribeButton: true,
-                       onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
-                    });
-                 } else {
-                    alert("이 기능은 골드 등급 전용입니다.");
-                 }
-                 return;
-              }
-              onToggleCommunityMode(true);
-              if (onCloseMobileMenu) onCloseMobileMenu();
-            }}
-            className={`${isCommunityMode ? 'bg-orange-50 dark:bg-orange-500/10 !text-orange-600 dark:!text-orange-400 border border-orange-200 dark:border-orange-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-orange-500'}`}
             isCollapsed={isCollapsed}
           />
           {isAdmin && (
@@ -4098,7 +4098,7 @@ export default function App() {
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <CommunityHotPosts onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
           </div>
-        ) : isShortsMusicMode ? (
+        ) : isShortsMusicMode && isAdmin ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <ShortsTrendingMusic onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
           </div>
@@ -4109,6 +4109,18 @@ export default function App() {
               groups={groups}
               savedChannels={savedChannels}
               isAdmin={isAdmin}
+              onCreateGroup={async (name) => {
+                if (!user) throw new Error('로그인이 필요합니다.');
+                const trimmed = name.trim();
+                if (!trimmed) throw new Error('그룹명을 입력해주세요.');
+                const newGroup: ChannelGroup = {
+                  id: `group_${Date.now()}`,
+                  name: trimmed,
+                };
+                await saveGroupToDb(user.uid, newGroup);
+                setGroups(prev => [...prev, newGroup]);
+                return newGroup.id;
+              }}
               onAddToMonitoring={async (channel) => {
                 if (!user) return;
                 // 중복 확인
@@ -4680,6 +4692,38 @@ export default function App() {
                 apiKey={ytKey}
                 onClose={() => setIsRadarMode(false)}
                 initialQuery={radarInitialQuery}
+                groups={groups}
+                savedChannels={savedChannels}
+                onCreateGroup={async (name) => {
+                  if (!user) throw new Error('로그인이 필요합니다.');
+                  const trimmed = name.trim();
+                  if (!trimmed) throw new Error('그룹명을 입력해주세요.');
+                  const newGroup: ChannelGroup = {
+                    id: `group_${Date.now()}`,
+                    name: trimmed,
+                  };
+                  await saveGroupToDb(user.uid, newGroup);
+                  setGroups(prev => [...prev, newGroup]);
+                  return newGroup.id;
+                }}
+                onAddToMonitoring={async (channel) => {
+                  if (!user) return;
+                  if (savedChannels.some(c => c.id === channel.id)) {
+                    setAlertMessage({ title: '알림', message: '이미 모니터링 리스트에 추가된 채널입니다.', type: 'info' });
+                    return;
+                  }
+                  try {
+                    await saveChannelToDb(user.uid, channel);
+                    setSavedChannels(prev => [channel, ...prev]);
+                    setNewlyAddedIds(prev => [...prev, channel.id]);
+                    setHasPendingSync(true);
+                    setIsSyncNoticeDismissed(false);
+                    const groupName = groups.find(g => g.id === channel.groupId)?.name || '미지정';
+                    setAlertMessage({ title: '채널 추가 완료', message: `${channel.title}\n[${groupName}] 그룹에 추가되었습니다.`, type: 'info' });
+                  } catch (e: any) {
+                    setAlertMessage({ title: '오류', message: e.message || '채널 추가에 실패했습니다.', type: 'error' });
+                  }
+                }}
                 onVideoClick={(video) => {
                   // 시간 보정 부스터 계산: 업로드 경과 시간 대비 성과 반영
                   const hoursSince = Math.max((Date.now() - new Date(video.publishedAt).getTime()) / (1000 * 60 * 60), 1);
@@ -5842,6 +5886,8 @@ export default function App() {
           channelDescription={detailedChannelDescription}
           recentChannelVideos={detailedChannelVideos}
           isChannelVideosLoading={isDetailedChannelLoading}
+          apiKey={ytKey}
+          onTrackUsage={(type, units, details) => trackUsage(ytKey, type, units, details)}
           onAddChannel={handleAddChannelFromVideo}
           onExtractTranscript={(url) => {
             setDetailedVideo(null);

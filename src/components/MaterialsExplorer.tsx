@@ -543,6 +543,7 @@ export const MaterialsExplorer: React.FC<MaterialsExplorerProps> = ({ apiKey, gr
           onAddChannel={onAddChannel}
           onExtractTranscript={onExtractTranscript}
           onAnalyzeChannel={onAnalyzeChannel}
+          apiKey={apiKey}
         />
       )}
     </div>

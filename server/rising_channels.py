@@ -17,8 +17,8 @@ CACHE_TTL = 36000  # 10시간
 
 _cache: dict | None = None
 _cache_time: float = 0
-_accumulated_channels: list[dict] = []  # 누적 채널 목록
-MAX_ACCUMULATED = 100
+_accumulated_channels: list[dict] = []  # 누적 채널 목록 (Vercel cold start 시 리셋됨 — 클라이언트 localStorage가 실제 누적 소스)
+MAX_ACCUMULATED = 500
 
 _KST = timezone(timedelta(hours=9))
 

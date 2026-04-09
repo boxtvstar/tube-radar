@@ -8,9 +8,7 @@ import {
 } from '../../services/dbService';
 
 const CACHE_KEY = 'tuberadar_rising_channels';
-const DAILY_KEY = 'tuberadar_rising_daily'; // 오늘 추가된 채널 수 추적
-const MAX_DAILY_ADD = 10;
-const MAX_TOTAL_CHANNELS = 100;
+const MAX_TOTAL_CHANNELS = 500; // 최대 누적 채널 수 (초과 시 가장 오래된 것부터 제거)
 const YOUTUBE_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 interface RisingChannel {
@@ -149,28 +147,6 @@ const formatNumber = (num: number) => {
   return num.toLocaleString();
 };
 
-/** 오늘 날짜 문자열 (YYYY-MM-DD) */
-const todayStr = () => new Date().toISOString().slice(0, 10);
-
-/** 오늘 추가된 채널 수 가져오기 */
-const getDailyCount = (): { date: string; count: number } => {
-  try {
-    const raw = localStorage.getItem(DAILY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.date === todayStr()) return parsed;
-    }
-  } catch { /* ignore */ }
-  return { date: todayStr(), count: 0 };
-};
-
-/** 오늘 추가된 채널 수 업데이트 */
-const setDailyCount = (count: number) => {
-  try {
-    localStorage.setItem(DAILY_KEY, JSON.stringify({ date: todayStr(), count }));
-  } catch { /* ignore */ }
-};
-
 /** 캐시에서 기존 채널 로드 */
 const loadCachedChannels = (): RisingChannel[] => {
   try {
@@ -195,7 +171,7 @@ const saveCachedChannels = (channels: RisingChannel[]) => {
       const keys = Object.keys(localStorage).filter(k => k.startsWith('tuberadar_') || k.startsWith('yt_'));
       keys.sort();
       for (let i = 0; i < Math.ceil(keys.length / 2); i++) {
-        if (keys[i] !== CACHE_KEY && keys[i] !== DAILY_KEY) {
+        if (keys[i] !== CACHE_KEY) {
           localStorage.removeItem(keys[i]);
         }
       }
@@ -204,32 +180,53 @@ const saveCachedChannels = (channels: RisingChannel[]) => {
   }
 };
 
-/** 서버에서 받은 채널을 기존 목록에 merge (하루 최대 10개 추가) */
+/**
+ * 서버에서 받은 채널을 기존 목록에 merge
+ * - 기존 채널: addedAt 절대 변경하지 않음 (자기 자리 유지)
+ * - 새 채널: 현재 시각 기준 addedAt 부여, 맨 위로 삽입
+ * - 정렬: addedAt 내림차순 (최근 추가된 것이 위)
+ * - 누적 최대 MAX_TOTAL_CHANNELS 도달 시 가장 오래된 것부터 제거
+ */
 const mergeChannels = (existing: RisingChannel[], newChannels: RisingChannel[]): RisingChannel[] => {
-  const existingIds = new Set(existing.map(ch => ch.id));
-  const daily = getDailyCount();
-  let addedToday = daily.count;
+  const existingMap = new Map<string, RisingChannel>();
+  for (const ch of existing) {
+    existingMap.set(ch.id, ch);
+  }
 
-  const merged = [...existing];
+  // 이번 merge 시점의 baseline timestamp (신규 채널들끼리 순서 구분용)
+  const baseTs = Date.now();
+  let freshIndex = 0;
 
+  // 새 채널 중 기존에 없는 것만 골라서 신규로 등록
+  // 서버가 avgViews 내림차순으로 주므로, 상위 채널이 더 위에 오도록 freshIndex를 반전해 timestamp에 더함
+  const freshEntries: RisingChannel[] = [];
   for (const ch of newChannels) {
-    if (existingIds.has(ch.id)) {
-      // 이미 있으면 통계만 업데이트 (addedAt은 유지)
-      const idx = merged.findIndex(c => c.id === ch.id);
-      if (idx >= 0) merged[idx] = { ...ch, addedAt: merged[idx].addedAt };
-    } else if (addedToday < MAX_DAILY_ADD) {
-      merged.push({ ...ch, addedAt: Date.now() });
-      existingIds.add(ch.id);
-      addedToday++;
+    if (!existingMap.has(ch.id)) {
+      // baseTs + (역순 index) → 위에 올수록 더 큰 값
+      // 단일 merge 내에서 고유 tiebreaker 보장
+      freshEntries.push({ ...ch, addedAt: baseTs + (1000 - freshIndex) });
+      freshIndex++;
     }
   }
 
-  setDailyCount(addedToday);
+  // 기존 채널 통계 업데이트 (addedAt은 그대로)
+  const updatedExisting: RisingChannel[] = existing.map(ec => {
+    const latest = newChannels.find(n => n.id === ec.id);
+    if (latest) {
+      return {
+        ...latest,
+        addedAt: ec.addedAt, // 기존 timestamp 그대로 유지
+        addedByAdmin: ec.addedByAdmin,
+      };
+    }
+    return ec;
+  });
 
-  // 신규 추가순 정렬 (최근 추가된 채널이 위)
+  // 신규를 앞에, 기존을 뒤에 붙이고 addedAt 내림차순으로 정렬 (stable sort가 상대 순서 보존)
+  const merged = [...freshEntries, ...updatedExisting];
   merged.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
 
-  // 최대 100개 유지 — 넘으면 오래된 것부터 삭제
+  // 최대 누적 수 초과 시 오래된 것부터 제거
   if (merged.length > MAX_TOTAL_CHANNELS) {
     merged.length = MAX_TOTAL_CHANNELS;
   }
@@ -242,16 +239,21 @@ interface RisingCreatorsProps {
   groups?: ChannelGroup[];
   savedChannels?: SavedChannel[];
   onAddToMonitoring?: (channel: SavedChannel) => void;
+  onCreateGroup?: (name: string) => Promise<string>;
   isAdmin?: boolean;
 }
 
-export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, savedChannels: monitoringChannels, onAddToMonitoring, isAdmin }) => {
+export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, savedChannels: monitoringChannels, onAddToMonitoring, onCreateGroup, isAdmin }) => {
   const [channels, setChannels] = useState<RisingChannel[]>([]);
   const [adminChannels, setAdminChannels] = useState<RisingChannel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [groupMenuOpenId, setGroupMenuOpenId] = useState<string | null>(null);
+  const [creatingGroupForId, setCreatingGroupForId] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [createGroupError, setCreateGroupError] = useState('');
   const groupMenuRef = useRef<HTMLDivElement>(null);
 
   // 관리자 직접 추가 폼 state
@@ -265,6 +267,9 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
     const handleClickOutside = (e: MouseEvent) => {
       if (groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) {
         setGroupMenuOpenId(null);
+        setCreatingGroupForId(null);
+        setNewGroupName('');
+        setCreateGroupError('');
       }
     };
     if (groupMenuOpenId) document.addEventListener('mousedown', handleClickOutside);
@@ -290,6 +295,28 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
     };
     onAddToMonitoring(saved);
     setGroupMenuOpenId(null);
+    setCreatingGroupForId(null);
+    setNewGroupName('');
+    setCreateGroupError('');
+  };
+
+  const handleCreateGroupAndAdd = async (ch: RisingChannel) => {
+    if (!onCreateGroup) return;
+    const name = newGroupName.trim();
+    if (!name) {
+      setCreateGroupError('그룹명을 입력해주세요.');
+      return;
+    }
+    setIsCreatingGroup(true);
+    setCreateGroupError('');
+    try {
+      const newGroupId = await onCreateGroup(name);
+      handleAddToList(ch, newGroupId);
+    } catch (e: any) {
+      setCreateGroupError(e?.message || '그룹 생성에 실패했습니다.');
+    } finally {
+      setIsCreatingGroup(false);
+    }
   };
 
   // 사용 가능한 그룹 (all 제외)
@@ -430,8 +457,6 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
     // Firebase 관리자 추가 채널 로드
     loadAdminChannels();
   }, []);
-
-  const daily = getDailyCount();
 
   // 관리자 추가 채널 + 자동 발굴 채널 병합 (중복 제거, 관리자 추가가 우선)
   const displayChannels: RisingChannel[] = React.useMemo(() => {
@@ -613,8 +638,11 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
                       </button>
                     )}
                     {groupMenuOpenId === ch.id && !isAlreadyMonitored(ch.id) && (
-                      <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 min-w-[160px]">
+                      <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 min-w-[200px] max-h-80 overflow-y-auto">
                         <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase">그룹 선택</div>
+                        {availableGroups.length === 0 && creatingGroupForId !== ch.id && (
+                          <div className="px-3 py-2 text-[11px] text-slate-400">저장된 그룹이 없습니다</div>
+                        )}
                         {availableGroups.map(g => (
                           <button
                             key={g.id}
@@ -625,6 +653,51 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
                             {g.name}
                           </button>
                         ))}
+                        {onCreateGroup && (
+                          <div className="border-t border-slate-200 dark:border-slate-700 mt-1 pt-1">
+                            {creatingGroupForId === ch.id ? (
+                              <div className="p-2 space-y-1.5">
+                                <input
+                                  type="text"
+                                  value={newGroupName}
+                                  onChange={(e) => setNewGroupName(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' && !isCreatingGroup) handleCreateGroupAndAdd(ch); }}
+                                  placeholder="그룹명 입력..."
+                                  autoFocus
+                                  disabled={isCreatingGroup}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-50"
+                                />
+                                {createGroupError && (
+                                  <p className="text-[10px] text-rose-500 font-medium">{createGroupError}</p>
+                                )}
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleCreateGroupAndAdd(ch)}
+                                    disabled={isCreatingGroup || !newGroupName.trim()}
+                                    className="flex-1 px-2 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold disabled:opacity-50 transition-colors"
+                                  >
+                                    {isCreatingGroup ? '생성중...' : '만들고 추가'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setCreatingGroupForId(null); setNewGroupName(''); setCreateGroupError(''); }}
+                                    disabled={isCreatingGroup}
+                                    className="px-2 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold disabled:opacity-50"
+                                  >
+                                    취소
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setCreatingGroupForId(ch.id); setNewGroupName(''); setCreateGroupError(''); }}
+                                className="w-full text-left px-3 py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center gap-2"
+                              >
+                                <span className="material-symbols-outlined text-sm">add_circle</span>
+                                새 그룹 만들기
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -671,6 +744,9 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
                   {groupMenuOpenId === ch.id && !isAlreadyMonitored(ch.id) && (
                     <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1">
                       <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase">그룹 선택</div>
+                      {availableGroups.length === 0 && creatingGroupForId !== ch.id && (
+                        <div className="px-3 py-2 text-[11px] text-slate-400">저장된 그룹이 없습니다</div>
+                      )}
                       {availableGroups.map(g => (
                         <button
                           key={g.id}
@@ -681,6 +757,51 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
                           {g.name}
                         </button>
                       ))}
+                      {onCreateGroup && (
+                        <div className="border-t border-slate-200 dark:border-slate-700 mt-1 pt-1">
+                          {creatingGroupForId === ch.id ? (
+                            <div className="p-2 space-y-1.5">
+                              <input
+                                type="text"
+                                value={newGroupName}
+                                onChange={(e) => setNewGroupName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && !isCreatingGroup) handleCreateGroupAndAdd(ch); }}
+                                placeholder="그룹명 입력..."
+                                autoFocus
+                                disabled={isCreatingGroup}
+                                className="w-full px-2.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-50"
+                              />
+                              {createGroupError && (
+                                <p className="text-[10px] text-rose-500 font-medium">{createGroupError}</p>
+                              )}
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleCreateGroupAndAdd(ch)}
+                                  disabled={isCreatingGroup || !newGroupName.trim()}
+                                  className="flex-1 px-2 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold disabled:opacity-50 transition-colors"
+                                >
+                                  {isCreatingGroup ? '생성중...' : '만들고 추가'}
+                                </button>
+                                <button
+                                  onClick={() => { setCreatingGroupForId(null); setNewGroupName(''); setCreateGroupError(''); }}
+                                  disabled={isCreatingGroup}
+                                  className="px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-bold disabled:opacity-50"
+                                >
+                                  취소
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setCreatingGroupForId(ch.id); setNewGroupName(''); setCreateGroupError(''); }}
+                              className="w-full text-left px-3 py-2.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center gap-2"
+                            >
+                              <span className="material-symbols-outlined text-sm">add_circle</span>
+                              새 그룹 만들기
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

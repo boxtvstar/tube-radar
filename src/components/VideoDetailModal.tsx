@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { VideoData } from '../../types';
+import { fetchVideoComments, VideoComment } from '../../services/youtubeService';
 
 interface VideoDetailModalProps {
   video: VideoData;
@@ -13,6 +14,8 @@ interface VideoDetailModalProps {
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
   onExtractTranscript?: (videoUrl: string) => void;
   onAnalyzeChannel?: (channelId: string) => void;
+  apiKey?: string;
+  onTrackUsage?: (type: 'search' | 'list' | 'script', units: number, details?: string) => void;
 }
 
 // Category ID to Name mapping
@@ -23,22 +26,84 @@ const CATEGORY_NAMES: Record<string, string> = {
   '28': '과학/기술', '29': '비영리/사회'
 };
 
-export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({ 
-  video, 
-  onClose, 
+export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
+  video,
+  onClose,
   channelDescription = '',
   recentChannelVideos = [],
   isChannelVideosLoading = false,
-  channelGroups = [], 
+  channelGroups = [],
   onAddChannel,
   onExtractTranscript,
-  onAnalyzeChannel
+  onAnalyzeChannel,
+  apiKey,
+  onTrackUsage
 }) => {
   const [showGroupDropdown, setShowGroupDropdown] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [comments, setComments] = useState<VideoComment[] | null>(null);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [commentsNextPageToken, setCommentsNextPageToken] = useState<string | undefined>(undefined);
+  const loadedCommentVideoIds = useRef<Set<string>>(new Set());
+
+  const isChannelModeForComments = video.duration === '0:00';
+
+  useEffect(() => {
+    if (isChannelModeForComments) return;
+    if (!apiKey || !video.id) return;
+    if (!video.commentCount || video.commentCount === 0) return;
+    if (loadedCommentVideoIds.current.has(video.id)) return;
+
+    loadedCommentVideoIds.current.add(video.id);
+    let cancelled = false;
+
+    (async () => {
+      setIsLoadingComments(true);
+      setCommentsError(null);
+      setComments(null);
+      setCommentsNextPageToken(undefined);
+      try {
+        const page = await fetchVideoComments(video.id, apiKey, 100);
+        if (cancelled) return;
+        setComments(page.items);
+        setCommentsNextPageToken(page.nextPageToken);
+        onTrackUsage?.('list', 5, `댓글 조회 (${video.id})`);
+      } catch (e: any) {
+        if (cancelled) return;
+        setCommentsError(e?.message || '댓글을 불러오지 못했습니다.');
+        setComments([]);
+      } finally {
+        if (!cancelled) setIsLoadingComments(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [video.id, apiKey, video.commentCount, isChannelModeForComments, onTrackUsage]);
+
+  const handleLoadMoreComments = async () => {
+    if (!apiKey || !video.id) return;
+    if (!commentsNextPageToken) return;
+    if (isLoadingComments) return;
+
+    setIsLoadingComments(true);
+    setCommentsError(null);
+    try {
+      const page = await fetchVideoComments(video.id, apiKey, 100, commentsNextPageToken);
+      setComments((prev) => [...(prev || []), ...page.items]);
+      setCommentsNextPageToken(page.nextPageToken);
+      onTrackUsage?.('list', 5, `댓글 추가 조회 (${video.id})`);
+    } catch (e: any) {
+      setCommentsError(e?.message || '댓글을 불러오지 못했습니다.');
+    } finally {
+      setIsLoadingComments(false);
+    }
+  };
 
   const handleCreateAndAdd = async () => {
     if (!newGroupName.trim() || !onAddChannel || !video.channelId) return;
@@ -446,6 +511,114 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   <div className="text-lg font-black text-white truncate leading-none">{getCategoryName(video.category)}</div>
                 </div>
               </div>
+
+              {/* Comments Section */}
+              {typeof video.commentCount === 'number' && (
+                <div className="bg-slate-900/50 border border-white/5 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-cyan-400 text-sm">forum</span>
+                      <span className="text-xs font-bold text-slate-400">댓글</span>
+                      <span className="bg-cyan-500/10 text-cyan-400 text-[10px] px-2 py-0.5 rounded-full font-black">
+                        {video.commentCount >= 10000
+                          ? (video.commentCount / 10000).toFixed(1) + '만'
+                          : video.commentCount.toLocaleString()}개
+                      </span>
+                    </div>
+                    {isLoadingComments && (
+                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px] animate-spin">sync</span>
+                        불러오는 중...
+                      </span>
+                    )}
+                  </div>
+
+                  {commentsError && (
+                    <div className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-2">
+                      {commentsError}
+                    </div>
+                  )}
+
+                  {comments === null && !isLoadingComments && !commentsError && video.commentCount === 0 && (
+                    <div className="text-[11px] text-slate-500 text-center py-2">
+                      댓글이 없습니다.
+                    </div>
+                  )}
+
+                  {comments && comments.length > 0 && (
+                    <>
+                      <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                        {comments.map((c) => (
+                          <div key={c.id} className="flex items-start gap-2 p-2 rounded-lg bg-slate-950/50 border border-white/5">
+                            {c.authorThumbnail ? (
+                              <img
+                                src={c.authorThumbnail}
+                                alt={c.authorName}
+                                className="size-7 rounded-full shrink-0 object-cover bg-slate-800"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="size-7 rounded-full bg-slate-800 shrink-0 flex items-center justify-center text-[10px] font-black text-slate-400">
+                                {c.authorName.substring(0, 1)}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="text-[11px] font-black text-white truncate">{c.authorName}</span>
+                                <span className="text-[9px] text-slate-500">
+                                  {new Date(c.publishedAt).toLocaleDateString('ko-KR')}
+                                </span>
+                              </div>
+                              <p
+                                className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-line break-words"
+                                dangerouslySetInnerHTML={{ __html: c.text }}
+                              />
+                              <div className="flex items-center gap-3 mt-1.5 text-[9px] text-slate-500 font-bold">
+                                <span className="flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-[11px]">thumb_up</span>
+                                  {c.likeCount.toLocaleString()}
+                                </span>
+                                {c.replyCount > 0 && (
+                                  <span className="flex items-center gap-0.5">
+                                    <span className="material-symbols-outlined text-[11px]">reply</span>
+                                    답글 {c.replyCount}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {commentsNextPageToken && (
+                        <button
+                          onClick={handleLoadMoreComments}
+                          disabled={isLoadingComments}
+                          className="w-full mt-3 px-3 py-2.5 rounded-xl text-[11px] font-black text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isLoadingComments ? (
+                            <>
+                              <span className="material-symbols-outlined text-[14px] animate-spin">sync</span>
+                              불러오는 중...
+                            </>
+                          ) : (
+                            <>
+                              <span className="material-symbols-outlined text-[14px]">expand_more</span>
+                              더보기
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {comments && comments.length === 0 && !commentsError && (
+                    <div className="text-[11px] text-slate-500 text-center py-2">
+                      댓글이 없습니다.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Channel Join Date */}
               {(video.channelJoinDate || video.publishedAt) && (

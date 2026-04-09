@@ -21,6 +21,7 @@ export interface VideoData {
   durationSec?: number;
   velocity?: number;
   channelThumbnail?: string;
+  commentCount?: number;
 }
 
 export interface AnalysisResponse {

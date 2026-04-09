@@ -803,6 +803,7 @@ export const fetchRealVideos = async (
         category: getCategoryName(item.snippet.categoryId),
         reachPercentage: Math.min(Math.round((currentViews / channelInfo.avgViews) * 100), 999), 
         tags: item.snippet.tags || [],
+        commentCount: parseInt(item.statistics?.commentCount || "0"),
         channelTotalViews: channelInfo.totalViews,
         channelJoinDate: channelInfo.joinDate,
         channelCountry: channelInfo.country,
@@ -1707,6 +1708,7 @@ export const performRadarScan = async (
                category: getCategoryName(v.snippet.categoryId),
                reachPercentage: Math.min(ratio * 10, 100), // Visual bar based on ratio
                tags: v.snippet.tags || [],
+               commentCount: parseInt(v.statistics?.commentCount || "0"),
              },
              spikeScore,
              velocity,
@@ -1898,7 +1900,8 @@ export const searchVideosForMaterials = async (
           uploadTime: getTimeAgo(v.snippet.publishedAt),
           category: categoryName,
           reachPercentage: 0,
-          tags: v.snippet.tags || []
+          tags: v.snippet.tags || [],
+          commentCount: parseInt(v.statistics?.commentCount || '0')
        } as VideoData;
     }).filter(Boolean) as VideoData[];
 
@@ -1906,4 +1909,78 @@ export const searchVideosForMaterials = async (
     console.error("Material search failed", e);
     return [];
   }
+};
+
+// ============================================================
+// Video Comments (Lazy Fetch)
+// 영상 상세 모달에서 댓글 내용을 조회할 때만 호출 (1 unit/호출)
+// commentThreads.list — 최상위 댓글 최대 100개
+// ============================================================
+
+export interface VideoComment {
+  id: string;
+  authorName: string;
+  authorThumbnail: string;
+  text: string;
+  likeCount: number;
+  publishedAt: string;
+  replyCount: number;
+}
+
+export interface VideoCommentsPage {
+  items: VideoComment[];
+  nextPageToken?: string;
+}
+
+export const fetchVideoComments = async (
+  videoId: string,
+  apiKey: string,
+  maxResults: number = 100,
+  pageToken?: string
+): Promise<VideoCommentsPage> => {
+  if (!videoId || !apiKey) return { items: [] };
+
+  const params = new URLSearchParams({
+    part: 'snippet',
+    videoId,
+    maxResults: String(Math.min(Math.max(maxResults, 1), 100)),
+    order: 'relevance',
+    key: apiKey,
+  });
+  if (pageToken) params.set('pageToken', pageToken);
+
+  const url = `${YOUTUBE_BASE_URL}/commentThreads?${params.toString()}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const reason = err?.error?.errors?.[0]?.reason || '';
+    if (reason === 'commentsDisabled') {
+      throw new Error('이 영상은 댓글이 비활성화되어 있습니다.');
+    }
+    if (reason === 'quotaExceeded') {
+      markQuotaExceeded(apiKey);
+      throw new Error('YouTube API 쿼터를 초과했습니다.');
+    }
+    throw new Error(err?.error?.message || '댓글을 불러오지 못했습니다.');
+  }
+
+  const data = await res.json();
+  const items: VideoComment[] = (data.items || []).map((item: any) => {
+    const top = item.snippet?.topLevelComment?.snippet || {};
+    return {
+      id: item.id,
+      authorName: top.authorDisplayName || '',
+      authorThumbnail: top.authorProfileImageUrl || '',
+      text: top.textDisplay || '',
+      likeCount: parseInt(top.likeCount || '0', 10),
+      publishedAt: top.publishedAt || '',
+      replyCount: parseInt(item.snippet?.totalReplyCount || '0', 10),
+    };
+  });
+
+  return {
+    items,
+    nextPageToken: data.nextPageToken,
+  };
 };
