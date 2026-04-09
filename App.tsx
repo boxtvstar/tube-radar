@@ -638,26 +638,40 @@ const Sidebar = ({
             {isCollapsed && hasPendingSync && <span className="absolute top-2 right-2 flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span></span>}
           </button>
 
-          {isAdmin && (
-            <SidebarItem
-              icon="search"
-              label={
-                <span className="flex items-center gap-1.5">
-                  채널 신규 발굴
-                  <span className="text-[9px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
-                     <span className="material-symbols-outlined text-[10px]">search</span>
-                  </span>
+          <SidebarItem
+            icon="search"
+            label={
+              <span className="flex items-center gap-1.5">
+                채널 신규 발굴
+                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">
+                     {!hasGoldAccess ? 'lock' : 'search'}
+                   </span>
                 </span>
+              </span>
+            }
+            active={isRisingMode}
+            onClick={() => {
+              if (!hasGoldAccess) {
+                if (onShowAlert) {
+                  onShowAlert({
+                    title: "권한 제한",
+                    message: "🚫 이 기능은 골드 등급 전용입니다.\n\n멤버십 업그레이드 후 이용해주세요.",
+                    type: 'error',
+                    showSubscribeButton: true,
+                    onSubscribe: () => window.open('https://www.youtube.com/channel/UClP2hW295JL_o-lESiMY0fg/join', '_blank')
+                  });
+                } else {
+                  alert("🚫 이 기능은 골드 등급 전용입니다.");
+                }
+                return;
               }
-              active={isRisingMode}
-              onClick={() => {
-                onToggleRisingMode(true);
-                if (onCloseMobileMenu) onCloseMobileMenu();
-              }}
-              className={`${isRisingMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
-              isCollapsed={isCollapsed}
-            />
-          )}
+              onToggleRisingMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isRisingMode ? 'bg-emerald-50 dark:bg-emerald-500/10 !text-emerald-600 dark:!text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-emerald-500'}`}
+            isCollapsed={isCollapsed}
+          />
 
           <SidebarItem
             icon="compare_arrows"
@@ -4102,7 +4116,7 @@ export default function App() {
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <ShortsTrendingMusic onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
           </div>
-        ) : isRisingMode ? (
+        ) : isRisingMode && (isAdmin || isGoldOrAbovePlan(userGrade)) ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <RisingCreators
               apiKey={ytKey}
