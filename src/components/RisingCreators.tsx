@@ -238,7 +238,7 @@ interface RisingCreatorsProps {
   apiKey?: string;
   groups?: ChannelGroup[];
   savedChannels?: SavedChannel[];
-  onAddToMonitoring?: (channel: SavedChannel) => void;
+  onAddToMonitoring?: (channel: SavedChannel) => void | Promise<void>;
   onCreateGroup?: (name: string) => Promise<string>;
   isAdmin?: boolean;
 }
@@ -254,7 +254,8 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
   const [newGroupName, setNewGroupName] = useState('');
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [createGroupError, setCreateGroupError] = useState('');
-  const groupMenuRef = useRef<HTMLDivElement>(null);
+  const groupMenuDesktopRef = useRef<HTMLDivElement>(null);
+  const groupMenuMobileRef = useRef<HTMLDivElement>(null);
 
   // 관리자 직접 추가 폼 state
   const [showAdminForm, setShowAdminForm] = useState(false);
@@ -265,7 +266,10 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
   // 그룹 드롭다운 외부 클릭 닫기
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const isInsideDesktop = groupMenuDesktopRef.current?.contains(target);
+      const isInsideMobile = groupMenuMobileRef.current?.contains(target);
+      if (!isInsideDesktop && !isInsideMobile) {
         setGroupMenuOpenId(null);
         setCreatingGroupForId(null);
         setNewGroupName('');
@@ -279,7 +283,7 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
   const isAlreadyMonitored = (channelId: string) =>
     monitoringChannels?.some(c => c.id === channelId) ?? false;
 
-  const handleAddToList = (ch: RisingChannel, groupId: string) => {
+  const handleAddToList = async (ch: RisingChannel, groupId: string) => {
     if (!onAddToMonitoring) return;
     const saved: SavedChannel = {
       id: ch.id,
@@ -293,7 +297,11 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
       groupId,
       addedAt: Date.now(),
     };
-    onAddToMonitoring(saved);
+    try {
+      await onAddToMonitoring(saved);
+    } catch (e) {
+      console.error('채널 추가 실패:', e);
+    }
     setGroupMenuOpenId(null);
     setCreatingGroupForId(null);
     setNewGroupName('');
@@ -622,7 +630,7 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
                 )}
                 {/* 데스크톱: 리스트 추가 버튼 */}
                 {onAddToMonitoring && (
-                  <div className="hidden md:block relative shrink-0" ref={groupMenuOpenId === ch.id ? groupMenuRef : undefined}>
+                  <div className="hidden md:block relative shrink-0" ref={groupMenuOpenId === ch.id ? groupMenuDesktopRef : undefined}>
                     {isAlreadyMonitored(ch.id) ? (
                       <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-lg cursor-default">
                         <span className="material-symbols-outlined text-sm text-slate-400">check_circle</span>
@@ -726,7 +734,7 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
 
               {/* 모바일: 리스트 추가 버튼 */}
               {onAddToMonitoring && (
-                <div className="md:hidden relative mb-3" ref={groupMenuOpenId === ch.id ? groupMenuRef : undefined}>
+                <div className="md:hidden relative mb-3" ref={groupMenuOpenId === ch.id ? groupMenuMobileRef : undefined}>
                   {isAlreadyMonitored(ch.id) ? (
                     <div className="flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 dark:bg-slate-700/50 rounded-lg cursor-default">
                       <span className="material-symbols-outlined text-sm text-slate-400">check_circle</span>
