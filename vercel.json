@@ -8,12 +8,20 @@
     },
     "api/rising_channels.py": {
       "maxDuration": 60
+    },
+    "api/tiktok.py": {
+      "maxDuration": 30
+    },
+    "api/instagram.py": {
+      "maxDuration": 15
     }
   },
   "rewrites": [
     { "source": "/api/community/hot-posts", "destination": "/api/community" },
     { "source": "/api/community/preview", "destination": "/api/preview" },
     { "source": "/api/shorts-music", "destination": "/api/shorts_music" },
-    { "source": "/api/rising-channels", "destination": "/api/rising_channels" }
+    { "source": "/api/rising-channels", "destination": "/api/rising_channels" },
+    { "source": "/api/tiktok/profile", "destination": "/api/tiktok" },
+    { "source": "/api/instagram/profile", "destination": "/api/instagram" }
   ]
 }

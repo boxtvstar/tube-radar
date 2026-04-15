@@ -210,9 +210,21 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
     return category;
   };
 
-  const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+  const platform = video.platform || 'youtube';
+  const videoUrl = platform === 'tiktok'
+    ? `https://www.tiktok.com/@${(video.channelId || '').replace(/^tt_/, '')}/video/${video.id}`
+    : platform === 'instagram'
+      ? `https://www.instagram.com/reel/${video.id}/`
+      : `https://www.youtube.com/watch?v=${video.id}`;
   const isChannelMode = video.duration === '0:00';
-  const channelUrl = video.channelId ? `https://www.youtube.com/channel/${video.channelId}` : videoUrl;
+  const channelUrl = platform === 'tiktok'
+    ? `https://www.tiktok.com/@${(video.channelId || '').replace(/^tt_/, '')}`
+    : platform === 'instagram'
+      ? `https://www.instagram.com/${(video.channelId || '').replace(/^ig_/, '')}/`
+      : video.channelId ? `https://www.youtube.com/channel/${video.channelId}` : videoUrl;
+  const platformLabel = platform === 'tiktok' ? 'TikTok' : platform === 'instagram' ? 'Instagram' : '유튜브';
+  const platformColor = platform === 'tiktok' ? 'bg-black hover:bg-gray-800' : platform === 'instagram' ? 'bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-500 hover:to-pink-400' : 'bg-red-600 hover:bg-red-500';
+  const platformShadow = platform === 'tiktok' ? 'shadow-black/20' : platform === 'instagram' ? 'shadow-pink-500/20' : 'shadow-red-600/20';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
@@ -295,15 +307,15 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                 href={isChannelMode ? channelUrl : videoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full px-2 py-2.5 bg-red-600 hover:bg-red-500 rounded-xl text-white text-[11px] font-black transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-red-600/20 active:scale-[0.98]"
-                title={isChannelMode ? "유튜브에서 채널 보기" : "유튜브에서 영상 보기"}
+                className={`w-full px-2 py-2.5 ${platformColor} rounded-xl text-white text-[11px] font-black transition-all flex items-center justify-center gap-1.5 shadow-lg ${platformShadow} active:scale-[0.98]`}
+                title={isChannelMode ? `${platformLabel}에서 채널 보기` : `${platformLabel}에서 영상 보기`}
               >
                 <span className="material-symbols-outlined text-[18px]">{isChannelMode ? 'account_circle' : 'play_circle'}</span>
                 <span className="whitespace-nowrap">{isChannelMode ? '채널보기' : '영상보기'}</span>
               </a>
             </div>
             
-            {onExtractTranscript && video.duration !== '0:00' && (
+            {onExtractTranscript && video.duration !== '0:00' && platform === 'youtube' && (
               <div className="flex-1">
                 <button
                   onClick={() => onExtractTranscript(videoUrl)}
@@ -427,9 +439,9 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
               <div className="grid grid-cols-2 gap-2.5">
                 {/* Thumbnail */}
                 <div className="relative h-20 md:h-24 rounded-xl overflow-hidden border border-white/10 group">
-                  <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
+                  <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="size-8 rounded-full bg-red-600 flex items-center justify-center shadow-xl hover:scale-110 transition-transform">
+                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className={`size-8 rounded-full ${platformColor} flex items-center justify-center shadow-xl hover:scale-110 transition-transform`}>
                       <span className="material-symbols-outlined text-white text-base fill-current">play_arrow</span>
                     </a>
                   </div>
@@ -653,7 +665,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 {/* Thumbnail */}
                 <div className="relative h-28 rounded-xl overflow-hidden border border-white/10">
-                  <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
+                  <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 </div>
 
                 {/* Subscribers */}

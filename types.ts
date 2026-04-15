@@ -1,4 +1,6 @@
 
+export type Platform = 'youtube' | 'tiktok' | 'instagram';
+
 export interface VideoData {
   id: string;
   title: string;
@@ -22,6 +24,9 @@ export interface VideoData {
   velocity?: number;
   channelThumbnail?: string;
   commentCount?: number;
+  platform?: Platform;
+  likes?: number;
+  shares?: number;
 }
 
 export interface AnalysisResponse {
@@ -33,6 +38,7 @@ export interface AnalysisResponse {
 export interface ChannelGroup {
   id: string;
   name: string;
+  sortOrder?: number;
 }
 
 export interface VideoSnippet {
@@ -60,6 +66,7 @@ export interface SavedChannel {
   totalViews?: string;
   joinDate?: string; // ISO string
   country?: string;
+  platform?: Platform; // default: 'youtube'
 }
 
 export interface ViralStat {
@@ -73,7 +80,7 @@ export interface ViralStat {
 
 export interface ApiUsageLog {
   timestamp: string;
-  type: 'search' | 'list' | 'script' | 'system' | 'bonus';
+  type: 'search' | 'list' | 'script' | 'system' | 'bonus' | 'tiktok' | 'instagram';
   cost: number;
   details?: string;
 }

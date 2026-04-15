@@ -13,6 +13,8 @@ from source_finder import find_source_from_video_url, find_source_from_image
 from community_scraper import fetch_all_hot_posts
 from shorts_music import fetch_shorts_music, search_shorts
 from rising_channels import fetch_rising_channels
+from tiktok_scraper import scrape_tiktok_profile
+from instagram_scraper import scrape_instagram_profile
 
 app = FastAPI(title="YouTube Transcript API")
 
@@ -145,6 +147,52 @@ def rising_channels(force: bool = False, apiKey: str = ""):
         return fetch_rising_channels(force=force, api_key=apiKey)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"신규 발굴 조회 실패: {str(e)}")
+
+
+@app.get("/api/tiktok/profile")
+def tiktok_profile(username: str = Query(..., description="TikTok @username")):
+    """TikTok 프로필 + 최근 영상 스크래핑"""
+    try:
+        result = scrape_tiktok_profile(username)
+        if "error" in result:
+            raise HTTPException(status_code=422, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TikTok 스크래핑 실패: {str(e)}")
+
+
+@app.get("/api/image-proxy")
+def image_proxy(url: str = Query(..., description="이미지 URL")):
+    """Instagram/TikTok 등 CORS 차단 이미지를 프록시"""
+    from starlette.responses import Response
+    if not any(d in url for d in ("cdninstagram.com", "tiktokcdn.com", "tiktokcdn-")):
+        raise HTTPException(status_code=400, detail="허용되지 않는 도메인")
+    try:
+        resp = _req.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, stream=True)
+        resp.raise_for_status()
+        ct = resp.headers.get("content-type", "image/jpeg")
+        return Response(content=resp.content, media_type=ct, headers={
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*",
+        })
+    except Exception:
+        raise HTTPException(status_code=502, detail="이미지 프록시 실패")
+
+
+@app.get("/api/instagram/profile")
+def instagram_profile(username: str = Query(..., description="Instagram @username")):
+    """Instagram 프로필 + 최근 릴스 스크래핑"""
+    try:
+        result = scrape_instagram_profile(username)
+        if "error" in result:
+            raise HTTPException(status_code=422, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Instagram 스크래핑 실패: {str(e)}")
 
 
 import requests as _req
