@@ -1736,6 +1736,11 @@ export default function App() {
   const [newParentGroupName, setNewParentGroupName] = useState('');
   const [movingSubgroupId, setMovingSubgroupId] = useState<string | null>(null);
 
+  // 그룹 영역 접기/펼치기
+  const [isGroupsExpanded, setIsGroupsExpanded] = useState(false);
+  const [groupsOverflow, setGroupsOverflow] = useState(false);
+  const groupsContainerRef = useRef<HTMLDivElement>(null);
+
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [movingGroupId, setMovingGroupId] = useState<string | null>(null);
   const [individualMovingChannelId, setIndividualMovingChannelId] = useState<string | null>(null);
@@ -2079,6 +2084,20 @@ export default function App() {
 
     return { system, parentGroups, standalone: [...standalone, ...orphaned], getChildren };
   }, [groups]);
+
+  // 그룹 영역 높이 감지 (3줄 초과 여부)
+  useEffect(() => {
+    const el = groupsContainerRef.current;
+    if (!el) return;
+    const checkOverflow = () => {
+      // 버튼 높이 ~40px, gap 8px → 3줄 ≈ 136px
+      setGroupsOverflow(el.scrollHeight > 140);
+    };
+    checkOverflow();
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [groupHierarchy, expandedParentGroups]);
 
   // sortedGroups 호환성 유지 (다른 곳에서 참조)
   const sortedGroups = useMemo(() => {
@@ -5577,9 +5596,12 @@ export default function App() {
                   .no-scrollbar::-webkit-scrollbar { display: none; }
                   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
                 `}</style>
-                <div className="flex flex-col gap-2 pb-4 border-b border-slate-100 dark:border-white/5">
+                <div
+                  ref={groupsContainerRef}
+                  className={`flex flex-col gap-2 pb-4 border-b border-slate-100 dark:border-white/5 transition-all duration-300 ${!isGroupsExpanded && groupsOverflow ? 'max-h-[136px] overflow-hidden' : ''}`}
+                >
                 {/* ── 시스템 그룹 (전체, 미지정) ── */}
-                <div className="flex flex-nowrap items-center gap-3 overflow-x-auto md:overflow-visible no-scrollbar">
+                <div className="flex flex-wrap items-center gap-3">
                   {groupHierarchy.system.map(group => (
                     <button
                       key={group.id}
@@ -5605,7 +5627,7 @@ export default function App() {
 
                   return (
                     <div key={parentGroup.id} className="flex flex-col gap-1">
-                      <div className="flex flex-nowrap items-center gap-3 overflow-x-auto md:overflow-visible no-scrollbar">
+                      <div className="flex flex-wrap items-center gap-3">
                         {/* 대그룹 탭 */}
                         <div
                           className={`relative group/tab shrink-0 ${dragGroupId === parentGroup.id ? 'opacity-40' : ''} ${dragOverGroupId === parentGroup.id ? 'border-l-2 border-primary' : ''}`}
@@ -5649,7 +5671,7 @@ export default function App() {
 
                       {/* 소그룹 행 (펼쳐진 상태) */}
                       {isExpanded && children.length > 0 && (
-                        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto md:overflow-visible no-scrollbar border-l-2 border-primary/20 ml-4 pl-3">
+                        <div className="flex flex-wrap items-center gap-2 border-l-2 border-primary/20 ml-4 pl-3">
                           {children.map(child => (
                             <div
                               key={child.id}
@@ -5742,7 +5764,7 @@ export default function App() {
 
                 {/* ── 독립 그룹 (parentId 없는 일반 그룹) ── */}
                 {groupHierarchy.standalone.length > 0 && (
-                  <div className="flex flex-nowrap items-center gap-3 overflow-x-auto md:overflow-visible no-scrollbar">
+                  <div className="flex flex-wrap items-center gap-3">
                     {groupHierarchy.standalone.map(group => (
                       <div
                         key={group.id}
@@ -5798,7 +5820,7 @@ export default function App() {
                 )}
 
                 {/* ── 그룹 추가 버튼들 ── */}
-                <div className="flex flex-nowrap items-center gap-2 overflow-x-auto md:overflow-visible no-scrollbar">
+                <div className="flex flex-wrap items-center gap-2">
                   {/* 그룹 추가 (독립) */}
                   {!isAddingGroup && !isAddingParentGroup && (
                     <>
@@ -5859,9 +5881,16 @@ export default function App() {
                   )}
                 </div>
                 </div>
-                <div className="absolute top-0 right-0 bottom-4 w-16 bg-gradient-to-l from-white dark:from-[#0f1014] to-transparent pointer-events-none md:hidden flex items-center justify-end pr-2">
-                   <span className="material-symbols-outlined text-slate-300 dark:text-slate-600 animate-pulse">chevron_right</span>
-                </div>
+                {/* 3줄 초과 시 더보기/접기 버튼 */}
+                {groupsOverflow && (
+                  <button
+                    onClick={() => setIsGroupsExpanded(prev => !prev)}
+                    className="w-full flex items-center justify-center gap-1 py-1.5 text-[10px] font-bold text-slate-400 hover:text-primary transition-colors border-b border-slate-100 dark:border-white/5"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{isGroupsExpanded ? 'expand_less' : 'expand_more'}</span>
+                    {isGroupsExpanded ? '접기' : `전체보기`}
+                  </button>
+                )}
               </div>
 
               <div className="relative flex flex-row items-center gap-2 sm:justify-between px-1 mt-4 overflow-x-auto no-scrollbar pb-2">
