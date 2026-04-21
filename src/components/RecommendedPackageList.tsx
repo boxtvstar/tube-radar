@@ -271,19 +271,23 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                     </div>
                     <div className="max-h-60 overflow-y-auto custom-scrollbar flex flex-col p-1">
                        <div className="text-[10px] font-bold text-slate-400 px-3 py-1.5 mt-1">저장할 그룹 선택</div>
-                       {groups.map(g => (
+                       {groups.filter(g => !g.isParentGroup).map(g => {
+                          const parent = g.parentId ? groups.find(pg => pg.id === g.parentId) : null;
+                          return (
                           <button
                             key={g.id}
                             onClick={() => {
                                setTargetGroupId(g.id);
                                setIsGroupSelectOpen(false);
                             }}
-                            className={`w-full text-left px-3 py-2.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 ${targetGroupId === g.id ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'}`}
+                            className={`w-full text-left px-3 py-2.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 ${targetGroupId === g.id ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'} ${parent ? 'pl-6' : ''}`}
                           >
                              <span className={`material-symbols-outlined text-[16px] ${targetGroupId === g.id ? 'filled' : ''}`}>folder</span>
+                             {parent && <span className="text-slate-400 text-[10px]">{parent.name} /</span>}
                              {g.name}
                           </button>
-                       ))}
+                          );
+                       })}
                     </div>
                  </div>
                </>
@@ -709,7 +713,7 @@ export const RecommendedPackageList: React.FC<RecommendedPackageListProps> = ({ 
                                  {groups.length === 0 ? (
                                    <div className="text-center py-4 text-xs text-slate-400">그룹이 없습니다. 새 그룹을 만들어주세요.</div>
                                  ) : (
-                                   groups.map(g => (
+                                   groups.filter(g => !g.isParentGroup).map(g => (
                                      <button
                                        key={g.id}
                                        onClick={(e) => {

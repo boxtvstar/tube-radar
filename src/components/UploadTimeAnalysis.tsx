@@ -101,6 +101,8 @@ const UploadTimeAnalysis: React.FC<UploadTimeAnalysisProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState({ current: 0, total: 0 });
   const loadedGroupsRef = useRef<Set<string>>(new Set());
+  const [hasStarted, setHasStarted] = useState(false);
+  const cancelRef = useRef(false);
 
   // ── 그룹 필터링된 채널 목록 (간단하고 확실한 로직) ────────────────────
   const filteredChannels = useMemo(() => {
@@ -111,10 +113,16 @@ const UploadTimeAnalysis: React.FC<UploadTimeAnalysisProps> = ({
     });
   }, [savedChannels, selectedGroupId]);
 
-  // ── topVideos 없는 채널 자동 보충 로딩 ──────────────────────────────
+  // 그룹 변경 시 시작 상태 리셋 (이미 로딩된 그룹은 제외)
   useEffect(() => {
+    if (!loadedGroupsRef.current.has(selectedGroupId)) {
+      setHasStarted(false);
+    }
+  }, [selectedGroupId]);
+
+  // ── 수동 분석 시작 함수 ──────────────────────────────
+  const startAnalysis = useCallback(async () => {
     if (!apiKey) return;
-    // 이미 이 그룹을 로딩한 적 있으면 스킵
     if (loadedGroupsRef.current.has(selectedGroupId)) return;
 
     const channelsNeedingData = filteredChannels.filter(
@@ -123,63 +131,56 @@ const UploadTimeAnalysis: React.FC<UploadTimeAnalysisProps> = ({
 
     if (channelsNeedingData.length === 0) {
       loadedGroupsRef.current.add(selectedGroupId);
+      setHasStarted(true);
       return;
     }
 
-    let cancelled = false;
+    cancelRef.current = false;
+    setHasStarted(true);
+    setIsLoading(true);
+    const total = channelsNeedingData.length;
+    setLoadProgress({ current: 0, total });
+    const newEntries = new Map<string, { id: string; date: string; views: string }[]>();
+    let completed = 0;
 
-    const loadMissing = async () => {
-      setIsLoading(true);
-      const total = channelsNeedingData.length;
-      setLoadProgress({ current: 0, total });
-      const newEntries = new Map<string, { id: string; date: string; views: string }[]>();
-      let completed = 0;
+    const EXTRA_MULTIPLIER_COST = 2;
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < channelsNeedingData.length; i += BATCH_SIZE) {
+      if (cancelRef.current) break;
+      const batch = channelsNeedingData.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (ch) => {
+          const vids = await fetchChannelPopularVideos(apiKey, ch.id);
+          await trackUsage(apiKey, 'list', EXTRA_MULTIPLIER_COST, '업로드 시간 분석 추가 포인트');
+          return { chId: ch.id, vids };
+        })
+      );
 
-      // fetchChannelPopularVideos는 내부에서 채널당 list 3회(3포인트) 차감
-      // 업로드 시간 분석은 3배 과금이므로, 추가 6포인트(2배분)를 더 차감 → 총 9포인트 = 실제3 × 3배
-      const EXTRA_MULTIPLIER_COST = 6; // 채널당 추가 차감 포인트
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < channelsNeedingData.length; i += BATCH_SIZE) {
-        if (cancelled) break;
-        const batch = channelsNeedingData.slice(i, i + BATCH_SIZE);
-        const results = await Promise.allSettled(
-          batch.map(async (ch) => {
-            const vids = await fetchChannelPopularVideos(apiKey, ch.id);
-            // 업로드 시간 분석 추가 포인트 차감 (3배 과금)
-            await trackUsage(apiKey, 'list', EXTRA_MULTIPLIER_COST, '업로드 시간 분석 추가 포인트');
-            return { chId: ch.id, vids };
-          })
-        );
-
-        for (const r of results) {
-          completed++;
-          if (r.status === 'fulfilled' && r.value.vids && r.value.vids.length > 0) {
-            newEntries.set(r.value.chId, r.value.vids.map((v: any) => ({
-              id: v.id,
-              date: v.publishedAt || v.date || '',
-              views: v.views || '0',
-            })));
-          }
-        }
-
-        if (!cancelled) {
-          setLoadProgress({ current: completed, total });
+      for (const r of results) {
+        completed++;
+        if (r.status === 'fulfilled' && r.value.vids && r.value.vids.length > 0) {
+          newEntries.set(r.value.chId, r.value.vids.map((v: any) => ({
+            id: v.id,
+            date: v.publishedAt || v.date || '',
+            views: v.views || '0',
+          })));
         }
       }
 
-      if (!cancelled) {
-        setExtraVideosMap((prev) => {
-          const merged = new Map(prev);
-          newEntries.forEach((v, k) => merged.set(k, v));
-          return merged;
-        });
-        loadedGroupsRef.current.add(selectedGroupId);
-        setIsLoading(false);
+      if (!cancelRef.current) {
+        setLoadProgress({ current: completed, total });
       }
-    };
+    }
 
-    loadMissing();
-    return () => { cancelled = true; };
+    if (!cancelRef.current) {
+      setExtraVideosMap((prev) => {
+        const merged = new Map(prev);
+        newEntries.forEach((v, k) => merged.set(k, v));
+        return merged;
+      });
+      loadedGroupsRef.current.add(selectedGroupId);
+      setIsLoading(false);
+    }
   }, [apiKey, selectedGroupId, filteredChannels, extraVideosMap]);
 
   // 필터된 채널 ID 세트 (videos prop 필터링용)
@@ -447,6 +448,47 @@ const UploadTimeAnalysis: React.FC<UploadTimeAnalysisProps> = ({
       </button>
     </div>
   );
+
+  // ── 분석 시작 전 대기 화면 ──────────────────────────────
+  const channelsNeedingData = filteredChannels.filter(
+    (ch) => (!ch.topVideos || ch.topVideos.length === 0) && !extraVideosMap.has(ch.id)
+  );
+  const needsManualStart = !hasStarted && !loadedGroupsRef.current.has(selectedGroupId) && channelsNeedingData.length > 0;
+
+  if (needsManualStart) {
+    return (
+      <div className="w-full p-6 md:p-10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
+              <span className="material-symbols-outlined text-white text-xl">schedule</span>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">업로드 시간 분석</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">최적 업로드 타이밍 분석</p>
+            </div>
+          </div>
+          {groupSelector}
+        </div>
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center mb-6">
+            <span className="material-symbols-outlined text-indigo-500 text-3xl">query_stats</span>
+          </div>
+          <p className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">채널 영상 데이터 수집이 필요합니다</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+            {channelsNeedingData.length}개 채널의 영상 데이터를 가져옵니다
+          </p>
+          <button
+            onClick={startAnalysis}
+            className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-xl">play_arrow</span>
+            분석 시작
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Loading state (데이터가 아직 하나도 없고 로딩 중일 때만) ──────────
   if (analyzable.length === 0 && isLoading) {
@@ -816,6 +858,7 @@ const UploadTimeAnalysis: React.FC<UploadTimeAnalysisProps> = ({
                     color: '#f1f5f9',
                     fontSize: 12,
                   }}
+                  labelStyle={{ color: '#f1f5f9', fontWeight: 'bold' }}
                 />
                 <Bar dataKey="avgViews" radius={[4, 4, 0, 0]} maxBarSize={28}>
                   {barData.map((entry, idx) => {

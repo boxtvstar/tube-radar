@@ -39,6 +39,8 @@ export interface ChannelGroup {
   id: string;
   name: string;
   sortOrder?: number;
+  parentId?: string;       // 소그룹일 때 대그룹 ID
+  isParentGroup?: boolean; // true = 대그룹(폴더)
 }
 
 export interface VideoSnippet {

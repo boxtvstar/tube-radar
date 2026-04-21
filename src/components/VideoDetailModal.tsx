@@ -10,7 +10,7 @@ interface VideoDetailModalProps {
   channelDescription?: string;
   recentChannelVideos?: Array<{ id: string; title: string; thumbnail: string; views: string; duration: string; publishedAt?: string; date?: string; }>;
   isChannelVideosLoading?: boolean;
-  channelGroups?: Array<{ id: string; name: string; }>;
+  channelGroups?: Array<{ id: string; name: string; parentId?: string; isParentGroup?: boolean; }>;
   onAddChannel?: (channelId: string, groupId: string, newGroupName?: string) => Promise<void>;
   onExtractTranscript?: (videoUrl: string) => void;
   onAnalyzeChannel?: (channelId: string) => void;
@@ -355,11 +355,13 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     </div>
 
                     <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                      {channelGroups.filter(g => g.id !== 'all').length > 0 ? (
-                        channelGroups.filter(g => g.id !== 'all').map(group => (
+                      {channelGroups.filter(g => g.id !== 'all' && !g.isParentGroup).length > 0 ? (
+                        channelGroups.filter(g => g.id !== 'all' && !g.isParentGroup).map(group => {
+                          const parent = group.parentId ? channelGroups.find(pg => pg.id === group.parentId) : null;
+                          return (
                           <button
                             key={group.id}
-                            className="w-full text-left px-4 py-3 text-xs font-bold text-white hover:bg-indigo-600 transition-colors flex items-center gap-3 border-b border-white/5 last:border-b-0"
+                            className={`w-full text-left px-4 py-3 text-xs font-bold text-white hover:bg-indigo-600 transition-colors flex items-center gap-3 border-b border-white/5 last:border-b-0 ${parent ? 'pl-8' : ''}`}
                             onClick={async () => {
                               if (onAddChannel && video.channelId) {
                                 setIsAdding(true);
@@ -375,10 +377,11 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                               }
                             }}
                           >
-                            <span className="material-symbols-outlined text-base text-indigo-400">folder</span>
-                            <span className="flex-1">{group.name}</span>
+                            <span className="material-symbols-outlined text-base text-indigo-400">{parent ? 'subdirectory_arrow_right' : 'folder'}</span>
+                            <span className="flex-1">{parent && <span className="text-indigo-300/50 text-[10px] mr-1">{parent.name} /</span>}{group.name}</span>
                           </button>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="p-4 text-[10px] text-slate-500 text-center font-bold">
                           저장된 그룹이 없습니다

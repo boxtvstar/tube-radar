@@ -1724,7 +1724,18 @@ export default function App() {
   const [editingGroupName, setEditingGroupName] = useState('');
   const [dragGroupId, setDragGroupId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
-  
+
+  // 대그룹 계층 구조 상태
+  const [expandedParentGroups, setExpandedParentGroups] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('expandedParentGroups');
+      return saved ? new Set(JSON.parse(saved)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  const [isAddingParentGroup, setIsAddingParentGroup] = useState(false);
+  const [newParentGroupName, setNewParentGroupName] = useState('');
+  const [movingSubgroupId, setMovingSubgroupId] = useState<string | null>(null);
+
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [movingGroupId, setMovingGroupId] = useState<string | null>(null);
   const [individualMovingChannelId, setIndividualMovingChannelId] = useState<string | null>(null);
@@ -1793,8 +1804,8 @@ export default function App() {
       if (isSelected) {
         return prev.filter(c => c.id !== channel.id);
       } else {
-        if (prev.length >= 3) {
-          alert("최대 3개 채널까지 비교할 수 있습니다.");
+        if (prev.length >= 5) {
+          alert("최대 5개 채널까지 비교할 수 있습니다.");
           return prev;
         }
         return [...prev, channel];
@@ -2027,35 +2038,59 @@ export default function App() {
       const gid = c.groupId || 'unassigned';
       counts[gid] = (counts[gid] || 0) + 1;
     });
+    // 대그룹 카운트 = 하위 소그룹 채널 수 합산
+    groups.filter(g => g.isParentGroup).forEach(pg => {
+      const childGroups = groups.filter(g => g.parentId === pg.id);
+      counts[pg.id] = childGroups.reduce((sum, cg) => sum + (counts[cg.id] || 0), 0);
+    });
     return counts;
-  }, [savedChannels, monitorPlatform]);
+  }, [savedChannels, monitorPlatform, groups]);
 
-  const sortedGroups = useMemo(() => {
-    const special: ChannelGroup[] = [];
-    const others: ChannelGroup[] = [];
-    
-    groups.forEach(g => {
-      if (g.id === 'all' || g.id === 'unassigned') special.push(g);
-      else others.push(g);
-    });
-    
-    // Sort special: All first, then Unassigned
-    special.sort((a, b) => {
-      if (a.id === 'all') return -1;
-      if (b.id === 'all') return 1;
-      return 0; // unassigned vs unassigned (shouldn't happen)
-    });
-    
-    // Sort others: by sortOrder (fallback to alphabetical)
-    others.sort((a, b) => {
+  // 계층 구조: [system] → [parentGroup + children] → [standalone]
+  const groupHierarchy = useMemo(() => {
+    const sortByOrder = (a: ChannelGroup, b: ChannelGroup) => {
       const aOrder = a.sortOrder ?? Infinity;
       const bOrder = b.sortOrder ?? Infinity;
       if (aOrder !== bOrder) return aOrder - bOrder;
       return a.name.localeCompare(b.name);
-    });
-    
-    return [...special, ...others];
+    };
+
+    const system = groups.filter(g => g.id === 'all' || g.id === 'unassigned')
+      .sort((a, b) => a.id === 'all' ? -1 : b.id === 'all' ? 1 : 0);
+
+    const parentGroupIds = new Set(groups.filter(g => g.isParentGroup).map(g => g.id));
+    const childGroupParentIds = new Set(groups.filter(g => g.parentId).map(g => g.parentId!));
+
+    const parentGroups = groups
+      .filter(g => g.isParentGroup && g.id !== 'all' && g.id !== 'unassigned')
+      .sort(sortByOrder);
+
+    const standalone = groups
+      .filter(g => !g.isParentGroup && !g.parentId && g.id !== 'all' && g.id !== 'unassigned')
+      .sort(sortByOrder);
+
+    // orphaned parentId 정리: parentId가 있지만 해당 대그룹이 없는 경우 standalone으로 취급
+    const orphaned = groups
+      .filter(g => g.parentId && !parentGroupIds.has(g.parentId))
+      .sort(sortByOrder);
+
+    const getChildren = (parentId: string) =>
+      groups.filter(g => g.parentId === parentId).sort(sortByOrder);
+
+    return { system, parentGroups, standalone: [...standalone, ...orphaned], getChildren };
   }, [groups]);
+
+  // sortedGroups 호환성 유지 (다른 곳에서 참조)
+  const sortedGroups = useMemo(() => {
+    const { system, parentGroups, standalone, getChildren } = groupHierarchy;
+    const result: ChannelGroup[] = [...system];
+    parentGroups.forEach(pg => {
+      result.push(pg);
+      result.push(...getChildren(pg.id));
+    });
+    result.push(...standalone);
+    return result;
+  }, [groupHierarchy]);
 
   const currentGroupChannels = useMemo(() => {
     // 플랫폼 필터 적용
@@ -2063,7 +2098,14 @@ export default function App() {
 
     // 그룹 필터
     if (activeGroupId !== 'all') {
-      channels = channels.filter(c => (c.groupId || 'unassigned') === activeGroupId);
+      // 대그룹 선택 시: 모든 하위 소그룹의 채널 표시
+      const activeGroup = groups.find(g => g.id === activeGroupId);
+      if (activeGroup?.isParentGroup) {
+        const childGroupIds = groups.filter(g => g.parentId === activeGroupId).map(g => g.id);
+        channels = channels.filter(c => childGroupIds.includes(c.groupId || 'unassigned'));
+      } else {
+        channels = channels.filter(c => (c.groupId || 'unassigned') === activeGroupId);
+      }
     }
 
     if (channelFilterQuery.trim()) {
@@ -2075,7 +2117,21 @@ export default function App() {
     }
     // Default 'latest' is roughly array order (newest first)
     return channels;
-  }, [savedChannels, activeGroupId, channelFilterQuery, channelSortMode, monitorPlatform]);
+  }, [savedChannels, activeGroupId, channelFilterQuery, channelSortMode, monitorPlatform, groups]);
+
+  // expandedParentGroups localStorage 저장
+  useEffect(() => {
+    localStorage.setItem('expandedParentGroups', JSON.stringify([...expandedParentGroups]));
+  }, [expandedParentGroups]);
+
+  const toggleParentGroupExpand = (parentId: string) => {
+    setExpandedParentGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -3834,14 +3890,34 @@ export default function App() {
   };
 
 
-  const handleSaveNewGroup = () => {
+  const handleSaveNewGroup = (parentId?: string) => {
     if (newGroupName.trim()) {
-      const newGroup = { id: Date.now().toString(), name: newGroupName.trim() };
+      const newGroup: ChannelGroup = {
+        id: Date.now().toString(),
+        name: newGroupName.trim(),
+        ...(parentId ? { parentId } : {}),
+      };
       setGroups(prev => [...prev, newGroup]);
       if (user) saveGroupToDb(user.uid, newGroup);
       setNewGroupName('');
       setIsAddingGroup(false);
       setActiveGroupId(newGroup.id);
+    }
+  };
+
+  const handleSaveNewParentGroup = () => {
+    if (newParentGroupName.trim()) {
+      const newGroup: ChannelGroup = {
+        id: Date.now().toString(),
+        name: newParentGroupName.trim(),
+        isParentGroup: true,
+      };
+      setGroups(prev => [...prev, newGroup]);
+      if (user) saveGroupToDb(user.uid, newGroup);
+      setNewParentGroupName('');
+      setIsAddingParentGroup(false);
+      setActiveGroupId(newGroup.id);
+      setExpandedParentGroups(prev => new Set(prev).add(newGroup.id));
     }
   };
 
@@ -3854,7 +3930,13 @@ export default function App() {
   const saveRenameGroup = () => {
     if (editingGroupId && editingGroupName.trim()) {
       const existing = groups.find(g => g.id === editingGroupId);
-      const updatedGroup: ChannelGroup = { id: editingGroupId, name: editingGroupName.trim(), ...(existing?.sortOrder != null ? { sortOrder: existing.sortOrder } : {}) };
+      const updatedGroup: ChannelGroup = {
+        id: editingGroupId,
+        name: editingGroupName.trim(),
+        ...(existing?.sortOrder != null ? { sortOrder: existing.sortOrder } : {}),
+        ...(existing?.parentId ? { parentId: existing.parentId } : {}),
+        ...(existing?.isParentGroup ? { isParentGroup: existing.isParentGroup } : {}),
+      };
       setGroups(prev => prev.map(g => g.id === editingGroupId ? updatedGroup : g));
       if (user) saveGroupToDb(user.uid, updatedGroup);
       setEditingGroupId(null);
@@ -3864,22 +3946,42 @@ export default function App() {
 
   const handleGroupReorder = (fromId: string, toId: string) => {
     if (fromId === toId) return;
-    const userGroups = sortedGroups.filter(g => g.id !== 'all' && g.id !== 'unassigned');
-    const fromIndex = userGroups.findIndex(g => g.id === fromId);
-    const toIndex = userGroups.findIndex(g => g.id === toId);
+    const fromGroup = groups.find(g => g.id === fromId);
+    const toGroup = groups.find(g => g.id === toId);
+    if (!fromGroup || !toGroup) return;
+
+    // 같은 계층(siblings) 내에서만 정렬 허용
+    const fromParent = fromGroup.parentId || (fromGroup.isParentGroup ? '__parent__' : '__standalone__');
+    const toParent = toGroup.parentId || (toGroup.isParentGroup ? '__parent__' : '__standalone__');
+    if (fromParent !== toParent) return;
+
+    const siblings = groups.filter(g => {
+      if (fromGroup.parentId) return g.parentId === fromGroup.parentId;
+      if (fromGroup.isParentGroup) return g.isParentGroup && g.id !== 'all' && g.id !== 'unassigned';
+      return !g.isParentGroup && !g.parentId && g.id !== 'all' && g.id !== 'unassigned';
+    }).sort((a, b) => {
+      const aOrder = a.sortOrder ?? Infinity;
+      const bOrder = b.sortOrder ?? Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.name.localeCompare(b.name);
+    });
+
+    const fromIndex = siblings.findIndex(g => g.id === fromId);
+    const toIndex = siblings.findIndex(g => g.id === toId);
     if (fromIndex === -1 || toIndex === -1) return;
 
-    const reordered = [...userGroups];
+    const reordered = [...siblings];
     const [moved] = reordered.splice(fromIndex, 1);
     reordered.splice(toIndex, 0, moved);
 
-    const updated = reordered.map((g, i) => ({ ...g, sortOrder: i + 1 }));
-    setGroups(prev => {
-      const special = prev.filter(g => g.id === 'all' || g.id === 'unassigned');
-      return [...special, ...updated];
-    });
+    const updatedSiblings = reordered.map((g, i) => ({ ...g, sortOrder: i + 1 }));
+    const updatedIds = new Set(updatedSiblings.map(g => g.id));
+    setGroups(prev => [
+      ...prev.filter(g => !updatedIds.has(g.id)),
+      ...updatedSiblings,
+    ]);
     if (user) {
-      updated.forEach(g => saveGroupToDb(user.uid, g));
+      updatedSiblings.forEach(g => saveGroupToDb(user.uid, g));
     }
   };
 
@@ -3934,30 +4036,71 @@ export default function App() {
     e.preventDefault(); e.stopPropagation();
     if (groupId === 'all' || groupId === 'unassigned') return;
 
+    const targetGroup = groups.find(g => g.id === groupId);
+    const isParent = targetGroup?.isParentGroup;
+    const message = isParent
+      ? "이 대그룹을 삭제하시겠습니까?\n하위 소그룹들은 독립 그룹으로 전환됩니다."
+      : "이 그룹을 정말 삭제하시겠습니까?\n포함된 채널들은 '미지정' 그룹으로 이동됩니다.";
+
     setConfirmModal({
       isOpen: true,
-      title: "그룹 삭제",
-      message: "이 그룹을 정말 삭제하시겠습니까?\n포함된 채널들은 '미지정' 그룹으로 이동됩니다.",
+      title: isParent ? "대그룹 삭제" : "그룹 삭제",
+      message,
       actionLabel: "삭제",
       isDestructive: true,
       onConfirm: () => {
-        setSavedChannels(prev => prev.map(c => {
-          if (c.groupId === groupId) {
-            const updated = { ...c, groupId: 'unassigned' };
-            if (user) saveChannelToDb(user.uid, updated);
-            return updated;
+        if (isParent) {
+          // 대그룹 삭제: 하위 소그룹의 parentId 제거 → 독립 그룹으로 전환
+          const updatedChildren = groups.filter(g => g.parentId === groupId).map(g => {
+            const { parentId, ...rest } = g;
+            return rest;
+          });
+          setGroups(prev => {
+            const without = prev.filter(g => g.id !== groupId && g.parentId !== groupId);
+            return [...without, ...updatedChildren];
+          });
+          if (user) {
+            deleteGroupFromDb(user.uid, groupId);
+            updatedChildren.forEach(g => saveGroupToDb(user.uid, g));
           }
-          return c;
-        }));
-        setGroups(prev => prev.filter(g => g.id !== groupId));
-        if (user) deleteGroupFromDb(user.uid, groupId);
+        } else {
+          // 소그룹 삭제: 채널을 미지정으로 이동
+          setSavedChannels(prev => prev.map(c => {
+            if (c.groupId === groupId) {
+              const updated = { ...c, groupId: 'unassigned' };
+              if (user) saveChannelToDb(user.uid, updated);
+              return updated;
+            }
+            return c;
+          }));
+          setGroups(prev => prev.filter(g => g.id !== groupId));
+          if (user) deleteGroupFromDb(user.uid, groupId);
+        }
         if (activeGroupId === groupId) setActiveGroupId('all');
         setEditingGroupId(null);
         setHasPendingSync(true);
         setIsSyncNoticeDismissed(false);
-        setConfirmModal(prev => ({ ...prev, isOpen: false })); // Close modal
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });
+  };
+
+  // 소그룹을 다른 대그룹으로 이동 (또는 독립으로)
+  const handleMoveSubgroup = (subgroupId: string, targetParentId: string | null) => {
+    setGroups(prev => prev.map(g => {
+      if (g.id === subgroupId) {
+        const updated: ChannelGroup = { ...g };
+        if (targetParentId) {
+          updated.parentId = targetParentId;
+        } else {
+          delete updated.parentId;
+        }
+        if (user) saveGroupToDb(user.uid, updated);
+        return updated;
+      }
+      return g;
+    }));
+    setMovingSubgroupId(null);
   };
 
   // ---------------------------------------------------------------------------
@@ -5434,97 +5577,287 @@ export default function App() {
                   .no-scrollbar::-webkit-scrollbar { display: none; }
                   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
                 `}</style>
-                <div className="flex flex-nowrap md:flex-wrap items-center gap-3 pb-4 border-b border-slate-100 dark:border-white/5 overflow-x-auto md:overflow-visible no-scrollbar pr-12 md:pr-0">
-                {sortedGroups.map(group => {
-                  const isDraggable = group.id !== 'all' && group.id !== 'unassigned';
+                <div className="flex flex-col gap-2 pb-4 border-b border-slate-100 dark:border-white/5">
+                {/* ── 시스템 그룹 (전체, 미지정) ── */}
+                <div className="flex flex-nowrap items-center gap-3 overflow-x-auto md:overflow-visible no-scrollbar">
+                  {groupHierarchy.system.map(group => (
+                    <button
+                      key={group.id}
+                      onClick={() => setActiveGroupId(group.id)}
+                      className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-2 shrink-0 ${
+                        activeGroupId === group.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      {group.name}
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${activeGroupId === group.id ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-800'}`}>
+                        {groupCounts[group.id] || 0}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── 대그룹 + 소그룹 계층 ── */}
+                {groupHierarchy.parentGroups.map(parentGroup => {
+                  const isExpanded = expandedParentGroups.has(parentGroup.id);
+                  const children = groupHierarchy.getChildren(parentGroup.id);
+                  const isParentActive = activeGroupId === parentGroup.id;
+                  const isChildActive = children.some(c => c.id === activeGroupId);
+
                   return (
-                  <div
-                    key={group.id}
-                    className={`relative group/tab shrink-0 ${dragGroupId === group.id ? 'opacity-40' : ''} ${dragOverGroupId === group.id ? 'border-l-2 border-primary' : ''}`}
-                    {...(isDraggable ? {
-                      draggable: true,
-                      onDragStart: (e: React.DragEvent) => {
-                        setDragGroupId(group.id);
-                        e.dataTransfer.effectAllowed = 'move';
-                      },
-                      onDragOver: (e: React.DragEvent) => {
-                        if (!dragGroupId) return;
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragOverGroupId(group.id);
-                      },
-                      onDragLeave: () => { if (dragOverGroupId === group.id) setDragOverGroupId(null); },
-                      onDrop: (e: React.DragEvent) => {
-                        e.preventDefault();
-                        if (dragGroupId && dragGroupId !== group.id) {
-                          handleGroupReorder(dragGroupId, group.id);
-                        }
-                        setDragGroupId(null);
-                        setDragOverGroupId(null);
-                      },
-                      onDragEnd: () => { setDragGroupId(null); setDragOverGroupId(null); },
-                    } : {})}
-                  >
-                    {editingGroupId === group.id ? (
-                      <div className="flex items-center gap-1 bg-primary/20 p-1.5 rounded-xl border border-primary">
-                        <input autoFocus type="text" value={editingGroupName} onChange={(e) => setEditingGroupName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveRenameGroup()} className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-28 px-2 focus:ring-0" />
-                        <button onClick={saveRenameGroup} className="text-emerald-500"><span className="material-symbols-outlined text-sm">check</span></button>
-                      </div>
-                    ) : (
-                      <div className="relative flex items-center">
-                        <button
-                          onClick={() => setActiveGroupId(group.id)}
-                          className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-2 ${isDraggable ? 'cursor-grab active:cursor-grabbing' : ''} ${
-                            activeGroupId === group.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
-                          }`}
+                    <div key={parentGroup.id} className="flex flex-col gap-1">
+                      <div className="flex flex-nowrap items-center gap-3 overflow-x-auto md:overflow-visible no-scrollbar">
+                        {/* 대그룹 탭 */}
+                        <div
+                          className={`relative group/tab shrink-0 ${dragGroupId === parentGroup.id ? 'opacity-40' : ''} ${dragOverGroupId === parentGroup.id ? 'border-l-2 border-primary' : ''}`}
+                          draggable
+                          onDragStart={(e: React.DragEvent) => { setDragGroupId(parentGroup.id); e.dataTransfer.effectAllowed = 'move'; }}
+                          onDragOver={(e: React.DragEvent) => { if (!dragGroupId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverGroupId(parentGroup.id); }}
+                          onDragLeave={() => { if (dragOverGroupId === parentGroup.id) setDragOverGroupId(null); }}
+                          onDrop={(e: React.DragEvent) => { e.preventDefault(); if (dragGroupId && dragGroupId !== parentGroup.id) handleGroupReorder(dragGroupId, parentGroup.id); setDragGroupId(null); setDragOverGroupId(null); }}
+                          onDragEnd={() => { setDragGroupId(null); setDragOverGroupId(null); }}
                         >
-                          {group.name}
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${activeGroupId === group.id ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-800'}`}>
-                            {groupCounts[group.id] || 0}
-                          </span>
-                        </button>
-                        {isDraggable && (
-                          <div className="absolute -top-2 -right-2 flex opacity-0 group-hover/tab:opacity-100 transition-all z-20">
-                            <button onClick={(e) => startRenameGroup(e, group.id, group.name)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-primary hover:text-white"><span className="material-symbols-outlined text-[12px]">edit</span></button>
-                            <button onClick={(e) => handleDeleteGroup(e, group.id)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-rose-500 hover:text-white ml-1"><span className="material-symbols-outlined text-[12px]">delete</span></button>
+                          {editingGroupId === parentGroup.id ? (
+                            <div className="flex items-center gap-1 bg-primary/20 p-1.5 rounded-xl border border-primary">
+                              <input autoFocus type="text" value={editingGroupName} onChange={(e) => setEditingGroupName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveRenameGroup()} className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-28 px-2 focus:ring-0" />
+                              <button onClick={saveRenameGroup} className="text-emerald-500"><span className="material-symbols-outlined text-sm">check</span></button>
+                            </div>
+                          ) : (
+                            <div className="relative flex items-center">
+                              <button
+                                onClick={() => {
+                                  setActiveGroupId(parentGroup.id);
+                                  toggleParentGroupExpand(parentGroup.id);
+                                }}
+                                className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-2 cursor-grab active:cursor-grabbing ${
+                                  isParentActive ? 'bg-primary text-white shadow-lg shadow-primary/20' : isChildActive ? 'bg-primary/10 text-primary border border-primary/30' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                                }`}
+                              >
+                                <span className="material-symbols-outlined text-[14px]">{isExpanded ? 'expand_more' : 'chevron_right'}</span>
+                                {parentGroup.name}
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${isParentActive ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-800'}`}>
+                                  {groupCounts[parentGroup.id] || 0}
+                                </span>
+                              </button>
+                              <div className="absolute -top-2 -right-2 flex opacity-0 group-hover/tab:opacity-100 transition-all z-20">
+                                <button onClick={(e) => startRenameGroup(e, parentGroup.id, parentGroup.name)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-primary hover:text-white"><span className="material-symbols-outlined text-[12px]">edit</span></button>
+                                <button onClick={(e) => handleDeleteGroup(e, parentGroup.id)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-rose-500 hover:text-white ml-1"><span className="material-symbols-outlined text-[12px]">delete</span></button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 소그룹 행 (펼쳐진 상태) */}
+                      {isExpanded && children.length > 0 && (
+                        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto md:overflow-visible no-scrollbar border-l-2 border-primary/20 ml-4 pl-3">
+                          {children.map(child => (
+                            <div
+                              key={child.id}
+                              className={`relative group/tab shrink-0 ${dragGroupId === child.id ? 'opacity-40' : ''} ${dragOverGroupId === child.id ? 'border-l-2 border-primary' : ''}`}
+                              draggable
+                              onDragStart={(e: React.DragEvent) => { setDragGroupId(child.id); e.dataTransfer.effectAllowed = 'move'; }}
+                              onDragOver={(e: React.DragEvent) => { if (!dragGroupId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverGroupId(child.id); }}
+                              onDragLeave={() => { if (dragOverGroupId === child.id) setDragOverGroupId(null); }}
+                              onDrop={(e: React.DragEvent) => { e.preventDefault(); if (dragGroupId && dragGroupId !== child.id) handleGroupReorder(dragGroupId, child.id); setDragGroupId(null); setDragOverGroupId(null); }}
+                              onDragEnd={() => { setDragGroupId(null); setDragOverGroupId(null); }}
+                            >
+                              {editingGroupId === child.id ? (
+                                <div className="flex items-center gap-1 bg-primary/20 p-1.5 rounded-xl border border-primary">
+                                  <input autoFocus type="text" value={editingGroupName} onChange={(e) => setEditingGroupName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveRenameGroup()} className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-28 px-2 focus:ring-0" />
+                                  <button onClick={saveRenameGroup} className="text-emerald-500"><span className="material-symbols-outlined text-sm">check</span></button>
+                                </div>
+                              ) : (
+                                <div className="relative flex items-center">
+                                  <button
+                                    onClick={() => setActiveGroupId(child.id)}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 cursor-grab active:cursor-grabbing ${
+                                      activeGroupId === child.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-50 dark:bg-white/[0.03] text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                                    }`}
+                                  >
+                                    {child.name}
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${activeGroupId === child.id ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-800'}`}>
+                                      {groupCounts[child.id] || 0}
+                                    </span>
+                                  </button>
+                                  <div className="absolute -top-2 -right-2 flex opacity-0 group-hover/tab:opacity-100 transition-all z-20">
+                                    <button onClick={(e) => startRenameGroup(e, child.id, child.name)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-primary hover:text-white"><span className="material-symbols-outlined text-[12px]">edit</span></button>
+                                    {/* 소그룹 이동 버튼 */}
+                                    <div className="relative">
+                                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMovingSubgroupId(prev => prev === child.id ? null : child.id); }} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-indigo-500 hover:text-white ml-1"><span className="material-symbols-outlined text-[12px]">drive_file_move</span></button>
+                                      {movingSubgroupId === child.id && (
+                                        <div className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-card border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 min-w-[140px] animate-in zoom-in-95 fade-in">
+                                          <p className="text-[9px] font-black text-slate-400 uppercase p-1 border-b border-slate-100 dark:border-white/5 mb-1">대그룹 이동</p>
+                                          {groupHierarchy.parentGroups.filter(pg => pg.id !== parentGroup.id).map(pg => (
+                                            <button key={pg.id} onClick={() => handleMoveSubgroup(child.id, pg.id)} className="w-full text-left px-2 py-1.5 text-[10px] font-bold hover:bg-primary/10 hover:text-primary rounded-lg transition-colors">
+                                              {pg.name}
+                                            </button>
+                                          ))}
+                                          <button onClick={() => handleMoveSubgroup(child.id, null)} className="w-full text-left px-2 py-1.5 text-[10px] font-bold hover:bg-amber-500/10 hover:text-amber-600 rounded-lg transition-colors border-t border-slate-100 dark:border-white/5 mt-1 pt-1.5">
+                                            독립 그룹으로
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <button onClick={(e) => handleDeleteGroup(e, child.id)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-rose-500 hover:text-white ml-1"><span className="material-symbols-outlined text-[12px]">delete</span></button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {/* 소그룹 내 추가 버튼 */}
+                          {isAddingGroup && isExpanded ? null : (
+                            <button
+                              onClick={() => { setIsAddingGroup(true); }}
+                              className="size-8 rounded-lg bg-slate-50 dark:bg-white/[0.03] text-slate-400 hover:text-primary flex items-center justify-center transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0"
+                              title={`${parentGroup.name}에 소그룹 추가`}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">add</span>
+                            </button>
+                          )}
+                          {isAddingGroup && (
+                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
+                              <input
+                                autoFocus
+                                type="text"
+                                value={newGroupName}
+                                onChange={(e) => setNewGroupName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveNewGroup(parentGroup.id);
+                                  if (e.key === 'Escape') { setIsAddingGroup(false); setNewGroupName(''); }
+                                }}
+                                placeholder="소그룹명..."
+                                className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-20 px-2 focus:ring-0"
+                              />
+                              <div className="flex items-center gap-0.5 px-1">
+                                <button onClick={() => handleSaveNewGroup(parentGroup.id)} className="text-emerald-500 hover:scale-110 transition-transform p-0.5"><span className="material-symbols-outlined text-sm font-black">check</span></button>
+                                <button onClick={() => { setIsAddingGroup(false); setNewGroupName(''); }} className="text-slate-400 hover:text-rose-500 hover:scale-110 transition-all p-0.5"><span className="material-symbols-outlined text-sm font-black">close</span></button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* ── 독립 그룹 (parentId 없는 일반 그룹) ── */}
+                {groupHierarchy.standalone.length > 0 && (
+                  <div className="flex flex-nowrap items-center gap-3 overflow-x-auto md:overflow-visible no-scrollbar">
+                    {groupHierarchy.standalone.map(group => (
+                      <div
+                        key={group.id}
+                        className={`relative group/tab shrink-0 ${dragGroupId === group.id ? 'opacity-40' : ''} ${dragOverGroupId === group.id ? 'border-l-2 border-primary' : ''}`}
+                        draggable
+                        onDragStart={(e: React.DragEvent) => { setDragGroupId(group.id); e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragOver={(e: React.DragEvent) => { if (!dragGroupId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverGroupId(group.id); }}
+                        onDragLeave={() => { if (dragOverGroupId === group.id) setDragOverGroupId(null); }}
+                        onDrop={(e: React.DragEvent) => { e.preventDefault(); if (dragGroupId && dragGroupId !== group.id) handleGroupReorder(dragGroupId, group.id); setDragGroupId(null); setDragOverGroupId(null); }}
+                        onDragEnd={() => { setDragGroupId(null); setDragOverGroupId(null); }}
+                      >
+                        {editingGroupId === group.id ? (
+                          <div className="flex items-center gap-1 bg-primary/20 p-1.5 rounded-xl border border-primary">
+                            <input autoFocus type="text" value={editingGroupName} onChange={(e) => setEditingGroupName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveRenameGroup()} className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-28 px-2 focus:ring-0" />
+                            <button onClick={saveRenameGroup} className="text-emerald-500"><span className="material-symbols-outlined text-sm">check</span></button>
+                          </div>
+                        ) : (
+                          <div className="relative flex items-center">
+                            <button
+                              onClick={() => setActiveGroupId(group.id)}
+                              className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-2 cursor-grab active:cursor-grabbing ${
+                                activeGroupId === group.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                              }`}
+                            >
+                              {group.name}
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${activeGroupId === group.id ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-800'}`}>
+                                {groupCounts[group.id] || 0}
+                              </span>
+                            </button>
+                            <div className="absolute -top-2 -right-2 flex opacity-0 group-hover/tab:opacity-100 transition-all z-20">
+                              <button onClick={(e) => startRenameGroup(e, group.id, group.name)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-primary hover:text-white"><span className="material-symbols-outlined text-[12px]">edit</span></button>
+                              {/* 독립 그룹을 대그룹으로 이동 */}
+                              <div className="relative">
+                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMovingSubgroupId(prev => prev === group.id ? null : group.id); }} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-indigo-500 hover:text-white ml-1"><span className="material-symbols-outlined text-[12px]">drive_file_move</span></button>
+                                {movingSubgroupId === group.id && (
+                                  <div className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-card border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 min-w-[140px] animate-in zoom-in-95 fade-in">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase p-1 border-b border-slate-100 dark:border-white/5 mb-1">대그룹으로 이동</p>
+                                    {groupHierarchy.parentGroups.map(pg => (
+                                      <button key={pg.id} onClick={() => handleMoveSubgroup(group.id, pg.id)} className="w-full text-left px-2 py-1.5 text-[10px] font-bold hover:bg-primary/10 hover:text-primary rounded-lg transition-colors">
+                                        {pg.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <button onClick={(e) => handleDeleteGroup(e, group.id)} className="size-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-black/5 dark:border-white/10 hover:bg-rose-500 hover:text-white ml-1"><span className="material-symbols-outlined text-[12px]">delete</span></button>
+                            </div>
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  );
-                })}
-                {!isAddingGroup ? (
-                   <div className="shrink-0">
-                    <button onClick={() => setIsAddingGroup(true)} className="size-10 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-primary flex items-center justify-center transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0"><span className="material-symbols-outlined">add</span></button>
-                   </div>
-                ) : (
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
-                    <input 
-                      autoFocus 
-                      type="text" 
-                      value={newGroupName} 
-                      onChange={(e) => setNewGroupName(e.target.value)} 
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveNewGroup();
-                        if (e.key === 'Escape') {
-                          setIsAddingGroup(false);
-                          setNewGroupName('');
-                        }
-                      }} 
-                      placeholder="그룹명..."
-                      className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-24 px-2 focus:ring-0" 
-                    />
-                    <div className="flex items-center gap-0.5 px-1">
-                      <button onClick={handleSaveNewGroup} className="text-emerald-500 hover:scale-110 transition-transform p-0.5" title="저장">
-                        <span className="material-symbols-outlined text-sm font-black">check</span>
-                      </button>
-                      <button onClick={() => { setIsAddingGroup(false); setNewGroupName(''); }} className="text-slate-400 hover:text-rose-500 hover:scale-110 transition-all p-0.5" title="취소">
-                        <span className="material-symbols-outlined text-sm font-black">close</span>
-                      </button>
-                    </div>
+                    ))}
                   </div>
                 )}
+
+                {/* ── 그룹 추가 버튼들 ── */}
+                <div className="flex flex-nowrap items-center gap-2 overflow-x-auto md:overflow-visible no-scrollbar">
+                  {/* 그룹 추가 (독립) */}
+                  {!isAddingGroup && !isAddingParentGroup && (
+                    <>
+                      <button onClick={() => setIsAddingGroup(true)} className="h-9 px-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-primary flex items-center gap-1.5 transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0 text-[10px] font-bold">
+                        <span className="material-symbols-outlined text-[16px]">add</span>
+                        그룹
+                      </button>
+                      <button onClick={() => setIsAddingParentGroup(true)} className="h-9 px-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-amber-600 flex items-center gap-1.5 transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-500 shrink-0 text-[10px] font-bold">
+                        <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
+                        대그룹
+                      </button>
+                    </>
+                  )}
+
+                  {/* 독립 그룹 추가 입력 */}
+                  {isAddingGroup && groupHierarchy.parentGroups.every(pg => !expandedParentGroups.has(pg.id)) && (
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newGroupName}
+                        onChange={(e) => setNewGroupName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveNewGroup();
+                          if (e.key === 'Escape') { setIsAddingGroup(false); setNewGroupName(''); }
+                        }}
+                        placeholder="그룹명..."
+                        className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-24 px-2 focus:ring-0"
+                      />
+                      <div className="flex items-center gap-0.5 px-1">
+                        <button onClick={() => handleSaveNewGroup()} className="text-emerald-500 hover:scale-110 transition-transform p-0.5"><span className="material-symbols-outlined text-sm font-black">check</span></button>
+                        <button onClick={() => { setIsAddingGroup(false); setNewGroupName(''); }} className="text-slate-400 hover:text-rose-500 hover:scale-110 transition-all p-0.5"><span className="material-symbols-outlined text-sm font-black">close</span></button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 대그룹 추가 입력 */}
+                  {isAddingParentGroup && (
+                    <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-500/10 p-1.5 rounded-xl border border-amber-300 dark:border-amber-500/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
+                      <span className="material-symbols-outlined text-[14px] text-amber-500 ml-1">folder</span>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newParentGroupName}
+                        onChange={(e) => setNewParentGroupName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveNewParentGroup();
+                          if (e.key === 'Escape') { setIsAddingParentGroup(false); setNewParentGroupName(''); }
+                        }}
+                        placeholder="대그룹명..."
+                        className="bg-transparent border-none text-xs font-bold text-slate-900 dark:text-white w-24 px-2 focus:ring-0"
+                      />
+                      <div className="flex items-center gap-0.5 px-1">
+                        <button onClick={handleSaveNewParentGroup} className="text-emerald-500 hover:scale-110 transition-transform p-0.5"><span className="material-symbols-outlined text-sm font-black">check</span></button>
+                        <button onClick={() => { setIsAddingParentGroup(false); setNewParentGroupName(''); }} className="text-slate-400 hover:text-rose-500 hover:scale-110 transition-all p-0.5"><span className="material-symbols-outlined text-sm font-black">close</span></button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 </div>
                 <div className="absolute top-0 right-0 bottom-4 w-16 bg-gradient-to-l from-white dark:from-[#0f1014] to-transparent pointer-events-none md:hidden flex items-center justify-end pr-2">
                    <span className="material-symbols-outlined text-slate-300 dark:text-slate-600 animate-pulse">chevron_right</span>
@@ -5616,15 +5949,19 @@ export default function App() {
                               이동할 그룹 선택
                             </p>
                             <div className="space-y-1">
-                              {groups.filter(g => g.id !== 'all').map(g => (
-                                <button 
-                                  key={g.id} 
-                                  onClick={() => executeBulkMove(g.id)}
-                                  className="w-full text-left px-3 py-2 text-[11px] font-bold hover:bg-primary hover:text-white rounded-xl transition-all"
-                                >
-                                  {g.name}
-                                </button>
-                              ))}
+                              {groups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
+                                const parent = g.parentId ? groups.find(pg => pg.id === g.parentId) : null;
+                                return (
+                                  <button
+                                    key={g.id}
+                                    onClick={() => executeBulkMove(g.id)}
+                                    className={`w-full text-left px-3 py-2 text-[11px] font-bold hover:bg-primary hover:text-white rounded-xl transition-all ${parent ? 'pl-6' : ''}`}
+                                  >
+                                    {parent && <span className="text-slate-400 text-[9px] mr-1">{parent.name} /</span>}
+                                    {g.name}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -5733,15 +6070,19 @@ export default function App() {
                           {individualMovingChannelId === ch.id && (
                             <div className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-card border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 min-w-[140px] animate-in zoom-in-95 fade-in">
                               <p className="text-[9px] font-black text-slate-400 uppercase p-1 border-b border-slate-100 dark:border-white/5 mb-1">이동할 그룹 선택</p>
-                              {groups.filter(g => g.id !== 'all').map(g => (
-                                <button 
-                                  key={g.id} 
-                                  onClick={() => executeIndividualMove(ch.id, g.id)}
-                                  className="w-full text-left px-2 py-1.5 text-[10px] font-bold hover:bg-primary/10 hover:text-primary rounded-lg transition-colors"
-                                >
-                                  {g.name}
-                                </button>
-                              ))}
+                              {groups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
+                                const parent = g.parentId ? groups.find(pg => pg.id === g.parentId) : null;
+                                return (
+                                  <button
+                                    key={g.id}
+                                    onClick={() => executeIndividualMove(ch.id, g.id)}
+                                    className={`w-full text-left px-2 py-1.5 text-[10px] font-bold hover:bg-primary/10 hover:text-primary rounded-lg transition-colors ${parent ? 'pl-4' : ''}`}
+                                  >
+                                    {parent && <span className="text-slate-400 text-[8px] mr-1">{parent.name} /</span>}
+                                    {g.name}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>

@@ -33,7 +33,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   const toggleSelection = (id: string) => {
     setTempSelectedIds(prev => {
       if (prev.includes(id)) return prev.filter(pid => pid !== id);
-      if (prev.length >= 3) return prev; // Max 3
+      if (prev.length >= 5) return prev; // Max 5
       return [...prev, id];
     });
   };
@@ -56,7 +56,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
     if (isNaN(num)) return 0;
 
     if (strVal.includes('K') || strVal.includes('천')) num *= 1000;
-    else if (strVal.includes('M') || strVal.includes('만')) num *= 10000;
+    else if (strVal.includes('만')) num *= 10000;
+    else if (strVal.includes('M')) num *= 1000000;
     else if (strVal.includes('B') || strVal.includes('억')) num *= 100000000;
     else if (strVal.includes('명')) { /* Just unit */ }
     
@@ -65,8 +66,7 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
 
   const getRecentAvgViews = (ch: SavedChannel) => {
     if (!ch.topVideos || ch.topVideos.length === 0) return 0;
-    // Use up to 5 recent videos
-    const recent = ch.topVideos.slice(0, 5);
+    const recent = ch.topVideos.slice(0, 10);
     let validCount = 0;
     const sum = recent.reduce((acc, vid) => {
        // Try multiple properties for views
@@ -96,6 +96,11 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   // Sync state with prop to prevent blank screen on transition
   // If lengths differ, it means prop updated but hydration/state hasn't caught up. Use prop.
   const displayChannels = enrichedChannels.length === channels.length ? enrichedChannels : channels;
+
+  const colCount = displayChannels.length;
+  const tableGridStyle = { gridTemplateColumns: `80px repeat(${colCount}, 1fr)` };
+  const tableGridStyleMd = { gridTemplateColumns: `140px repeat(${colCount}, 1fr)` };
+  const topColors = ['bg-indigo-500', 'bg-pink-500', 'bg-emerald-500', 'bg-amber-500', 'bg-violet-500'];
 
   // Hydrate data on mount or change
   React.useEffect(() => {
@@ -194,15 +199,10 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         subscribers: parseCount(subRaw),
         avgViews: getRecentAvgViews(ch),
         viralScore: getViralScore(ch),
-        color: ['#6366f1', '#ec4899', '#10b981'][idx % 3] // Indigo, Pink, Emerald
+        color: ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]
       };
     });
   }, [displayChannels]);
-
-  // Find winners for badges
-  const maxSubs = Math.max(...chartData.map(d => d.subscribers));
-  const maxViews = Math.max(...chartData.map(d => d.avgViews));
-  const maxViral = Math.max(...chartData.map(d => d.viralScore));
 
   // Custom Tooltips for Charts
   const CustomViewTooltip = ({ active, payload }: any) => {
@@ -261,8 +261,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                      채널 비교 분석 <span className="text-indigo-500">PICK</span>
                   </h2>
                   <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
-                     비교할 채널을 <span className="text-indigo-600 dark:text-indigo-400 font-bold">2~3개 선택</span>해주세요. 선택 후 분석을 시작하면 주요 지표를 비교할 수 있습니다.<br />
-                     현재 선택: <span className="text-rose-500 font-bold">{selectionCount}/3개</span>
+                     비교할 채널을 <span className="text-indigo-600 dark:text-indigo-400 font-bold">2~5개 선택</span>해주세요. 선택 후 분석을 시작하면 주요 지표를 비교할 수 있습니다.<br />
+                     현재 선택: <span className="text-rose-500 font-bold">{selectionCount}/5개</span>
                   </p>
                </div>
                
@@ -410,14 +410,12 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         <div className="bg-white dark:bg-slate-900 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
              
            {/* Table Header (Profiles + Basic Stats) */}
-           <div className="grid grid-cols-[80px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+           <div className="grid divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-x-auto" style={{ gridTemplateColumns: `minmax(80px, 140px) repeat(${colCount}, minmax(0, 1fr))` }}>
               <div className="p-2 md:p-3 flex items-center justify-center font-bold text-slate-400 text-[10px] md:text-xs uppercase tracking-tighter">지표</div>
               {displayChannels.map((ch, idx) => (
                   <div key={ch.id} className="p-2 md:p-4 flex flex-col items-center gap-1.5 md:gap-2 relative group">
-                      {idx === 0 && <div className="absolute top-0 w-full h-0.5 bg-indigo-500"></div>}
-                      {idx === 1 && <div className="absolute top-0 w-full h-0.5 bg-pink-500"></div>}
-                      {idx === 2 && <div className="absolute top-0 w-full h-0.5 bg-emerald-500"></div>}
-                      
+                      <div className={`absolute top-0 w-full h-0.5 ${topColors[idx % 5]}`}></div>
+
                       <img src={ch.thumbnail} alt="" className="size-8 md:size-12 rounded-full border-2 border-white dark:border-slate-700 shadow-sm group-hover:scale-105 transition-transform" />
                       <div className="text-center w-full">
                           <h3 className="font-bold text-[10px] md:text-sm text-slate-900 dark:text-white truncate px-0.5 md:px-1">{ch.title}</h3>
@@ -432,30 +430,27 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                       </div>
                   </div>
               ))}
-              {Array.from({ length: 3 - displayChannels.length }).map((_, i) => (
-                 <div key={i} className="hidden md:block bg-slate-50/30 dark:bg-slate-800/30"></div>
-              ))}
            </div>
 
            {/* Metrics Rows */}
            {[
-             { label: "구독자", key: "subscribers", format: true, icon: "group" }, // Renamed logic only, key matches
-             { label: "평균 조회수", key: "avgViews", format: true, icon: "analytics" },
-             { label: "바이럴 지수", key: "viralScore", format: false, suffix: "x", icon: "bolt" },
+             { label: "구독자", key: "subscribers", format: true, icon: "group" },
+             { label: "평균 조회수 (최근10개)", key: "avgViews", format: true, icon: "analytics" },
+             { label: "바이럴 지수", key: "viralScore", format: false, suffix: "%", icon: "bolt" },
            ].map((metric) => {
               const values = chartData.map(d => d[metric.key as keyof typeof d] as number);
               const maxVal = Math.max(...values);
               
               return (
-                <div key={metric.key} className="grid grid-cols-[80px_1fr_1fr_1fr] md:grid-cols-[140px_1fr_1fr_1fr] divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors last:border-0">
+                <div key={metric.key} className="grid divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors last:border-0 overflow-x-auto" style={{ gridTemplateColumns: `minmax(80px, 140px) repeat(${colCount}, minmax(0, 1fr))` }}>
                    <div className="p-2 md:p-4 flex items-center justify-center md:justify-start gap-1.5 md:gap-2 text-slate-500 font-bold text-[10px] md:text-xs">
                       <span className="material-symbols-outlined text-sm md:text-base opacity-50 hidden md:block">{metric.icon}</span>
                       <span className="text-center md:text-left leading-tight">{metric.label}</span>
                    </div>
                    {displayChannels.map((_, idx) => {
-                      const val = chartData[idx][metric.key as keyof typeof chartData[0]] as number;
+                      const val = chartData[idx]?.[metric.key as keyof typeof chartData[0]] as number;
                       const isWinner = val === maxVal && val > 0;
-                      
+
                       return (
                          <div key={idx} className={`p-2 md:p-4 flex items-center justify-center relative ${isWinner ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''}`}>
                             <span className={`text-xs md:text-base font-bold ${isWinner ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400'} tabular-nums`}>
@@ -470,7 +465,6 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                          </div>
                       );
                    })}
-                   {Array.from({ length: 3 - displayChannels.length }).map((_, i) => <div key={i} className="hidden md:block"></div>)}
                 </div>
               );
            })}
@@ -483,7 +477,10 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                <div className="p-1.5 md:p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg md:rounded-xl text-indigo-600">
                   <span className="material-symbols-outlined text-lg md:text-xl">bar_chart</span>
                </div>
-               <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">평균 조회수 비교</h3>
+               <div>
+                 <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">평균 조회수 비교</h3>
+                 <p className="text-[10px] md:text-[11px] text-slate-400 font-medium">최근 10개 영상 기준</p>
+               </div>
              </div>
              <div className="h-48 md:h-64">
                <ResponsiveContainer width="100%" height="100%">
@@ -528,14 +525,23 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
               <span className="material-symbols-outlined text-6xl md:text-9xl">emoji_events</span>
            </div>
 
-           <h3 className="text-base md:text-xl font-black mb-4 md:mb-8 relative z-10 flex items-center gap-2 md:gap-3">
-             <span className="bg-white/10 p-1.5 md:p-2 rounded-lg text-lg md:text-xl">🔥</span> 
+           <h3 className="text-base md:text-xl font-black mb-1 md:mb-2 relative z-10 flex items-center gap-2 md:gap-3">
+             <span className="bg-white/10 p-1.5 md:p-2 rounded-lg text-lg md:text-xl">🔥</span>
              <span>최고 조회수 영상</span>
            </h3>
+           <p className="text-[11px] text-slate-500 font-medium mb-4 md:mb-8 relative z-10 ml-11 md:ml-14">최근 30일 내 업로드된 영상 중 조회수 1위</p>
 
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 relative z-10">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 relative z-10" style={ colCount > 3 ? { gridTemplateColumns: `repeat(${Math.min(colCount, 5)}, minmax(0, 1fr))` } : undefined }>
              {displayChannels.map((ch, idx) => {
-               const topVideo = ch.topVideos?.[0];
+               const thirtyDaysAgo = new Date();
+               thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+               const recentVideos = (ch.topVideos || [])
+                 .filter(v => {
+                   const d = new Date(v.date || v.publishedAt || '');
+                   return !isNaN(d.getTime()) && d >= thirtyDaysAgo;
+                 })
+                 .sort((a, b) => parseCount(b.views) - parseCount(a.views));
+               const topVideo = recentVideos[0] || null;
                
                if (!topVideo) return (
                  <div key={ch.id} className="bg-white/5 rounded-3xl h-full min-h-[240px] flex flex-col items-center justify-center text-white/30 font-bold gap-2">
