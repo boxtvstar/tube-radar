@@ -1,5 +1,5 @@
 
-import { VideoData, SavedChannel } from "../types";
+import { VideoData, SavedChannel, DeepAnalysisVideo } from "../types";
 import { trackUsage, checkQuotaAvailable, getRemainingQuota, markQuotaExceeded } from "./usageService";
 
 const YOUTUBE_BASE_URL = "https://www.googleapis.com/youtube/v3";
@@ -1401,6 +1401,72 @@ export const fetchChannelPopularVideos = async (apiKey: string, channelId: strin
   }
 };
 
+
+/**
+ * 단일 채널 심층 분석용: 최대 50개 영상 + statistics + contentDetails
+ * API 비용: 3유닛 (channels 1 + playlistItems 1 + videos 1)
+ */
+export const fetchChannelVideosForDeepAnalysis = async (
+  apiKey: string,
+  channelId: string
+): Promise<DeepAnalysisVideo[]> => {
+  try {
+    // 1. Get Uploads Playlist ID (Cost: 1)
+    const chRes = await fetch(
+      `${YOUTUBE_BASE_URL}/channels?part=contentDetails&id=${channelId}&key=${apiKey}`
+    );
+    trackUsage(apiKey, 'list', 1);
+    const chData = await chRes.json();
+
+    if (!chData.items || chData.items.length === 0) return [];
+
+    const uploadsPlaylistId = chData.items[0].contentDetails.relatedPlaylists.uploads;
+
+    // 2. Get Latest 50 Videos from Uploads Playlist (Cost: 1)
+    const plRes = await fetch(
+      `${YOUTUBE_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${apiKey}`
+    );
+    trackUsage(apiKey, 'list', 1);
+    const plData = await plRes.json();
+
+    if (!plData.items || plData.items.length === 0) return [];
+
+    const videoIds = plData.items
+      .map((item: any) => item.snippet.resourceId.videoId)
+      .join(',');
+
+    // 3. Get Video Stats + ContentDetails (Cost: 1)
+    const vRes = await fetch(
+      `${YOUTUBE_BASE_URL}/videos?part=statistics,contentDetails,snippet&id=${videoIds}&key=${apiKey}`
+    );
+    trackUsage(apiKey, 'list', 1);
+    const vData = await vRes.json();
+
+    if (!vData.items) return [];
+
+    return vData.items.map((item: any) => {
+      const durationSeconds = parseISO8601DurationToSeconds(item.contentDetails.duration);
+      return {
+        id: item.id,
+        title: item.snippet.title,
+        thumbnail:
+          item.snippet.thumbnails.maxres?.url ||
+          item.snippet.thumbnails.high?.url ||
+          item.snippet.thumbnails.medium?.url ||
+          item.snippet.thumbnails.default?.url,
+        views: parseInt(item.statistics.viewCount || '0'),
+        likes: parseInt(item.statistics.likeCount || '0'),
+        comments: parseInt(item.statistics.commentCount || '0'),
+        date: item.snippet.publishedAt,
+        duration: parseISO8601Duration(item.contentDetails.duration),
+        durationSeconds,
+      } as DeepAnalysisVideo;
+    });
+  } catch (error) {
+    console.error('Fetch Channel Videos For Deep Analysis Error:', error);
+    return [];
+  }
+};
 
 export const fetchMyChannelId = async (accessToken: string): Promise<string | null> => {
   try {

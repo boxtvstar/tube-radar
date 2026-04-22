@@ -1718,7 +1718,7 @@ export default function App() {
   const [monitorPlatform, setMonitorPlatform] = useState<Platform>('youtube');
   const [groups, setGroups] = useState<ChannelGroup[]>(DEFAULT_GROUPS);
   const [activeGroupId, setActiveGroupId] = useState('all');
-  const [isAddingGroup, setIsAddingGroup] = useState(false);
+  const [isAddingGroup, setIsAddingGroup] = useState<string | false>(false); // false | 'standalone' | parentGroupId
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
@@ -5727,16 +5727,16 @@ export default function App() {
                             </div>
                           ))}
                           {/* 소그룹 내 추가 버튼 */}
-                          {isAddingGroup && isExpanded ? null : (
+                          {isAddingGroup === parentGroup.id && isExpanded ? null : (
                             <button
-                              onClick={() => { setIsAddingGroup(true); }}
+                              onClick={() => { setIsAddingGroup(parentGroup.id); setNewGroupName(''); }}
                               className="size-8 rounded-lg bg-slate-50 dark:bg-white/[0.03] text-slate-400 hover:text-primary flex items-center justify-center transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0"
                               title={`${parentGroup.name}에 소그룹 추가`}
                             >
                               <span className="material-symbols-outlined text-[16px]">add</span>
                             </button>
                           )}
-                          {isAddingGroup && (
+                          {isAddingGroup === parentGroup.id && (
                             <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
                               <input
                                 autoFocus
@@ -5824,7 +5824,7 @@ export default function App() {
                   {/* 그룹 추가 (독립) */}
                   {!isAddingGroup && !isAddingParentGroup && (
                     <>
-                      <button onClick={() => setIsAddingGroup(true)} className="h-9 px-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-primary flex items-center gap-1.5 transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0 text-[10px] font-bold">
+                      <button onClick={() => { setIsAddingGroup('standalone'); setNewGroupName(''); }} className="h-9 px-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-primary flex items-center gap-1.5 transition-all border border-dashed border-slate-300 dark:border-slate-700 hover:border-primary shrink-0 text-[10px] font-bold">
                         <span className="material-symbols-outlined text-[16px]">add</span>
                         그룹
                       </button>
@@ -5836,7 +5836,7 @@ export default function App() {
                   )}
 
                   {/* 독립 그룹 추가 입력 */}
-                  {isAddingGroup && groupHierarchy.parentGroups.every(pg => !expandedParentGroups.has(pg.id)) && (
+                  {isAddingGroup === 'standalone' && (
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-primary/30 animate-in slide-in-from-left-2 duration-200 shrink-0">
                       <input
                         autoFocus

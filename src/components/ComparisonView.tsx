@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
-import { SavedChannel } from '../../types';
+import { SavedChannel, DeepAnalysisVideo } from '../../types';
 
 const formatNumber = (num: number) => {
   if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
@@ -8,7 +8,23 @@ const formatNumber = (num: number) => {
   return num.toLocaleString();
 };
 
-import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
+import { getChannelInfo, fetchChannelPopularVideos, fetchChannelVideosForDeepAnalysis } from '../../services/youtubeService';
+import { SingleChannelAnalysis } from './SingleChannelAnalysis';
+
+// Duration string "MM:SS" or "H:MM:SS" → seconds
+const parseDurationToSeconds = (dur?: string): number => {
+  if (!dur) return 0;
+  const parts = dur.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+};
+
+const formatDuration = (sec: number): string => {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}분 ${s}초`;
+};
 
 interface ComparisonViewProps {
   channels: SavedChannel[];
@@ -92,6 +108,11 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
   const [loading, setLoading] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
   const [progressLabel, setProgressLabel] = React.useState("");
+
+  // Deep analysis state (single channel)
+  const [deepAnalysisVideos, setDeepAnalysisVideos] = React.useState<DeepAnalysisVideo[]>([]);
+  const [deepAnalysisLoading, setDeepAnalysisLoading] = React.useState(false);
+  const [showDeepAnalysis, setShowDeepAnalysis] = React.useState(false);
 
   // Sync state with prop to prevent blank screen on transition
   // If lengths differ, it means prop updated but hydration/state hasn't caught up. Use prop.
@@ -183,8 +204,8 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
       }
     };
     
-    // Only run if we have an API key and channels
-    if (apiKey && channels.length > 0) {
+    // Only run if we have an API key and 2+ channels (single channel uses deep analysis)
+    if (apiKey && channels.length >= 2) {
       hydrate();
     }
   }, [channels, apiKey]);
@@ -201,6 +222,62 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
         viralScore: getViralScore(ch),
         color: ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]
       };
+    });
+  }, [displayChannels]);
+
+  // ─── Additional comparison data ──────────────────────────────────────────
+  const CHART_COLORS = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6'];
+
+  // Views distribution: max / avg / min per channel
+  const viewsDistribution = useMemo(() => {
+    return displayChannels.map((ch, idx) => {
+      const views = (ch.topVideos || []).map(v => parseCount(v.views)).filter(v => v > 0);
+      if (views.length === 0) return { name: ch.title.length > 6 ? ch.title.substring(0, 6) + '..' : ch.title, max: 0, avg: 0, min: 0, color: CHART_COLORS[idx % 5] };
+      return {
+        name: ch.title.length > 6 ? ch.title.substring(0, 6) + '..' : ch.title,
+        fullTitle: ch.title,
+        max: Math.max(...views),
+        avg: Math.round(views.reduce((a, b) => a + b, 0) / views.length),
+        min: Math.min(...views),
+        color: CHART_COLORS[idx % 5],
+      };
+    });
+  }, [displayChannels]);
+
+  // Average video duration per channel
+  const durationComparison = useMemo(() => {
+    return displayChannels.map((ch, idx) => {
+      const durations = (ch.topVideos || []).map(v => parseDurationToSeconds(v.duration)).filter(d => d > 0);
+      const avg = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+      return {
+        name: ch.title.length > 6 ? ch.title.substring(0, 6) + '..' : ch.title,
+        fullTitle: ch.title,
+        avgSeconds: avg,
+        color: CHART_COLORS[idx % 5],
+      };
+    });
+  }, [displayChannels]);
+
+  // Upload activity: count in last 30 days + avg gap days
+  const uploadActivity = useMemo(() => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return displayChannels.map((ch, idx) => {
+      const dates = (ch.topVideos || [])
+        .map(v => new Date(v.date))
+        .filter(d => !isNaN(d.getTime()))
+        .sort((a, b) => b.getTime() - a.getTime());
+      const recentCount = dates.filter(d => d >= thirtyDaysAgo).length;
+      // Average gap between uploads
+      let avgGap = 0;
+      if (dates.length >= 2) {
+        const gaps: number[] = [];
+        for (let i = 0; i < dates.length - 1; i++) {
+          gaps.push((dates[i].getTime() - dates[i + 1].getTime()) / (1000 * 60 * 60 * 24));
+        }
+        avgGap = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
+      }
+      return { name: ch.title, thumbnail: ch.thumbnail, recentCount, avgGap, color: CHART_COLORS[idx % 5] };
     });
   }, [displayChannels]);
 
@@ -246,7 +323,109 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
     return null;
   };
 
-  if (channels.length < 2) {
+  // Deep analysis error state
+  const [deepAnalysisError, setDeepAnalysisError] = React.useState(false);
+
+  // Deep analysis: fetch when single channel selected
+  React.useEffect(() => {
+    if (channels.length !== 1 || !apiKey) return;
+    let cancelled = false;
+    const ch = channels[0];
+    setDeepAnalysisLoading(true);
+    setShowDeepAnalysis(false);
+    setDeepAnalysisError(false);
+    setProgress(0);
+    setProgressLabel(`${ch.title} 심층 분석 데이터 수집 중...`);
+
+    (async () => {
+      try {
+        if (cancelled) return;
+        setProgress(30);
+        const videos = await fetchChannelVideosForDeepAnalysis(apiKey, ch.id);
+        if (cancelled) return;
+        setProgress(80);
+        setProgressLabel(`${videos.length}개 영상 확보, 분석 준비 중...`);
+        await new Promise(r => setTimeout(r, 800));
+        if (cancelled) return;
+        setDeepAnalysisVideos(videos);
+        setProgress(100);
+        if (videos.length > 0) {
+          setShowDeepAnalysis(true);
+        } else {
+          setDeepAnalysisError(true);
+          setProgressLabel('영상 데이터를 가져오지 못했습니다.');
+        }
+      } catch (e) {
+        console.error('Deep analysis fetch failed:', e);
+        if (!cancelled) {
+          setDeepAnalysisError(true);
+          setProgressLabel('분석 중 오류가 발생했습니다.');
+        }
+      } finally {
+        if (!cancelled) setDeepAnalysisLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [channels, apiKey]);
+
+  const handleDeepAnalysisBack = () => {
+    if (onUpdateChannels) onUpdateChannels([]);
+    setTempSelectedIds([]);
+    setShowDeepAnalysis(false);
+    setDeepAnalysisVideos([]);
+    setDeepAnalysisError(false);
+  };
+
+  // Single channel: show deep analysis
+  if (channels.length === 1 && showDeepAnalysis && deepAnalysisVideos.length > 0) {
+    return (
+      <SingleChannelAnalysis
+        channel={channels[0]}
+        videos={deepAnalysisVideos}
+        onBack={handleDeepAnalysisBack}
+      />
+    );
+  }
+
+  // Single channel loading / error state
+  if (channels.length === 1 && (deepAnalysisLoading || !showDeepAnalysis)) {
+    return (
+      <div className="bg-slate-50 dark:bg-black p-6 md:p-10 space-y-6 pb-20 animate-in fade-in duration-500">
+        <div className="w-full max-w-[1800px] mx-auto space-y-4">
+          <div className="bg-slate-900 rounded-xl p-5 md:p-6 border border-slate-800 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-50"></div>
+            <div className="flex justify-between items-end mb-3">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Deep Analysis</span>
+              <span className="text-2xl font-black text-white tabular-nums">{progress}%</span>
+            </div>
+            <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden mb-4">
+              <div className="h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-300 ease-out relative" style={{width: `${progress}%`}}>
+                <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-r from-transparent to-white/30 skew-x-12 animate-shimmer"></div>
+              </div>
+            </div>
+            <p className={`text-sm font-bold flex items-center gap-2 ${deepAnalysisError ? 'text-red-400' : 'text-indigo-400 animate-pulse'}`}>
+              {deepAnalysisError
+                ? <span className="material-symbols-outlined text-base">error</span>
+                : <span className="material-symbols-outlined text-base animate-spin">sync</span>
+              }
+              {progressLabel}
+            </p>
+          </div>
+          {/* Back button — always visible so user can escape */}
+          <button
+            onClick={handleDeepAnalysisBack}
+            className="px-5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-600 dark:text-slate-400 text-sm"
+          >
+            <span className="material-symbols-outlined text-lg">arrow_back</span>
+            다시 선택
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (channels.length < 1) {
     const safeAllChannels = allChannels || [];
     const selectionCount = tempSelectedIds.length;
 
@@ -258,39 +437,39 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                <div className="space-y-2">
                   <h2 className="text-xl md:text-2xl font-black italic tracking-tighter text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-3">
                      <span className="material-symbols-outlined text-2xl md:text-3xl">compare_arrows</span>
-                     채널 비교 분석 <span className="text-indigo-500">PICK</span>
+                     채널 분석 <span className="text-indigo-500">PICK</span>
                   </h2>
                   <p className="text-slate-500 text-[11px] font-medium leading-relaxed hidden md:block">
-                     비교할 채널을 <span className="text-indigo-600 dark:text-indigo-400 font-bold">2~5개 선택</span>해주세요. 선택 후 분석을 시작하면 주요 지표를 비교할 수 있습니다.<br />
+                     채널을 <span className="text-indigo-600 dark:text-indigo-400 font-bold">1~5개 선택</span>해주세요. (1개: 심층분석, 2개+: 비교분석)<br />
                      현재 선택: <span className="text-rose-500 font-bold">{selectionCount}/5개</span>
                   </p>
                </div>
-               
+
                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <div className="relative group">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-lg">filter_list</span>
-                      <input 
-                          type="text" 
+                      <input
+                          type="text"
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          placeholder="채널명으로 필터링" 
+                          placeholder="채널명으로 필터링"
                           className="w-full sm:min-w-[200px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-400"
                       />
                   </div>
                   <button
-                      disabled={selectionCount < 2 || !onUpdateChannels}
+                      disabled={selectionCount < 1 || !onUpdateChannels}
                       onClick={() => {
                          const selected = (allChannels || []).filter(c => tempSelectedIds.includes(c.id));
                          if (onUpdateChannels) onUpdateChannels(selected);
                       }}
                       className={`px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
-                         selectionCount >= 2 
-                         ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 hover:-translate-y-0.5' 
+                         selectionCount >= 1
+                         ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 hover:-translate-y-0.5'
                          : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-60'
                       }`}
                   >
-                      <span className="material-symbols-outlined text-lg">compare_arrows</span>
-                      <span>비교하기</span>
+                      <span className="material-symbols-outlined text-lg">{selectionCount === 1 ? 'analytics' : 'compare_arrows'}</span>
+                      <span>{selectionCount === 1 ? '심층 분석' : '비교하기'}</span>
                   </button>
                </div>
             </div>
@@ -582,6 +761,133 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({ channels, allCha
                );
              })}
            </div>
+        </div>
+
+        {/* Section 4: Views Distribution (Max / Avg / Min) */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+           <div className="mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
+             <div className="p-1.5 md:p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg md:rounded-xl text-emerald-600">
+                <span className="material-symbols-outlined text-lg md:text-xl">equalizer</span>
+             </div>
+             <div>
+               <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">조회수 분포</h3>
+               <p className="text-[10px] md:text-[11px] text-slate-400 font-medium">채널별 최고 / 평균 / 최저 조회수 — 일관성을 비교하세요</p>
+             </div>
+           </div>
+           <div className="space-y-3">
+             {viewsDistribution.map((ch, idx) => {
+                const maxAll = Math.max(...viewsDistribution.map(c => c.max), 1);
+                const barMax = (ch.max / maxAll) * 100;
+                const barAvg = (ch.avg / maxAll) * 100;
+                const barMin = (ch.min / maxAll) * 100;
+                return (
+                   <div key={idx} className="flex items-center gap-3">
+                      <span className="text-[11px] font-bold text-slate-500 w-16 md:w-20 text-right truncate shrink-0">{ch.name}</span>
+                      <div className="flex-1 space-y-1">
+                         <div className="flex items-center gap-2">
+                            <div className="h-3 rounded-full transition-all" style={{ width: `${Math.max(barMax, 2)}%`, backgroundColor: ch.color, opacity: 1 }} />
+                            <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap">{formatNumber(ch.max)}</span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                            <div className="h-3 rounded-full transition-all" style={{ width: `${Math.max(barAvg, 2)}%`, backgroundColor: ch.color, opacity: 0.6 }} />
+                            <span className="text-[10px] font-bold text-slate-400 tabular-nums whitespace-nowrap">{formatNumber(ch.avg)}</span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                            <div className="h-3 rounded-full transition-all" style={{ width: `${Math.max(barMin, 2)}%`, backgroundColor: ch.color, opacity: 0.3 }} />
+                            <span className="text-[10px] font-medium text-slate-400 tabular-nums whitespace-nowrap">{formatNumber(ch.min)}</span>
+                         </div>
+                      </div>
+                   </div>
+                );
+             })}
+           </div>
+           <div className="flex items-center gap-4 mt-4 justify-end">
+              <div className="flex items-center gap-1.5"><div className="size-2.5 rounded-full bg-slate-400" /><span className="text-[10px] text-slate-400 font-bold">최고</span></div>
+              <div className="flex items-center gap-1.5"><div className="size-2.5 rounded-full bg-slate-400 opacity-60" /><span className="text-[10px] text-slate-400 font-bold">평균</span></div>
+              <div className="flex items-center gap-1.5"><div className="size-2.5 rounded-full bg-slate-400 opacity-30" /><span className="text-[10px] text-slate-400 font-bold">최저</span></div>
+           </div>
+        </div>
+
+        {/* Section 5: Duration & Upload Activity side by side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          {/* Average Video Duration */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+             <div className="mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
+               <div className="p-1.5 md:p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg md:rounded-xl text-amber-600">
+                  <span className="material-symbols-outlined text-lg md:text-xl">timer</span>
+               </div>
+               <div>
+                 <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">평균 영상 길이</h3>
+                 <p className="text-[10px] md:text-[11px] text-slate-400 font-medium">최근 10개 영상 기준</p>
+               </div>
+             </div>
+             <div className="h-48 md:h-64">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={durationComparison} margin={{ top: 10, right: 5, left: -10, bottom: 0 }} barSize={window.innerWidth < 768 ? 30 : 40}>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
+                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: window.innerWidth < 768 ? 10 : 12, fontWeight: 'bold', fill: '#94a3b8' }} dy={10} />
+                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v: number) => Math.floor(v / 60) + '분'} />
+                   <Tooltip
+                     content={({ active, payload }: any) => {
+                       if (!active || !payload?.length) return null;
+                       const d = payload[0].payload;
+                       return (
+                         <div className="bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 p-3 rounded-xl shadow-2xl text-white text-xs">
+                           <p className="font-bold text-slate-300 mb-1">{d.fullTitle}</p>
+                           <p className="text-amber-400 font-black">{formatDuration(d.avgSeconds)}</p>
+                         </div>
+                       );
+                     }}
+                   />
+                   <Bar dataKey="avgSeconds" radius={[8, 8, 8, 8]}>
+                     {durationComparison.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+             </div>
+          </div>
+
+          {/* Upload Activity */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+             <div className="mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
+               <div className="p-1.5 md:p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg md:rounded-xl text-cyan-600">
+                  <span className="material-symbols-outlined text-lg md:text-xl">date_range</span>
+               </div>
+               <div>
+                 <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white">업로드 활동</h3>
+                 <p className="text-[10px] md:text-[11px] text-slate-400 font-medium">최근 30일 업로드 수 · 평균 업로드 간격</p>
+               </div>
+             </div>
+             <div className="space-y-4">
+               {uploadActivity.map((ch, idx) => (
+                 <div key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <img src={ch.thumbnail} alt="" className="size-10 rounded-full border-2 shrink-0" style={{ borderColor: ch.color }} />
+                    <div className="flex-1 min-w-0">
+                       <p className="font-bold text-sm text-slate-900 dark:text-white truncate">{ch.name}</p>
+                       <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[11px] font-bold text-slate-500">
+                             최근 30일 <span className="font-black" style={{ color: ch.color }}>{ch.recentCount}개</span>
+                          </span>
+                          <span className="text-slate-300 dark:text-slate-700">|</span>
+                          <span className="text-[11px] font-bold text-slate-500">
+                             평균 간격 <span className="font-black" style={{ color: ch.color }}>{ch.avgGap > 0 ? ch.avgGap + '일' : '-'}</span>
+                          </span>
+                       </div>
+                    </div>
+                    {/* Activity indicator dots */}
+                    <div className="flex gap-1 shrink-0">
+                       {Array.from({ length: 5 }, (_, i) => (
+                         <div
+                           key={i}
+                           className="size-2.5 rounded-full transition-all"
+                           style={{ backgroundColor: i < ch.recentCount ? ch.color : '#e2e8f0', opacity: i < ch.recentCount ? 1 : 0.3 }}
+                         />
+                       ))}
+                    </div>
+                 </div>
+               ))}
+             </div>
+          </div>
         </div>
 
       </div>

@@ -116,6 +116,18 @@ export interface RecommendedPackage {
   viewCount?: number; // 조회수
 }
 
+export interface DeepAnalysisVideo {
+  id: string;
+  title: string;
+  thumbnail: string;
+  views: number;
+  likes: number;
+  comments: number;
+  date: string;           // ISO publishedAt
+  duration: string;       // "MM:SS" format
+  durationSeconds: number;
+}
+
 export interface Notification {
   id: string;
   userId: string;
