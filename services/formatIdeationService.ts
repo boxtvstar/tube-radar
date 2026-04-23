@@ -41,7 +41,6 @@ const stripCodeFence = (value: string) =>
 
 const extractJson = <T>(raw: string): T => JSON.parse(stripCodeFence(raw)) as T;
 
-const YOUTUBE_ANALYSIS_MODEL = 'gemini-3-flash-preview';
 const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash';
 
 const toRestPart = (part: Record<string, unknown>) => {
@@ -78,6 +77,11 @@ const getGeminiErrorMessage = (status: number, errorText: string) => {
   })();
 
   const apiMessage = String(parsed?.error?.message || '').trim();
+  const apiReason = String(
+    parsed?.error?.details?.find?.((detail: any) => detail?.reason)?.reason ||
+    parsed?.error?.status ||
+    ''
+  ).trim();
 
   if (status === 429) {
     return 'Gemini API 오류 (429): 요청이 너무 많거나 API 키 쿼터가 초과되었습니다. 잠시 후 다시 시도하거나 Gemini 요금제/쿼터를 확인해주세요.';
@@ -93,10 +97,10 @@ const getGeminiErrorMessage = (status: number, errorText: string) => {
 
   if (status === 403) {
     if (apiMessage.toLowerCase().includes('blocked')) {
-      return 'Gemini API 오류 (403): 현재 등록된 Gemini API 키는 GenerateContent 호출이 차단되어 있습니다. Google AI Studio에서 새 키를 발급받아 다시 등록하거나, API 키 제한 설정을 확인해주세요.';
+      return `Gemini API 오류 (403): 현재 등록된 Gemini API 키는 GenerateContent 호출이 차단되어 있습니다. Google AI Studio에서 새 키를 발급받아 다시 등록하거나, API 키 제한 설정을 확인해주세요.${apiReason ? ` (${apiReason})` : ''}`;
     }
 
-    return 'Gemini API 오류 (403): 현재 등록된 Gemini API 키에 Gemini 호출 권한이 없거나 제한 설정이 잘못되었습니다. Google AI Studio에서 키를 다시 발급받아 등록해주세요.';
+    return `Gemini API 오류 (403): 현재 등록된 Gemini API 키에 Gemini 호출 권한이 없거나 제한 설정이 잘못되었습니다. Google AI Studio에서 키 제한, API 사용 설정, 현재 도메인 허용 여부를 확인해주세요.${apiMessage ? `\n상세: ${apiMessage}` : ''}`;
   }
 
   return `Gemini API 오류 (${status})${apiMessage ? `: ${apiMessage}` : ''}`;
@@ -189,9 +193,9 @@ export const analyzeBenchmarkVideo = async (
   `.trim();
 
   const raw = await postToGemini(apiKey, [
-    { text: prompt },
     { fileData: { fileUri: normalizedUrl } },
-  ], YOUTUBE_ANALYSIS_MODEL);
+    { text: prompt },
+  ], DEFAULT_TEXT_MODEL);
   const parsed = extractJson<Partial<BenchmarkVideoInsight>>(raw);
 
   return {
