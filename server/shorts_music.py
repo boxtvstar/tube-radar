@@ -293,11 +293,24 @@ def _extract_initial_json(html: str, variable: str) -> dict | None:
         return None
 
 
-def _fallback_track_from_player(player: dict | None, video_id: str) -> dict:
+def _video_meta_from_player(player: dict | None, video_id: str) -> dict:
     details = (player or {}).get("videoDetails", {})
     micro = (player or {}).get("microformat", {}).get("playerMicroformatRenderer", {})
     title = details.get("title") or _text_value(micro.get("title"))
     artist = details.get("author") or micro.get("ownerChannelName") or ""
+    thumbnails = details.get("thumbnail", {}).get("thumbnails", [])
+    thumbnail = _largest_thumbnail(thumbnails) or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    return {
+        "title": title or f"YouTube Shorts {video_id}",
+        "channel": artist,
+        "thumbnail": thumbnail,
+    }
+
+
+def _fallback_track_from_player(player: dict | None, video_id: str) -> dict:
+    meta = _video_meta_from_player(player, video_id)
+    title = meta["title"]
+    artist = meta["channel"]
 
     if " - " in title:
         left, right = title.split(" - ", 1)
@@ -305,12 +318,10 @@ def _fallback_track_from_player(player: dict | None, video_id: str) -> dict:
             artist = artist or left.strip()
             title = right.strip()
 
-    thumbnails = details.get("thumbnail", {}).get("thumbnails", [])
-    thumbnail = _largest_thumbnail(thumbnails) or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
     return {
         "name": title or f"YouTube Shorts {video_id}",
         "artist": artist,
-        "thumbnail": thumbnail,
+        "thumbnail": meta["thumbnail"],
     }
 
 
@@ -328,13 +339,20 @@ def extract_shorts_music_track(short_url: str) -> dict:
     card = _find_music_card(initial_data or {})
     source = "music_card" if card else "video_fallback"
     track = card or _fallback_track_from_player(player, video_id)
+    source_short = _video_meta_from_player(player, video_id)
 
     return {
         "track": {
             "name": track.get("name", "").strip(),
             "artist": track.get("artist", "").strip(),
             "thumbnail": track.get("thumbnail", "").strip() or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            "videoId": "",
+        },
+        "sourceShort": {
             "videoId": video_id,
+            "title": source_short["title"],
+            "thumbnail": source_short["thumbnail"],
+            "url": f"https://www.youtube.com/shorts/{video_id}",
         },
         "source": source,
         "shortUrl": f"https://www.youtube.com/shorts/{video_id}",

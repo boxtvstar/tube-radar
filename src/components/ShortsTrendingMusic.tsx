@@ -20,6 +20,10 @@ interface ShortsTrack {
   groupId?: string;
   groupName?: string;
   addedByAdmin?: boolean;
+  sourceShortVideoId?: string;
+  sourceShortTitle?: string;
+  sourceShortThumbnail?: string;
+  sourceShortUrl?: string;
 }
 
 interface ShortsVideo {
@@ -36,6 +40,12 @@ interface ShortsMusicResponse {
 
 interface ShortsMusicExtractResponse {
   track: Pick<ShortsTrack, 'name' | 'artist' | 'thumbnail' | 'videoId'>;
+  sourceShort: {
+    videoId: string;
+    title: string;
+    thumbnail: string;
+    url: string;
+  };
   source: 'music_card' | 'video_fallback';
   shortUrl: string;
 }
@@ -115,9 +125,8 @@ const extractYoutubeVideoId = (value: string) => {
   }
 };
 
-const normalizeMusicKey = (track: Pick<ShortsTrack, 'name' | 'artist' | 'videoId'>) => (
-  track.videoId || `${track.name}_${track.artist}`
-).trim().toLowerCase();
+const normalizeMusicKey = (track: Pick<ShortsTrack, 'name' | 'artist'>) =>
+  `${track.name}_${track.artist}`.trim().toLowerCase();
 
 export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrackUsage, onPreCheckQuota, isAdmin = false }) => {
   const [tracks, setTracks] = useState<ShortsTrack[]>([]);
@@ -200,6 +209,10 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         groupId: track.groupId,
         groupName: track.groupName,
         addedByAdmin: true,
+        sourceShortVideoId: track.sourceShortVideoId,
+        sourceShortTitle: track.sourceShortTitle,
+        sourceShortThumbnail: track.sourceShortThumbnail,
+        sourceShortUrl: track.sourceShortUrl,
       })));
     } catch (e) {
       console.warn('관리자 쇼츠 음악 로드 실패:', e);
@@ -242,7 +255,18 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       const res = await fetch(`${apiBase}/api/shorts-music?q=${q}`);
       if (res.ok) {
         const data = await res.json();
-        setRelatedShorts(data.videos || []);
+        const sourceShort = track.sourceShortVideoId ? [{
+          videoId: track.sourceShortVideoId,
+          title: track.sourceShortTitle || `${track.name} 사용 쇼츠`,
+          thumbnail: track.sourceShortThumbnail || getYoutubeThumbnail(track.sourceShortVideoId),
+        }] : [];
+        const seen = new Set(sourceShort.map(short => short.videoId));
+        const searched = (data.videos || []).filter((short: ShortsVideo) => {
+          if (!short.videoId || seen.has(short.videoId)) return false;
+          seen.add(short.videoId);
+          return true;
+        });
+        setRelatedShorts([...sourceShort, ...searched]);
       }
     } catch { /* ignore */ } finally {
       setShortsLoading(false);
@@ -312,7 +336,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       return;
     }
 
-    if (displayTracks.some(track => track.videoId === inputVideoId)) {
+    if (displayTracks.some(track => track.sourceShortVideoId === inputVideoId || track.videoId === inputVideoId)) {
       setAdminError('이미 목록에 있는 쇼츠입니다.');
       return;
     }
@@ -335,8 +359,12 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         id: `music_track_${Date.now()}`,
         name: track.name,
         artist: track.artist || '',
-        videoId: track.videoId || inputVideoId,
-        thumbnail: track.thumbnail || getYoutubeThumbnail(track.videoId || inputVideoId),
+        videoId: track.videoId || '',
+        thumbnail: track.thumbnail || getYoutubeThumbnail(inputVideoId),
+        sourceShortVideoId: extracted.sourceShort?.videoId || inputVideoId,
+        sourceShortTitle: extracted.sourceShort?.title || '',
+        sourceShortThumbnail: extracted.sourceShort?.thumbnail || getYoutubeThumbnail(inputVideoId),
+        sourceShortUrl: extracted.sourceShort?.url || `https://www.youtube.com/shorts/${inputVideoId}`,
         groupId: group?.id,
         groupName: group?.name,
         addedAt: Date.now(),
@@ -359,6 +387,10 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         groupId: nextTrack.groupId,
         groupName: nextTrack.groupName,
         addedByAdmin: true,
+        sourceShortVideoId: nextTrack.sourceShortVideoId,
+        sourceShortTitle: nextTrack.sourceShortTitle,
+        sourceShortThumbnail: nextTrack.sourceShortThumbnail,
+        sourceShortUrl: nextTrack.sourceShortUrl,
       }, ...prev]);
       setTrackForm({ shortsUrl: '', groupId: trackForm.groupId });
     } catch (e: any) {

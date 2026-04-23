@@ -172,6 +172,10 @@ export interface AdminShortsMusicTrack {
   artist: string;
   thumbnail: string;
   videoId: string;
+  sourceShortVideoId?: string;
+  sourceShortTitle?: string;
+  sourceShortThumbnail?: string;
+  sourceShortUrl?: string;
   groupId?: string;
   groupName?: string;
   addedAt: number;
