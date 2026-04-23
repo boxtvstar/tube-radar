@@ -249,14 +249,23 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
     });
   }, [adminTracks, tracks]);
 
+  const groupOnlyTracks = useMemo(() => {
+    const chartKeys = new Set(tracks.map(track => normalizeMusicKey(track)));
+    return adminTracks.filter(track => !chartKeys.has(normalizeMusicKey(track)));
+  }, [adminTracks, tracks]);
+
   const filteredTracks = useMemo(() => {
     if (selectedCategory === 'all') return displayTracks;
     if (selectedCategory.startsWith('group:')) {
       const groupId = selectedCategory.slice('group:'.length);
-      return displayTracks.filter(t => t.groupId === groupId);
+      const groupedChartTracks = displayTracks.filter(t => t.groupId === groupId);
+      const groupedAdminOnlyTracks = groupOnlyTracks
+        .filter(t => t.groupId === groupId)
+        .map((track, idx) => ({ ...track, rank: groupedChartTracks.length + idx + 1 }));
+      return [...groupedChartTracks, ...groupedAdminOnlyTracks];
     }
     return displayTracks.filter(t => getGenre(t.artist) === selectedCategory);
-  }, [displayTracks, selectedCategory]);
+  }, [displayTracks, groupOnlyTracks, selectedCategory]);
 
   const fetchRelatedShorts = useCallback(async (track: ShortsTrack) => {
     setShortsLoading(true);
@@ -350,17 +359,6 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
     setAdminAdding(true);
     setAdminError('');
     try {
-      let latestTracks = tracks;
-      if (latestTracks.length === 0) {
-        const res = await fetch(`${apiBase}/api/shorts-music`);
-        if (!res.ok) throw new Error('현재 차트 데이터를 불러오지 못했습니다.');
-        const data: ShortsMusicResponse = await res.json();
-        latestTracks = data.tracks || [];
-        setTracks(latestTracks);
-        setUpdatedAt(data.updated_at || '');
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ data, savedAt: Date.now() }));
-      }
-
       const res = await fetch(`${apiBase}/api/shorts-music?extractUrl=${encodeURIComponent(shortsUrl)}`);
       if (!res.ok) {
         const text = await res.text();
@@ -376,23 +374,19 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         name: extractedTrack.name,
         artist: extractedTrack.artist || '',
       });
-
-      const matchedChartTrack = latestTracks.find((track) => normalizeMusicKey(track) === extractedKey);
-      if (!matchedChartTrack) {
-        throw new Error('이 쇼츠의 음악은 현재 주간 Top 50에 없어 그룹에 추가할 수 없습니다.');
-      }
-
       const existingAdminTrack = adminTracks.find((track) => normalizeMusicKey(track) === extractedKey);
       if (existingAdminTrack?.groupId === group?.id) {
         throw new Error('이미 해당 그룹에 연결된 음악입니다.');
       }
 
+      const chartTrack = tracks.find((track) => normalizeMusicKey(track) === extractedKey);
+
       const nextTrack: AdminShortsMusicTrack = {
         id: existingAdminTrack?.id || `music_track_${Date.now()}`,
-        name: matchedChartTrack.name,
-        artist: matchedChartTrack.artist || extractedTrack.artist || '',
-        videoId: matchedChartTrack.videoId,
-        thumbnail: matchedChartTrack.thumbnail || extractedTrack.thumbnail || getYoutubeThumbnail(matchedChartTrack.videoId),
+        name: chartTrack?.name || extractedTrack.name,
+        artist: chartTrack?.artist || extractedTrack.artist || '',
+        videoId: chartTrack?.videoId || extractedTrack.videoId || '',
+        thumbnail: chartTrack?.thumbnail || extractedTrack.thumbnail || getYoutubeThumbnail(inputVideoId),
         sourceShortVideoId: extracted.sourceShort?.videoId || inputVideoId,
         sourceShortTitle: extracted.sourceShort?.title || '',
         sourceShortThumbnail: extracted.sourceShort?.thumbnail || getYoutubeThumbnail(inputVideoId),
@@ -404,7 +398,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
 
       await saveShortsMusicTrackToDb(nextTrack);
       const nextUiTrack: ShortsTrack = {
-        rank: matchedChartTrack.rank,
+        rank: chartTrack?.rank || 0,
         name: nextTrack.name,
         artist: nextTrack.artist,
         thumbnail: nextTrack.thumbnail,
@@ -503,7 +497,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
           <div className="grid md:grid-cols-[1.5fr_1fr] gap-4">
             <div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                그룹을 선택하고 쇼츠 주소를 넣으면, 해당 쇼츠가 쓰는 음악이 현재 Top 50 안에 있을 때만 그 차트 음악에 그룹이 연결됩니다.
+                그룹을 선택하고 쇼츠 주소를 넣으면, 해당 쇼츠가 쓰는 음악을 자동 추출해 그 그룹 안에 추가합니다.
               </p>
               <div className="grid sm:grid-cols-[1fr_auto] gap-2">
                 <input
@@ -536,7 +530,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
                 </button>
               </div>
               <p className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
-                차트에 없는 음악은 추가되지 않습니다. 순위는 실제 차트 순서를 그대로 유지합니다.
+                주간 Top 50 메인 리스트는 그대로 유지되고, 관리자가 추가한 음악은 선택한 그룹에서만 함께 보입니다.
               </p>
             </div>
 
