@@ -227,15 +227,26 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
   }, [loadFromCache, fetchTracks, loadAdminMusic]);
 
   const displayTracks = useMemo(() => {
-    const map = new Map<string, ShortsTrack>();
-    adminTracks.forEach((track, idx) => {
-      map.set(normalizeMusicKey(track), { ...track, rank: idx + 1, addedByAdmin: true });
+    const adminMap = new Map<string, ShortsTrack>();
+    adminTracks.forEach((track) => {
+      adminMap.set(normalizeMusicKey(track), track);
     });
-    tracks.forEach((track) => {
-      const key = normalizeMusicKey(track);
-      if (!map.has(key)) map.set(key, track);
+
+    return tracks.map((track) => {
+      const adminTrack = adminMap.get(normalizeMusicKey(track));
+      if (!adminTrack) return track;
+      return {
+        ...track,
+        id: adminTrack.id,
+        groupId: adminTrack.groupId,
+        groupName: adminTrack.groupName,
+        addedByAdmin: true,
+        sourceShortVideoId: adminTrack.sourceShortVideoId,
+        sourceShortTitle: adminTrack.sourceShortTitle,
+        sourceShortThumbnail: adminTrack.sourceShortThumbnail,
+        sourceShortUrl: adminTrack.sourceShortUrl,
+      };
     });
-    return Array.from(map.values()).map((track, idx) => ({ ...track, rank: idx + 1 }));
   }, [adminTracks, tracks]);
 
   const filteredTracks = useMemo(() => {
@@ -255,18 +266,18 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       const res = await fetch(`${apiBase}/api/shorts-music?q=${q}`);
       if (res.ok) {
         const data = await res.json();
-        const sourceShort = track.sourceShortVideoId ? [{
-          videoId: track.sourceShortVideoId,
-          title: track.sourceShortTitle || `${track.name} 사용 쇼츠`,
-          thumbnail: track.sourceShortThumbnail || getYoutubeThumbnail(track.sourceShortVideoId),
-        }] : [];
-        const seen = new Set(sourceShort.map(short => short.videoId));
-        const searched = (data.videos || []).filter((short: ShortsVideo) => {
-          if (!short.videoId || seen.has(short.videoId)) return false;
-          seen.add(short.videoId);
-          return true;
-        });
-        setRelatedShorts([...sourceShort, ...searched]);
+        const searched = (data.videos || []).filter((short: ShortsVideo) => !!short.videoId);
+        if (searched.length > 0) {
+          setRelatedShorts(searched);
+        } else if (track.sourceShortVideoId) {
+          setRelatedShorts([{
+            videoId: track.sourceShortVideoId,
+            title: track.sourceShortTitle || `${track.name} 사용 쇼츠`,
+            thumbnail: track.sourceShortThumbnail || getYoutubeThumbnail(track.sourceShortVideoId),
+          }]);
+        } else {
+          setRelatedShorts([]);
+        }
       }
     } catch { /* ignore */ } finally {
       setShortsLoading(false);
@@ -336,14 +347,20 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       return;
     }
 
-    if (displayTracks.some(track => track.sourceShortVideoId === inputVideoId || track.videoId === inputVideoId)) {
-      setAdminError('이미 목록에 있는 쇼츠입니다.');
-      return;
-    }
-
     setAdminAdding(true);
     setAdminError('');
     try {
+      let latestTracks = tracks;
+      if (latestTracks.length === 0) {
+        const res = await fetch(`${apiBase}/api/shorts-music`);
+        if (!res.ok) throw new Error('현재 차트 데이터를 불러오지 못했습니다.');
+        const data: ShortsMusicResponse = await res.json();
+        latestTracks = data.tracks || [];
+        setTracks(latestTracks);
+        setUpdatedAt(data.updated_at || '');
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ data, savedAt: Date.now() }));
+      }
+
       const res = await fetch(`${apiBase}/api/shorts-music?extractUrl=${encodeURIComponent(shortsUrl)}`);
       if (!res.ok) {
         const text = await res.text();
@@ -352,15 +369,30 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         throw new Error(msg);
       }
       const extracted = await res.json() as ShortsMusicExtractResponse;
-      const track = extracted.track;
-      if (!track?.name) throw new Error('쇼츠에서 음악 제목을 찾지 못했습니다.');
+      const extractedTrack = extracted.track;
+      if (!extractedTrack?.name) throw new Error('쇼츠에서 음악 제목을 찾지 못했습니다.');
+
+      const extractedKey = normalizeMusicKey({
+        name: extractedTrack.name,
+        artist: extractedTrack.artist || '',
+      });
+
+      const matchedChartTrack = latestTracks.find((track) => normalizeMusicKey(track) === extractedKey);
+      if (!matchedChartTrack) {
+        throw new Error('이 쇼츠의 음악은 현재 주간 Top 50에 없어 그룹에 추가할 수 없습니다.');
+      }
+
+      const existingAdminTrack = adminTracks.find((track) => normalizeMusicKey(track) === extractedKey);
+      if (existingAdminTrack?.groupId === group?.id) {
+        throw new Error('이미 해당 그룹에 연결된 음악입니다.');
+      }
 
       const nextTrack: AdminShortsMusicTrack = {
-        id: `music_track_${Date.now()}`,
-        name: track.name,
-        artist: track.artist || '',
-        videoId: track.videoId || '',
-        thumbnail: track.thumbnail || getYoutubeThumbnail(inputVideoId),
+        id: existingAdminTrack?.id || `music_track_${Date.now()}`,
+        name: matchedChartTrack.name,
+        artist: matchedChartTrack.artist || extractedTrack.artist || '',
+        videoId: matchedChartTrack.videoId,
+        thumbnail: matchedChartTrack.thumbnail || extractedTrack.thumbnail || getYoutubeThumbnail(matchedChartTrack.videoId),
         sourceShortVideoId: extracted.sourceShort?.videoId || inputVideoId,
         sourceShortTitle: extracted.sourceShort?.title || '',
         sourceShortThumbnail: extracted.sourceShort?.thumbnail || getYoutubeThumbnail(inputVideoId),
@@ -370,15 +402,9 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         addedAt: Date.now(),
       };
 
-      const nextKey = normalizeMusicKey(nextTrack);
-      if (displayTracks.some(item => normalizeMusicKey(item) === nextKey)) {
-        setAdminError('이미 목록에 있는 음악입니다.');
-        return;
-      }
-
       await saveShortsMusicTrackToDb(nextTrack);
-      setAdminTracks(prev => [{
-        rank: 1,
+      const nextUiTrack: ShortsTrack = {
+        rank: matchedChartTrack.rank,
         name: nextTrack.name,
         artist: nextTrack.artist,
         thumbnail: nextTrack.thumbnail,
@@ -391,7 +417,11 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         sourceShortTitle: nextTrack.sourceShortTitle,
         sourceShortThumbnail: nextTrack.sourceShortThumbnail,
         sourceShortUrl: nextTrack.sourceShortUrl,
-      }, ...prev]);
+      };
+      setAdminTracks(prev => {
+        const filtered = prev.filter(track => normalizeMusicKey(track) !== extractedKey);
+        return [nextUiTrack, ...filtered];
+      });
       setTrackForm({ shortsUrl: '', groupId: trackForm.groupId });
     } catch (e: any) {
       setAdminError(e.message || '음악 추가 실패');
@@ -473,7 +503,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
           <div className="grid md:grid-cols-[1.5fr_1fr] gap-4">
             <div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                그룹을 선택하고 쇼츠 주소만 붙여넣으면 음악 정보를 자동으로 가져와 Firebase에 저장합니다.
+                그룹을 선택하고 쇼츠 주소를 넣으면, 해당 쇼츠가 쓰는 음악이 현재 Top 50 안에 있을 때만 그 차트 음악에 그룹이 연결됩니다.
               </p>
               <div className="grid sm:grid-cols-[1fr_auto] gap-2">
                 <input
@@ -506,7 +536,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
                 </button>
               </div>
               <p className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
-                YouTube 음악 카드가 없으면 영상 제목과 채널명으로 임시 저장됩니다.
+                차트에 없는 음악은 추가되지 않습니다. 순위는 실제 차트 순서를 그대로 유지합니다.
               </p>
             </div>
 
