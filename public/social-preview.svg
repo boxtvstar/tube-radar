@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Tube Radar social preview">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="60" x2="1080" y2="570" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#151826" />
+      <stop offset="0.55" stop-color="#0f0f12" />
+      <stop offset="1" stop-color="#09111f" />
+    </linearGradient>
+    <linearGradient id="accent" x1="282" y1="472" x2="575" y2="217" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9f1c" />
+      <stop offset="0.34" stop-color="#ff3e72" />
+      <stop offset="0.68" stop-color="#c41fe1" />
+      <stop offset="1" stop-color="#1aa7ff" />
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="28" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <circle cx="1020" cy="116" r="180" fill="#1537ec" opacity="0.12" />
+  <circle cx="918" cy="484" r="240" fill="#ff0055" opacity="0.08" />
+  <circle cx="282" cy="164" r="150" fill="#00f2ff" opacity="0.09" />
+
+  <g opacity="0.14">
+    <path d="M0 126h1200M0 252h1200M0 378h1200M0 504h1200" stroke="#d6e0ff" stroke-width="1" />
+    <path d="M180 0v630M360 0v630M540 0v630M720 0v630M900 0v630M1080 0v630" stroke="#d6e0ff" stroke-width="1" />
+  </g>
+
+  <g transform="translate(138 147)" filter="url(#glow)">
+    <rect x="0" y="0" width="324" height="324" rx="82" fill="rgba(255,255,255,0.03)" />
+    <path
+      fill="url(#accent)"
+      d="M92 54c-19.9 0-36 16.1-36 36v144c0 39.9 45.3 63.2 78 40l118.6-83.8c29.3-20.7 29.3-63.7 0-84.4L134 14a45.8 45.8 0 0 0-42-6Zm30.9 50 101.8 72c7.3 5.2 7.3 16 0 21.1l-101.8 72c-10.3 7.3-24.4-0.1-24.4-12.7V116.7c0-12.6 14.1-20 24.4-12.7Z"
+    />
+  </g>
+
+  <g fill="#f8fafc">
+    <text x="518" y="250" font-size="82" font-weight="800" font-family="Inter, Arial, sans-serif" letter-spacing="-2">
+      Tube Radar
+    </text>
+    <text x="518" y="322" font-size="30" font-weight="600" font-family="Inter, Arial, sans-serif" fill="#d8def1">
+      Analytics, keywords, trends, AI insights.
+    </text>
+    <text x="518" y="378" font-size="24" font-weight="500" font-family="Inter, Arial, sans-serif" fill="#95a4c6">
+      Creator growth intelligence in one focused dashboard.
+    </text>
+  </g>
+
+  <g transform="translate(519 430)">
+    <rect x="0" y="0" width="164" height="46" rx="23" fill="#12192d" stroke="#2a3a60" />
+    <circle cx="31" cy="23" r="7" fill="#1aa7ff" />
+    <text x="49" y="30" font-size="20" font-weight="700" font-family="Inter, Arial, sans-serif" fill="#edf2ff">AI Insight</text>
+    <rect x="181" y="0" width="192" height="46" rx="23" fill="#1c1320" stroke="#583055" />
+    <circle cx="212" cy="23" r="7" fill="#ff3e72" />
+    <text x="230" y="30" font-size="20" font-weight="700" font-family="Inter, Arial, sans-serif" fill="#fff2f7">Trend Tracking</text>
+  </g>
+</svg>

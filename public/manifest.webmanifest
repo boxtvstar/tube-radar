@@ -1,0 +1,27 @@
+{
+  "name": "Tube Radar 2.0",
+  "short_name": "Tube Radar",
+  "description": "유튜브 채널 분석, 키워드 탐색, 트렌드 추적, AI 인사이트를 한곳에서 제공하는 올인원 분석 플랫폼.",
+  "lang": "ko",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f12",
+  "theme_color": "#0f0f12",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

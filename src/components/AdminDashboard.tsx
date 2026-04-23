@@ -45,6 +45,7 @@ interface UserData {
   membershipTier?: string | null;
   trialStatus?: 'active' | 'expired' | 'converted' | null;
   trialExpiresAt?: string | null;
+  trialUsed?: boolean;
   status?: MembershipStatus;
 }
 
@@ -439,7 +440,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
           membershipTier: member.tier || null,
           expiresAt: nextExpiresAt || null,
           lastUpdate: new Date().toISOString(),
-          ...(resolvedStatus !== 'trial' ? { trialStatus: foundUser.trialStatus === 'active' ? 'converted' : (foundUser.trialStatus || null) } : {})
+          trialStatus: foundUser.trialStatus === 'active' ? 'converted' : (foundUser.trialStatus || null)
         });
 
         try {
@@ -1749,7 +1750,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         role: nextRole,
         plan: nextPlan,
         membershipTier: editStatus === 'silver' ? '실버 버튼' : editStatus === 'gold' ? '골드 버튼' : editStatus === 'platinum' ? '플래티넘 버튼' : null,
-        trialStatus: editStatus === 'trial' ? 'active' : ((selectedUser.trialStatus === 'active' && editStatus !== 'trial') ? 'converted' : selectedUser.trialStatus || null),
+        trialStatus: editStatus === 'trial' ? 'active' : (selectedUser.trialStatus === 'active' ? 'converted' : selectedUser.trialStatus || null),
         trialExpiresAt: editStatus === 'trial'
           ? (selectedUser.trialExpiresAt || calculateExpiry(3))
           : null,

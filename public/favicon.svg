@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Tube Radar favicon">
+  <defs>
+    <linearGradient id="tubeRadarGradient" x1="44" y1="214" x2="212" y2="68" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9f1c" />
+      <stop offset="0.34" stop-color="#ff3e72" />
+      <stop offset="0.68" stop-color="#c41fe1" />
+      <stop offset="1" stop-color="#1aa7ff" />
+    </linearGradient>
+  </defs>
+  <path
+    fill="url(#tubeRadarGradient)"
+    d="M72 44c-15.5 0-28 12.5-28 28v112c0 31 35.2 49.1 60.6 31.1l92.2-65.2c22.8-16.1 22.8-49.8 0-65.9l-92.2-65.2A35.7 35.7 0 0 0 72 44Zm24 38.9 79.2 56c5.7 4 5.7 12.4 0 16.4L96 211.3c-8 5.7-19-0.1-19-9.9V92.7c0-9.8 11-15.6 19-9.9Z"
+  />
+</svg>

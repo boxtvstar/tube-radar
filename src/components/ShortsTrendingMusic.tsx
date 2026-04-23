@@ -1,4 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  AdminShortsMusicGroup,
+  AdminShortsMusicTrack,
+  deleteShortsMusicGroupFromDb,
+  deleteShortsMusicTrackFromDb,
+  getShortsMusicGroupsFromDb,
+  getShortsMusicTracksFromDb,
+  saveShortsMusicGroupToDb,
+  saveShortsMusicTrackToDb,
+} from '../../services/dbService';
 
 interface ShortsTrack {
   rank: number;
@@ -6,6 +16,10 @@ interface ShortsTrack {
   artist: string;
   thumbnail: string;
   videoId: string;
+  id?: string;
+  groupId?: string;
+  groupName?: string;
+  addedByAdmin?: boolean;
 }
 
 interface ShortsVideo {
@@ -71,17 +85,57 @@ function getGenre(artist: string): string {
 interface ShortsTrendingMusicProps {
   onTrackUsage?: (units: number, details: string) => Promise<void>;
   onPreCheckQuota?: (cost: number) => Promise<void>;
+  isAdmin?: boolean;
 }
 
-export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrackUsage, onPreCheckQuota }) => {
+const getYoutubeThumbnail = (videoId: string) => videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '';
+
+const extractYoutubeVideoId = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const directId = trimmed.match(/^[a-zA-Z0-9_-]{11}$/)?.[0];
+  if (directId) return directId;
+
+  try {
+    const url = new URL(trimmed);
+    const watchId = url.searchParams.get('v');
+    if (watchId?.match(/^[a-zA-Z0-9_-]{11}$/)) return watchId;
+
+    const segments = url.pathname.split('/').filter(Boolean);
+    const candidate = ['shorts', 'embed', 'live', 'v'].includes(segments[0] || '') ? segments[1] : segments[0];
+    return candidate?.match(/^[a-zA-Z0-9_-]{11}$/)?.[0] || '';
+  } catch {
+    return trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/))([a-zA-Z0-9_-]{11})/)?.[1] || '';
+  }
+};
+
+const normalizeMusicKey = (track: Pick<ShortsTrack, 'name' | 'artist' | 'videoId'>) => (
+  track.videoId || `${track.name}_${track.artist}`
+).trim().toLowerCase();
+
+export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrackUsage, onPreCheckQuota, isAdmin = false }) => {
   const [tracks, setTracks] = useState<ShortsTrack[]>([]);
+  const [adminTracks, setAdminTracks] = useState<ShortsTrack[]>([]);
+  const [musicGroups, setMusicGroups] = useState<AdminShortsMusicGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [adminError, setAdminError] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [relatedShorts, setRelatedShorts] = useState<ShortsVideo[]>([]);
   const [shortsLoading, setShortsLoading] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminAdding, setAdminAdding] = useState(false);
+  const [groupAdding, setGroupAdding] = useState(false);
+  const [trackForm, setTrackForm] = useState({
+    name: '',
+    artist: '',
+    videoId: '',
+    thumbnail: '',
+    groupId: '',
+  });
+  const [groupName, setGroupName] = useState('');
 
   const apiBase = useMemo(() => {
     const raw = (import.meta.env.VITE_BACKEND_URL || '').trim();
@@ -126,16 +180,56 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
     }
   }, [apiBase]);
 
+  const loadAdminMusic = useCallback(async () => {
+    try {
+      const [groups, dbTracks] = await Promise.all([
+        getShortsMusicGroupsFromDb(),
+        getShortsMusicTracksFromDb(),
+      ]);
+      setMusicGroups(groups);
+      setAdminTracks(dbTracks.map((track, idx) => ({
+        rank: idx + 1,
+        name: track.name,
+        artist: track.artist,
+        thumbnail: track.thumbnail,
+        videoId: track.videoId,
+        id: track.id,
+        groupId: track.groupId,
+        groupName: track.groupName,
+        addedByAdmin: true,
+      })));
+    } catch (e) {
+      console.warn('관리자 쇼츠 음악 로드 실패:', e);
+    }
+  }, []);
+
   useEffect(() => {
     if (!loadFromCache()) fetchTracks();
+    loadAdminMusic();
     const interval = setInterval(() => fetchTracks(), CACHE_TTL);
     return () => clearInterval(interval);
-  }, [loadFromCache, fetchTracks]);
+  }, [loadFromCache, fetchTracks, loadAdminMusic]);
+
+  const displayTracks = useMemo(() => {
+    const map = new Map<string, ShortsTrack>();
+    adminTracks.forEach((track, idx) => {
+      map.set(normalizeMusicKey(track), { ...track, rank: idx + 1, addedByAdmin: true });
+    });
+    tracks.forEach((track) => {
+      const key = normalizeMusicKey(track);
+      if (!map.has(key)) map.set(key, track);
+    });
+    return Array.from(map.values()).map((track, idx) => ({ ...track, rank: idx + 1 }));
+  }, [adminTracks, tracks]);
 
   const filteredTracks = useMemo(() => {
-    if (selectedCategory === 'all') return tracks;
-    return tracks.filter(t => getGenre(t.artist) === selectedCategory);
-  }, [tracks, selectedCategory]);
+    if (selectedCategory === 'all') return displayTracks;
+    if (selectedCategory.startsWith('group:')) {
+      const groupId = selectedCategory.slice('group:'.length);
+      return displayTracks.filter(t => t.groupId === groupId);
+    }
+    return displayTracks.filter(t => getGenre(t.artist) === selectedCategory);
+  }, [displayTracks, selectedCategory]);
 
   const fetchRelatedShorts = useCallback(async (track: ShortsTrack) => {
     setShortsLoading(true);
@@ -162,6 +256,118 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
     }
   };
 
+  const handleCreateGroup = async () => {
+    const name = groupName.trim();
+    if (!name) return;
+    if (musicGroups.some(group => group.name.trim().toLowerCase() === name.toLowerCase())) {
+      setAdminError('이미 있는 그룹명입니다.');
+      return;
+    }
+
+    setGroupAdding(true);
+    setAdminError('');
+    try {
+      const group: AdminShortsMusicGroup = {
+        id: `music_group_${Date.now()}`,
+        name,
+        createdAt: Date.now(),
+      };
+      await saveShortsMusicGroupToDb(group);
+      setMusicGroups(prev => [...prev, group]);
+      setGroupName('');
+    } catch (e: any) {
+      setAdminError(e.message || '그룹 생성 실패');
+    } finally {
+      setGroupAdding(false);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (adminTracks.some(track => track.groupId === groupId)) {
+      setAdminError('이 그룹에 음악이 있어 삭제할 수 없습니다. 먼저 음악을 삭제하거나 다른 그룹으로 다시 추가해주세요.');
+      return;
+    }
+    if (!confirm('이 음악 그룹을 삭제하시겠습니까?')) return;
+
+    setAdminError('');
+    try {
+      await deleteShortsMusicGroupFromDb(groupId);
+      setMusicGroups(prev => prev.filter(group => group.id !== groupId));
+      if (selectedCategory === `group:${groupId}`) setSelectedCategory('all');
+    } catch (e: any) {
+      setAdminError(e.message || '그룹 삭제 실패');
+    }
+  };
+
+  const handleAddTrack = async () => {
+    const name = trackForm.name.trim();
+    const artist = trackForm.artist.trim();
+    const videoId = extractYoutubeVideoId(trackForm.videoId);
+    const thumbnail = trackForm.thumbnail.trim() || getYoutubeThumbnail(videoId);
+    const group = musicGroups.find(g => g.id === trackForm.groupId);
+
+    if (!name) {
+      setAdminError('음악 제목을 입력해주세요.');
+      return;
+    }
+
+    const nextTrack: AdminShortsMusicTrack = {
+      id: `music_track_${Date.now()}`,
+      name,
+      artist,
+      videoId,
+      thumbnail,
+      groupId: group?.id,
+      groupName: group?.name,
+      addedAt: Date.now(),
+    };
+
+    const nextKey = normalizeMusicKey(nextTrack);
+    if (displayTracks.some(track => normalizeMusicKey(track) === nextKey)) {
+      setAdminError('이미 목록에 있는 음악입니다.');
+      return;
+    }
+
+    setAdminAdding(true);
+    setAdminError('');
+    try {
+      await saveShortsMusicTrackToDb(nextTrack);
+      setAdminTracks(prev => [{
+        rank: 1,
+        name: nextTrack.name,
+        artist: nextTrack.artist,
+        thumbnail: nextTrack.thumbnail,
+        videoId: nextTrack.videoId,
+        id: nextTrack.id,
+        groupId: nextTrack.groupId,
+        groupName: nextTrack.groupName,
+        addedByAdmin: true,
+      }, ...prev]);
+      setTrackForm({ name: '', artist: '', videoId: '', thumbnail: '', groupId: trackForm.groupId });
+    } catch (e: any) {
+      setAdminError(e.message || '음악 추가 실패');
+    } finally {
+      setAdminAdding(false);
+    }
+  };
+
+  const handleDeleteTrack = async (track: ShortsTrack) => {
+    if (!track.id || !track.addedByAdmin) return;
+    if (!confirm('이 관리자 추가 음악을 삭제하시겠습니까?')) return;
+
+    setAdminError('');
+    try {
+      await deleteShortsMusicTrackFromDb(track.id);
+      setAdminTracks(prev => prev.filter(item => item.id !== track.id));
+      if (expandedIdx !== null) {
+        setExpandedIdx(null);
+        setRelatedShorts([]);
+      }
+    } catch (e: any) {
+      setAdminError(e.message || '음악 삭제 실패');
+    }
+  };
+
   return (
     <div className="w-full max-w-5xl mx-auto">
       {/* Header */}
@@ -176,22 +382,155 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
             </p>
           </div>
         </div>
-        <button
-          onClick={async () => {
-            try { if (onPreCheckQuota) await onPreCheckQuota(200); }
-            catch (e: any) {
-              if (e.message?.startsWith('QUOTA_INSUFFICIENT')) { setError('포인트가 부족합니다. (새로고침 1회 = 200포인트)'); return; }
-            }
-            await fetchTracks(true);
-            if (onTrackUsage) await onTrackUsage(200, '쇼츠 인기 음악 새로고침');
-          }}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-all disabled:opacity-50 border border-violet-200 dark:border-violet-500/30"
-        >
-          <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>refresh</span>
-          <span className="hidden sm:inline">새로고침</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setShowAdminPanel(v => !v);
+                setAdminError('');
+              }}
+              className="flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all border border-indigo-200 dark:border-indigo-500/30"
+            >
+              <span className="material-symbols-outlined text-sm">{showAdminPanel ? 'close' : 'admin_panel_settings'}</span>
+              <span className="hidden sm:inline">{showAdminPanel ? '닫기' : '관리'}</span>
+            </button>
+          )}
+          <button
+            onClick={async () => {
+              try { if (onPreCheckQuota) await onPreCheckQuota(200); }
+              catch (e: any) {
+                if (e.message?.startsWith('QUOTA_INSUFFICIENT')) { setError('포인트가 부족합니다. (새로고침 1회 = 200포인트)'); return; }
+              }
+              await fetchTracks(true);
+              if (onTrackUsage) await onTrackUsage(200, '쇼츠 인기 음악 새로고침');
+            }}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-all disabled:opacity-50 border border-violet-200 dark:border-violet-500/30"
+          >
+            <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>refresh</span>
+            <span className="hidden sm:inline">새로고침</span>
+          </button>
+        </div>
       </div>
+
+      {/* Admin Panel */}
+      {isAdmin && showAdminPanel && (
+        <div className="mb-5 p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-500/5 border border-indigo-200 dark:border-indigo-500/20">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-lg text-indigo-500">admin_panel_settings</span>
+            <h3 className="text-sm font-black text-indigo-700 dark:text-indigo-300">관리자: 쇼츠 인기 음악 직접 관리</h3>
+          </div>
+
+          <div className="grid md:grid-cols-[1.5fr_1fr] gap-4">
+            <div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                직접 추가한 음악은 Firebase에 저장되고 차트 상단에 우선 표시됩니다.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={trackForm.name}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="음악 제목"
+                  disabled={adminAdding}
+                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <input
+                  type="text"
+                  value={trackForm.artist}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, artist: e.target.value }))}
+                  placeholder="아티스트"
+                  disabled={adminAdding}
+                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <input
+                  type="text"
+                  value={trackForm.videoId}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, videoId: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !adminAdding && trackForm.name.trim()) handleAddTrack(); }}
+                  placeholder="YouTube 영상 ID 또는 URL 입력"
+                  disabled={adminAdding}
+                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <input
+                  type="text"
+                  value={trackForm.thumbnail}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, thumbnail: e.target.value }))}
+                  placeholder="썸네일 URL 입력"
+                  disabled={adminAdding}
+                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <select
+                  value={trackForm.groupId}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, groupId: e.target.value }))}
+                  disabled={adminAdding}
+                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/30"
+                >
+                  <option value="">그룹 없음</option>
+                  {musicGroups.map(group => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleAddTrack}
+                  disabled={adminAdding || !trackForm.name.trim()}
+                  className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className={`material-symbols-outlined text-sm ${adminAdding ? 'animate-spin' : ''}`}>{adminAdding ? 'progress_activity' : 'add'}</span>
+                  {adminAdding ? '추가 중...' : '음악 추가'}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">그룹을 만들면 필터 탭으로 노출됩니다.</p>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !groupAdding) handleCreateGroup(); }}
+                  placeholder="예: 댄스 챌린지"
+                  disabled={groupAdding}
+                  className="min-w-0 flex-1 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <button
+                  onClick={handleCreateGroup}
+                  disabled={groupAdding || !groupName.trim()}
+                  className="px-3 py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-black disabled:opacity-50"
+                >
+                  생성
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {musicGroups.length === 0 && (
+                  <span className="text-[11px] text-slate-400">아직 만든 그룹이 없습니다.</span>
+                )}
+                {musicGroups.map(group => (
+                  <span key={group.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                    {group.name}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteGroup(group.id)}
+                      className="text-slate-300 hover:text-rose-500 transition-colors"
+                      title="그룹 삭제"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {adminError && (
+            <p className="mt-3 text-[11px] text-rose-500 font-medium flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">error</span>
+              {adminError}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Category Filter */}
       <div className="flex flex-wrap gap-1.5 md:gap-2 mb-4 md:mb-6">
@@ -208,6 +547,19 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
             {cat.label}
           </button>
         ))}
+        {musicGroups.map(group => (
+          <button
+            key={group.id}
+            onClick={() => { setSelectedCategory(`group:${group.id}`); setExpandedIdx(null); }}
+            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl text-xs md:text-sm font-bold transition-all ${
+              selectedCategory === `group:${group.id}`
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/20'
+            }`}
+          >
+            {group.name}
+          </button>
+        ))}
       </div>
 
       {/* Error */}
@@ -219,7 +571,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       )}
 
       {/* Loading skeleton */}
-      {loading && tracks.length === 0 && (
+      {loading && displayTracks.length === 0 && (
         <div className="space-y-2">
           {Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="h-16 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
@@ -231,7 +583,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       {filteredTracks.length > 0 && (
         <div className="space-y-1">
           {filteredTracks.map((track, idx) => (
-            <div key={`${track.rank}-${track.videoId || idx}`}>
+            <div key={track.id || track.videoId || `${track.name}-${track.artist}-${idx}`}>
               {/* Track row */}
               <div
                 className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer border ${
@@ -262,13 +614,38 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
 
                 {/* Track Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-                    {track.name}
-                  </p>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                      {track.name}
+                    </p>
+                    {track.addedByAdmin && (
+                      <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">
+                        <span className="material-symbols-outlined text-[10px]">verified</span>
+                        관리자 추가
+                      </span>
+                    )}
+                  </div>
                   {track.artist && (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 truncate">{track.artist}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 truncate">
+                      {track.artist}
+                      {track.groupName && <span className="ml-1.5 text-indigo-400">· {track.groupName}</span>}
+                    </p>
                   )}
                 </div>
+
+                {isAdmin && track.addedByAdmin && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteTrack(track);
+                    }}
+                    className="size-8 flex items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors"
+                    title="관리자 추가 음악 삭제"
+                  >
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                  </button>
+                )}
 
                 {/* Expand indicator */}
                 <span className={`material-symbols-outlined text-sm text-slate-300 dark:text-slate-600 transition-transform ${expandedIdx === idx ? 'rotate-180 text-violet-500' : ''}`}>
@@ -354,7 +731,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
       )}
 
       {/* Empty State */}
-      {!loading && filteredTracks.length === 0 && tracks.length > 0 && (
+      {!loading && filteredTracks.length === 0 && displayTracks.length > 0 && (
         <div className="text-center py-16">
           <span className="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-600">filter_list_off</span>
           <p className="mt-3 text-sm font-bold text-slate-400 dark:text-slate-500">선택한 카테고리에 맞는 음악이 없습니다</p>
@@ -364,7 +741,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         </div>
       )}
 
-      {!loading && tracks.length === 0 && !error && (
+      {!loading && displayTracks.length === 0 && !error && (
         <div className="text-center py-16">
           <span className="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-600">music_note</span>
           <p className="mt-3 text-sm font-bold text-slate-400 dark:text-slate-500">인기 음악을 불러오는 중...</p>

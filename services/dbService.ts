@@ -157,6 +157,61 @@ export const getRisingChannelsFromDb = async (): Promise<AdminRisingChannel[]> =
     .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
 };
 
+// --- Shorts Trending Music (Admin Manual Adds) ---
+
+export interface AdminShortsMusicGroup {
+  id: string;
+  name: string;
+  createdAt: number;
+  addedBy?: string;
+}
+
+export interface AdminShortsMusicTrack {
+  id: string;
+  name: string;
+  artist: string;
+  thumbnail: string;
+  videoId: string;
+  groupId?: string;
+  groupName?: string;
+  addedAt: number;
+  addedBy?: string;
+}
+
+export const saveShortsMusicGroupToDb = async (group: AdminShortsMusicGroup) => {
+  const sanitized = removeUndefinedFields(group);
+  await setDoc(doc(db, "shorts_music_groups", group.id), sanitized);
+};
+
+export const deleteShortsMusicGroupFromDb = async (groupId: string) => {
+  await deleteDoc(doc(db, "shorts_music_groups", groupId));
+};
+
+export const getShortsMusicGroupsFromDb = async (): Promise<AdminShortsMusicGroup[]> => {
+  const q = query(collection(db, "shorts_music_groups"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs
+    .map(doc => doc.data() as AdminShortsMusicGroup)
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+};
+
+export const saveShortsMusicTrackToDb = async (track: AdminShortsMusicTrack) => {
+  const sanitized = removeUndefinedFields(track);
+  await setDoc(doc(db, "shorts_music_tracks", track.id), sanitized);
+};
+
+export const deleteShortsMusicTrackFromDb = async (trackId: string) => {
+  await deleteDoc(doc(db, "shorts_music_tracks", trackId));
+};
+
+export const getShortsMusicTracksFromDb = async (): Promise<AdminShortsMusicTrack[]> => {
+  const q = query(collection(db, "shorts_music_tracks"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs
+    .map(doc => doc.data() as AdminShortsMusicTrack)
+    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+};
+
 // --- View Count ---
 
 export const incrementPackageViewCount = async (pkgId: string, type: 'package' | 'topic') => {

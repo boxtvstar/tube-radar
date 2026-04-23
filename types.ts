@@ -49,6 +49,7 @@ export interface VideoSnippet {
   thumbnail: string;
   views: string;
   date: string;
+  publishedAt?: string;
   duration: string;
 }
 

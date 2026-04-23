@@ -75,13 +75,6 @@ import { RisingCreators } from './src/components/RisingCreators';
 const NEW_CHANNEL_THRESHOLD = 48 * 60 * 60 * 1000; // 48 hours
 
 const formatNumber = (num: number) => {
-// ... (omitted)
-// I can't skip separate lines in one replacement block easily if they are far apart.
-// I will split.
-// Imports are ~ line 36.
-// UseEffect is ~ line 1340.
-// I will do Imports FIRST.
-
   if (num >= 100000000) return (num / 100000000).toFixed(1) + "억";
   if (num >= 10000) return (num / 10000).toFixed(1) + "만";
   return num.toLocaleString();
@@ -1008,26 +1001,24 @@ const Sidebar = ({
             className={`${isCategoryTrendMode ? 'bg-rose-50 dark:bg-rose-500/10 !text-rose-600 dark:!text-rose-400 border border-rose-200 dark:border-rose-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-rose-500'}`}
             isCollapsed={isCollapsed}
           />
-          {isAdmin && (
-            <SidebarItem
-              icon="music_note"
-              label={
-                <span className="flex items-center gap-1.5">
-                  쇼츠 인기 음악
-                  <span className="text-[9px] bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
-                     <span className="material-symbols-outlined text-[10px]">music_note</span>
-                  </span>
+          <SidebarItem
+            icon="music_note"
+            label={
+              <span className="flex items-center gap-1.5">
+                쇼츠 인기 음악
+                <span className="text-[9px] bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                   <span className="material-symbols-outlined text-[10px]">music_note</span>
                 </span>
-              }
-              active={isShortsMusicMode}
-              onClick={() => {
-                onToggleShortsMusicMode(true);
-                if (onCloseMobileMenu) onCloseMobileMenu();
-              }}
-              className={`${isShortsMusicMode ? 'bg-violet-50 dark:bg-violet-500/10 !text-violet-600 dark:!text-violet-400 border border-violet-200 dark:border-violet-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-violet-500'}`}
-              isCollapsed={isCollapsed}
-            />
-          )}
+              </span>
+            }
+            active={isShortsMusicMode}
+            onClick={() => {
+              onToggleShortsMusicMode(true);
+              if (onCloseMobileMenu) onCloseMobileMenu();
+            }}
+            className={`${isShortsMusicMode ? 'bg-violet-50 dark:bg-violet-500/10 !text-violet-600 dark:!text-violet-400 border border-violet-200 dark:border-violet-500/30 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 border border-transparent hover:!text-violet-500'}`}
+            isCollapsed={isCollapsed}
+          />
         </div>
 
       </nav>
@@ -4475,9 +4466,13 @@ export default function App() {
           <div className="w-full p-6 md:p-10 flex flex-col relative">
             <CommunityHotPosts onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
           </div>
-        ) : isShortsMusicMode && isAdmin ? (
+        ) : isShortsMusicMode ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
-            <ShortsTrendingMusic onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)} onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)} />
+            <ShortsTrendingMusic
+              isAdmin={isAdmin}
+              onTrackUsage={(units, details) => trackUsage(ytKey, 'list', units, details)}
+              onPreCheckQuota={(cost) => preCheckQuota(cost, isAdmin ? 'admin' : userGrade)}
+            />
           </div>
         ) : isRisingMode && (isAdmin || isGoldOrAbovePlan(userGrade)) ? (
           <div className="w-full p-6 md:p-10 flex flex-col relative">
