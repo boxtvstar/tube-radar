@@ -34,6 +34,12 @@ interface ShortsMusicResponse {
   updated_at: string;
 }
 
+interface ShortsMusicExtractResponse {
+  track: Pick<ShortsTrack, 'name' | 'artist' | 'thumbnail' | 'videoId'>;
+  source: 'music_card' | 'video_fallback';
+  shortUrl: string;
+}
+
 const CACHE_KEY = 'tuberadar_shorts_music';
 const CACHE_TTL = 7200 * 1000;
 
@@ -129,10 +135,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
   const [adminAdding, setAdminAdding] = useState(false);
   const [groupAdding, setGroupAdding] = useState(false);
   const [trackForm, setTrackForm] = useState({
-    name: '',
-    artist: '',
-    videoId: '',
-    thumbnail: '',
+    shortsUrl: '',
     groupId: '',
   });
   const [groupName, setGroupName] = useState('');
@@ -300,37 +303,51 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
   };
 
   const handleAddTrack = async () => {
-    const name = trackForm.name.trim();
-    const artist = trackForm.artist.trim();
-    const videoId = extractYoutubeVideoId(trackForm.videoId);
-    const thumbnail = trackForm.thumbnail.trim() || getYoutubeThumbnail(videoId);
+    const shortsUrl = trackForm.shortsUrl.trim();
+    const inputVideoId = extractYoutubeVideoId(shortsUrl);
     const group = musicGroups.find(g => g.id === trackForm.groupId);
 
-    if (!name) {
-      setAdminError('음악 제목을 입력해주세요.');
+    if (!shortsUrl || !inputVideoId) {
+      setAdminError('YouTube 쇼츠 주소를 입력해주세요.');
       return;
     }
 
-    const nextTrack: AdminShortsMusicTrack = {
-      id: `music_track_${Date.now()}`,
-      name,
-      artist,
-      videoId,
-      thumbnail,
-      groupId: group?.id,
-      groupName: group?.name,
-      addedAt: Date.now(),
-    };
-
-    const nextKey = normalizeMusicKey(nextTrack);
-    if (displayTracks.some(track => normalizeMusicKey(track) === nextKey)) {
-      setAdminError('이미 목록에 있는 음악입니다.');
+    if (displayTracks.some(track => track.videoId === inputVideoId)) {
+      setAdminError('이미 목록에 있는 쇼츠입니다.');
       return;
     }
 
     setAdminAdding(true);
     setAdminError('');
     try {
+      const res = await fetch(`${apiBase}/api/shorts-music?extractUrl=${encodeURIComponent(shortsUrl)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = '쇼츠에서 음악 정보를 가져오지 못했습니다.';
+        try { const j = JSON.parse(text); msg = j.detail || j.error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const extracted = await res.json() as ShortsMusicExtractResponse;
+      const track = extracted.track;
+      if (!track?.name) throw new Error('쇼츠에서 음악 제목을 찾지 못했습니다.');
+
+      const nextTrack: AdminShortsMusicTrack = {
+        id: `music_track_${Date.now()}`,
+        name: track.name,
+        artist: track.artist || '',
+        videoId: track.videoId || inputVideoId,
+        thumbnail: track.thumbnail || getYoutubeThumbnail(track.videoId || inputVideoId),
+        groupId: group?.id,
+        groupName: group?.name,
+        addedAt: Date.now(),
+      };
+
+      const nextKey = normalizeMusicKey(nextTrack);
+      if (displayTracks.some(item => normalizeMusicKey(item) === nextKey)) {
+        setAdminError('이미 목록에 있는 음악입니다.');
+        return;
+      }
+
       await saveShortsMusicTrackToDb(nextTrack);
       setAdminTracks(prev => [{
         rank: 1,
@@ -343,7 +360,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
         groupName: nextTrack.groupName,
         addedByAdmin: true,
       }, ...prev]);
-      setTrackForm({ name: '', artist: '', videoId: '', thumbnail: '', groupId: trackForm.groupId });
+      setTrackForm({ shortsUrl: '', groupId: trackForm.groupId });
     } catch (e: any) {
       setAdminError(e.message || '음악 추가 실패');
     } finally {
@@ -424,39 +441,15 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
           <div className="grid md:grid-cols-[1.5fr_1fr] gap-4">
             <div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-                직접 추가한 음악은 Firebase에 저장되고 차트 상단에 우선 표시됩니다.
+                그룹을 선택하고 쇼츠 주소만 붙여넣으면 음악 정보를 자동으로 가져와 Firebase에 저장합니다.
               </p>
-              <div className="grid sm:grid-cols-2 gap-2">
+              <div className="grid sm:grid-cols-[1fr_auto] gap-2">
                 <input
                   type="text"
-                  value={trackForm.name}
-                  onChange={(e) => setTrackForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="음악 제목"
-                  disabled={adminAdding}
-                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-                <input
-                  type="text"
-                  value={trackForm.artist}
-                  onChange={(e) => setTrackForm(prev => ({ ...prev, artist: e.target.value }))}
-                  placeholder="아티스트"
-                  disabled={adminAdding}
-                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-                <input
-                  type="text"
-                  value={trackForm.videoId}
-                  onChange={(e) => setTrackForm(prev => ({ ...prev, videoId: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !adminAdding && trackForm.name.trim()) handleAddTrack(); }}
-                  placeholder="YouTube 영상 ID 또는 URL 입력"
-                  disabled={adminAdding}
-                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-                <input
-                  type="text"
-                  value={trackForm.thumbnail}
-                  onChange={(e) => setTrackForm(prev => ({ ...prev, thumbnail: e.target.value }))}
-                  placeholder="썸네일 URL 입력"
+                  value={trackForm.shortsUrl}
+                  onChange={(e) => setTrackForm(prev => ({ ...prev, shortsUrl: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !adminAdding && trackForm.shortsUrl.trim()) handleAddTrack(); }}
+                  placeholder="YouTube 쇼츠 주소 붙여넣기"
                   disabled={adminAdding}
                   className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/30"
                 />
@@ -464,7 +457,7 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
                   value={trackForm.groupId}
                   onChange={(e) => setTrackForm(prev => ({ ...prev, groupId: e.target.value }))}
                   disabled={adminAdding}
-                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/30 sm:min-w-40"
                 >
                   <option value="">그룹 없음</option>
                   {musicGroups.map(group => (
@@ -473,13 +466,16 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
                 </select>
                 <button
                   onClick={handleAddTrack}
-                  disabled={adminAdding || !trackForm.name.trim()}
-                  className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={adminAdding || !trackForm.shortsUrl.trim()}
+                  className="sm:col-span-2 px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className={`material-symbols-outlined text-sm ${adminAdding ? 'animate-spin' : ''}`}>{adminAdding ? 'progress_activity' : 'add'}</span>
-                  {adminAdding ? '추가 중...' : '음악 추가'}
+                  {adminAdding ? '음악 정보 가져오는 중...' : '쇼츠 주소로 음악 추가'}
                 </button>
               </div>
+              <p className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
+                YouTube 음악 카드가 없으면 영상 제목과 채널명으로 임시 저장됩니다.
+              </p>
             </div>
 
             <div>

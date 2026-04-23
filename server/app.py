@@ -11,7 +11,7 @@ from downloader import get_video_info, stream_video_process, build_download_file
 from similar_thumbnail import find_similar_thumbnails
 from source_finder import find_source_from_video_url, find_source_from_image
 from community_scraper import fetch_all_hot_posts
-from shorts_music import fetch_shorts_music, search_shorts
+from shorts_music import fetch_shorts_music, search_shorts, extract_shorts_music_track
 from rising_channels import fetch_rising_channels
 from tiktok_scraper import scrape_tiktok_profile
 from instagram_scraper import scrape_instagram_profile
@@ -129,9 +129,11 @@ def community_hot_posts(force: bool = False):
 
 
 @app.get("/api/shorts-music")
-def shorts_music(force: bool = False, q: str | None = None):
-    """쇼츠 인기 음악 차트 (2시간 캐시) / q 파라미터 있으면 쇼츠 검색"""
+def shorts_music(force: bool = False, q: str | None = None, extractUrl: str | None = None):
+    """쇼츠 인기 음악 차트 / q 검색 / extractUrl 쇼츠 음악 추출"""
     try:
+        if extractUrl:
+            return extract_shorts_music_track(extractUrl)
         if q:
             return {"videos": search_shorts(q)}
         result = fetch_shorts_music(force=force)
