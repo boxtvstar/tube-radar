@@ -14,6 +14,12 @@
     },
     "api/instagram.py": {
       "maxDuration": 15
+    },
+    "api/threads.py": {
+      "maxDuration": 15
+    },
+    "api/image_proxy.py": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
@@ -22,6 +28,8 @@
     { "source": "/api/shorts-music", "destination": "/api/shorts_music" },
     { "source": "/api/rising-channels", "destination": "/api/rising_channels" },
     { "source": "/api/tiktok/profile", "destination": "/api/tiktok" },
-    { "source": "/api/instagram/profile", "destination": "/api/instagram" }
+    { "source": "/api/instagram/profile", "destination": "/api/instagram" },
+    { "source": "/api/threads/profile", "destination": "/api/threads" },
+    { "source": "/api/image-proxy", "destination": "/api/image_proxy" }
   ]
 }
