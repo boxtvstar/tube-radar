@@ -15,6 +15,7 @@ from shorts_music import fetch_shorts_music, search_shorts, extract_shorts_music
 from rising_channels import fetch_rising_channels
 from tiktok_scraper import scrape_tiktok_profile
 from instagram_scraper import scrape_instagram_profile
+from threads_scraper import scrape_threads_profile
 
 app = FastAPI(title="YouTube Transcript API")
 
@@ -129,13 +130,13 @@ def community_hot_posts(force: bool = False):
 
 
 @app.get("/api/shorts-music")
-def shorts_music(force: bool = False, q: str | None = None, extractUrl: str | None = None):
+def shorts_music(force: bool = False, q: str | None = None, extractUrl: str | None = None, videoId: str | None = None):
     """쇼츠 인기 음악 차트 / q 검색 / extractUrl 쇼츠 음악 추출"""
     try:
         if extractUrl:
             return extract_shorts_music_track(extractUrl)
         if q:
-            return {"videos": search_shorts(q)}
+            return {"videos": search_shorts(q, video_id=videoId or "")}
         result = fetch_shorts_music(force=force)
         return result
     except Exception as e:
@@ -169,7 +170,7 @@ def tiktok_profile(username: str = Query(..., description="TikTok @username")):
 def image_proxy(url: str = Query(..., description="이미지 URL")):
     """Instagram/TikTok 등 CORS 차단 이미지를 프록시"""
     from starlette.responses import Response
-    if not any(d in url for d in ("cdninstagram.com", "tiktokcdn.com", "tiktokcdn-")):
+    if not any(d in url for d in ("cdninstagram.com", "tiktokcdn.com", "tiktokcdn-", "scontent-", "fbcdn.net")):
         raise HTTPException(status_code=400, detail="허용되지 않는 도메인")
     try:
         resp = _req.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, stream=True)
@@ -195,6 +196,20 @@ def instagram_profile(username: str = Query(..., description="Instagram @usernam
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Instagram 스크래핑 실패: {str(e)}")
+
+
+@app.get("/api/threads/profile")
+def threads_profile(username: str = Query(..., description="Threads @username")):
+    """Threads 프로필 스크래핑 (프로필 사진 + 이름)"""
+    try:
+        result = scrape_threads_profile(username)
+        if "error" in result:
+            raise HTTPException(status_code=422, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Threads 스크래핑 실패: {str(e)}")
 
 
 import requests as _req

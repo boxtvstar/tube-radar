@@ -41,7 +41,9 @@ const removeUndefinedFields = <T extends Record<string, any>>(obj: T): Partial<T
 
 export const saveChannelToDb = async (userId: string, channel: SavedChannel) => {
   const sanitizedChannel = removeUndefinedFields(channel);
+  console.log('[saveChannelToDb] Saving:', channel.id, channel.platform, JSON.stringify(sanitizedChannel).slice(0, 200));
   await setDoc(doc(db, "users", userId, "channels", channel.id), sanitizedChannel);
+  console.log('[saveChannelToDb] Success:', channel.id);
 };
 
 export const removeChannelFromDb = async (userId: string, channelId: string) => {
@@ -51,7 +53,9 @@ export const removeChannelFromDb = async (userId: string, channelId: string) => 
 export const getChannelsFromDb = async (userId: string): Promise<SavedChannel[]> => {
   const q = query(collection(db, "users", userId, "channels"));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => doc.data() as SavedChannel);
+  const channels = querySnapshot.docs.map(doc => doc.data() as SavedChannel);
+  console.log('[getChannelsFromDb] Loaded', channels.length, 'channels. Platforms:', channels.map(c => `${c.id}(${c.platform})`).join(', '));
+  return channels;
 };
 
 export const saveGroupToDb = async (userId: string, group: ChannelGroup) => {

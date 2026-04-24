@@ -77,41 +77,54 @@ export const getInstagramChannelInfo = async (username: string): Promise<SavedCh
     username = extractInstagramUsername(username);
     if (!username) return null;
 
-    const data = await fetchInstagramProfile(username);
-    if (data.error) throw new Error(data.error);
+    try {
+      const data = await fetchInstagramProfile(username);
+      if (data.error) throw new Error(data.error);
 
-    const { profile, videos } = data;
+      const { profile, videos } = data;
 
-    // 릴스 조회수 중앙값 계산
-    let customAvg = 0;
-    if (videos.length > 0) {
-      const views = videos
-        .map(v => v.viewCount)
-        .filter(v => v > 0)
-        .sort((a, b) => a - b);
+      // 릴스 조회수 중앙값 계산
+      let customAvg = 0;
+      if (videos.length > 0) {
+        const views = videos
+          .map(v => v.viewCount)
+          .filter(v => v > 0)
+          .sort((a, b) => a - b);
 
-      if (views.length > 0) {
-        const mid = Math.floor(views.length / 2);
-        customAvg = views.length % 2 !== 0
-          ? views[mid]
-          : Math.floor((views[mid - 1] + views[mid]) / 2);
+        if (views.length > 0) {
+          const mid = Math.floor(views.length / 2);
+          customAvg = views.length % 2 !== 0
+            ? views[mid]
+            : Math.floor((views[mid - 1] + views[mid]) / 2);
+        }
+        if (customAvg < 100) customAvg = 100;
       }
-      if (customAvg < 100) customAvg = 100;
-    }
 
-    return {
-      id: profile.id,
-      title: profile.fullName || profile.username,
-      description: profile.biography,
-      thumbnail: profile.profilePicUrl,
-      customUrl: `@${profile.username}`,
-      subscriberCount: formatNumber(profile.followerCount),
-      videoCount: formatNumber(profile.mediaCount),
-      customAvgViews: customAvg,
-      totalViews: '',
-      lastUpdated: Date.now(),
-      platform: 'instagram',
-    };
+      return {
+        id: `ig_${profile.username || username}`,
+        title: profile.fullName || profile.username,
+        description: profile.biography,
+        thumbnail: profile.profilePicUrl,
+        customUrl: `@${profile.username}`,
+        subscriberCount: formatNumber(profile.followerCount),
+        videoCount: formatNumber(profile.mediaCount),
+        customAvgViews: customAvg,
+        totalViews: '',
+        lastUpdated: Date.now(),
+        platform: 'instagram',
+      };
+    } catch {
+      // 스크래핑 실패 시 수동 폴백 — 계정 프로필만 저장
+      console.warn(`Instagram scraping failed for ${username}, using manual fallback`);
+      return {
+        id: `ig_${username}`,
+        title: `@${username}`,
+        thumbnail: `https://unavatar.io/instagram/${username}?fallback=https://ui-avatars.com/api/?name=${encodeURIComponent(username)}%26background=E1306C%26color=fff%26bold=true%26size=128`,
+        customUrl: `@${username}`,
+        lastUpdated: Date.now(),
+        platform: 'instagram',
+      };
+    }
   } catch (e: any) {
     console.error('getInstagramChannelInfo failed:', e);
     return null;

@@ -68,42 +68,65 @@ const extractTikTokUsername = (input: string): string => {
 export const getTikTokChannelInfo = async (username: string): Promise<SavedChannel | null> => {
   try {
     username = extractTikTokUsername(username);
-    const data = await fetchTikTokProfile(username);
-    if (data.error) throw new Error(data.error);
+    if (!username) return null;
 
-    const { profile, videos } = data;
+    try {
+      const data = await fetchTikTokProfile(username);
+      if (data.error) throw new Error(data.error);
 
-    // 최근 20개 영상 조회수 중앙값 계산
-    let customAvg = 0;
-    if (videos.length > 0) {
-      const views = videos
-        .slice(0, 20)
-        .map(v => v.playCount)
-        .filter(v => v > 0)
-        .sort((a, b) => a - b);
+      const { profile, videos } = data;
 
-      if (views.length > 0) {
-        const mid = Math.floor(views.length / 2);
-        customAvg = views.length % 2 !== 0
-          ? views[mid]
-          : Math.floor((views[mid - 1] + views[mid]) / 2);
+      // 최근 20개 영상 조회수 중앙값 계산
+      let customAvg = 0;
+      if (videos.length > 0) {
+        const views = videos
+          .slice(0, 20)
+          .map(v => v.playCount)
+          .filter(v => v > 0)
+          .sort((a, b) => a - b);
+
+        if (views.length > 0) {
+          const mid = Math.floor(views.length / 2);
+          customAvg = views.length % 2 !== 0
+            ? views[mid]
+            : Math.floor((views[mid - 1] + views[mid]) / 2);
+        }
+        if (customAvg < 100) customAvg = 100;
       }
-      if (customAvg < 100) customAvg = 100;
-    }
 
-    return {
-      id: profile.id,
-      title: profile.nickname || profile.uniqueId,
-      description: profile.signature,
-      thumbnail: profile.avatar,
-      customUrl: `@${profile.uniqueId}`,
-      subscriberCount: formatNumber(profile.followerCount),
-      videoCount: formatNumber(profile.videoCount),
-      customAvgViews: customAvg,
-      totalViews: formatNumber(profile.heartCount),
-      lastUpdated: Date.now(),
-      platform: 'tiktok',
-    };
+      return {
+        id: `tt_${profile.uniqueId || username}`,
+        title: profile.nickname || profile.uniqueId,
+        description: profile.signature,
+        thumbnail: profile.avatar,
+        customUrl: `@${profile.uniqueId}`,
+        subscriberCount: formatNumber(profile.followerCount),
+        videoCount: formatNumber(profile.videoCount),
+        customAvgViews: customAvg,
+        totalViews: formatNumber(profile.heartCount),
+        lastUpdated: Date.now(),
+        platform: 'tiktok',
+      };
+    } catch {
+      // 스크래핑 실패 시 oEmbed 폴백 — 닉네임 + unavatar 프로필 이미지
+      console.warn(`TikTok scraping failed for ${username}, trying oEmbed fallback`);
+      let title = `@${username}`;
+      try {
+        const oembed = await fetch(`https://www.tiktok.com/oembed?url=https://www.tiktok.com/@${username}`);
+        if (oembed.ok) {
+          const data = await oembed.json();
+          if (data.author_name) title = data.author_name;
+        }
+      } catch { /* ignore */ }
+      return {
+        id: `tt_${username}`,
+        title,
+        thumbnail: `https://unavatar.io/tiktok/${username}?fallback=https://ui-avatars.com/api/?name=${encodeURIComponent(username)}%26background=000%26color=fff%26bold=true%26size=128`,
+        customUrl: `@${username}`,
+        lastUpdated: Date.now(),
+        platform: 'tiktok',
+      };
+    }
   } catch (e: any) {
     console.error('getTikTokChannelInfo failed:', e);
     return null;

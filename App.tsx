@@ -54,6 +54,8 @@ import {
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification, Platform } from './types';
 import { getTikTokChannelInfo, fetchTikTokVideos } from './services/tiktokService';
 import { getInstagramChannelInfo, fetchInstagramVideos } from './services/instagramService';
+import { getXChannelInfo } from './services/xService';
+import { getThreadsChannelInfo } from './services/threadsService';
 import type { AutoDetectResult } from './services/youtubeService';
 import { PaymentResult } from './src/components/PaymentResult';
 import { ComparisonView } from './src/components/ComparisonView';
@@ -1707,6 +1709,7 @@ export default function App() {
   const [myPageInitialTab, setMyPageInitialTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>('dashboard');
 
   const [monitorPlatform, setMonitorPlatform] = useState<Platform>('youtube');
+  const isNonYoutubePlatform = monitorPlatform !== 'youtube';
   const [groups, setGroups] = useState<ChannelGroup[]>(DEFAULT_GROUPS);
   const [activeGroupId, setActiveGroupId] = useState('all');
   const [isAddingGroup, setIsAddingGroup] = useState<string | false>(false); // false | 'standalone' | parentGroupId
@@ -2027,6 +2030,16 @@ export default function App() {
 
   const isApiKeyMissing = useMemo(() => !ytKey || ytApiStatus !== 'valid', [ytKey, ytApiStatus]);
 
+  // 현재 플랫폼에 해당하는 그룹만 필터
+  const platformGroups = useMemo(() => {
+    return groups.filter(g => {
+      // 시스템 그룹은 항상 표시
+      if (g.id === 'all' || g.id === 'unassigned') return true;
+      // platform 필드 없는 기존 그룹은 youtube로 간주
+      return (g.platform || 'youtube') === monitorPlatform;
+    });
+  }, [groups, monitorPlatform]);
+
   const groupCounts = useMemo(() => {
     const platformChannels = savedChannels.filter(c => (c.platform || 'youtube') === monitorPlatform);
     const counts: Record<string, number> = { all: platformChannels.length };
@@ -2035,12 +2048,12 @@ export default function App() {
       counts[gid] = (counts[gid] || 0) + 1;
     });
     // 대그룹 카운트 = 하위 소그룹 채널 수 합산
-    groups.filter(g => g.isParentGroup).forEach(pg => {
-      const childGroups = groups.filter(g => g.parentId === pg.id);
+    platformGroups.filter(g => g.isParentGroup).forEach(pg => {
+      const childGroups = platformGroups.filter(g => g.parentId === pg.id);
       counts[pg.id] = childGroups.reduce((sum, cg) => sum + (counts[cg.id] || 0), 0);
     });
     return counts;
-  }, [savedChannels, monitorPlatform, groups]);
+  }, [savedChannels, monitorPlatform, platformGroups]);
 
   // 계층 구조: [system] → [parentGroup + children] → [standalone]
   const groupHierarchy = useMemo(() => {
@@ -2051,30 +2064,29 @@ export default function App() {
       return a.name.localeCompare(b.name);
     };
 
-    const system = groups.filter(g => g.id === 'all' || g.id === 'unassigned')
+    const system = platformGroups.filter(g => g.id === 'all' || g.id === 'unassigned')
       .sort((a, b) => a.id === 'all' ? -1 : b.id === 'all' ? 1 : 0);
 
-    const parentGroupIds = new Set(groups.filter(g => g.isParentGroup).map(g => g.id));
-    const childGroupParentIds = new Set(groups.filter(g => g.parentId).map(g => g.parentId!));
+    const parentGroupIds = new Set(platformGroups.filter(g => g.isParentGroup).map(g => g.id));
 
-    const parentGroups = groups
+    const parentGroups = platformGroups
       .filter(g => g.isParentGroup && g.id !== 'all' && g.id !== 'unassigned')
       .sort(sortByOrder);
 
-    const standalone = groups
+    const standalone = platformGroups
       .filter(g => !g.isParentGroup && !g.parentId && g.id !== 'all' && g.id !== 'unassigned')
       .sort(sortByOrder);
 
     // orphaned parentId 정리: parentId가 있지만 해당 대그룹이 없는 경우 standalone으로 취급
-    const orphaned = groups
+    const orphaned = platformGroups
       .filter(g => g.parentId && !parentGroupIds.has(g.parentId))
       .sort(sortByOrder);
 
     const getChildren = (parentId: string) =>
-      groups.filter(g => g.parentId === parentId).sort(sortByOrder);
+      platformGroups.filter(g => g.parentId === parentId).sort(sortByOrder);
 
     return { system, parentGroups, standalone: [...standalone, ...orphaned], getChildren };
-  }, [groups]);
+  }, [platformGroups]);
 
   // 그룹 영역 높이 감지 (3줄 초과 여부)
   useEffect(() => {
@@ -2490,6 +2502,8 @@ export default function App() {
               if (!c.platform) {
                 if (c.id.startsWith('tt_')) return { ...c, platform: 'tiktok' as const };
                 if (c.id.startsWith('ig_')) return { ...c, platform: 'instagram' as const };
+                if (c.id.startsWith('x_')) return { ...c, platform: 'x' as const };
+                if (c.id.startsWith('th_')) return { ...c, platform: 'threads' as const };
               }
               return c;
             });
@@ -2566,8 +2580,9 @@ export default function App() {
     // Always fetch 30 days of data, timeRange filtering happens client-side
     // region === 'ALL'은 국가별 트렌드 전체 보기 (캐시 병합)이므로 API 호출 스킵
     // TikTok 모드는 ytKey 없이도 로드 가능
-    if (isMyMode && (monitorPlatform === 'tiktok' || monitorPlatform === 'instagram')) {
-      loadVideos();
+    if (isMyMode && isNonYoutubePlatform) {
+      setVideos([]);
+      setLoading(false);
     } else if (ytKey && ytKey.length > 20 && ytApiStatus === 'valid' && !isExplorerMode && !isShortsDetectorMode && !isPackageMode && !isTopicMode && region !== 'ALL') {
       loadVideos();
     }
@@ -3399,7 +3414,7 @@ export default function App() {
     const queries = channelInput.split(/[\s,\n]+/).filter(q => q.trim().length > 0);
     setLoading(true);
 
-    const platformLabels: Record<Platform, string> = { youtube: '채널', tiktok: 'TikTok 채널', instagram: 'Instagram 계정' };
+    const platformLabels: Record<Platform, string> = { youtube: '채널', tiktok: 'TikTok 채널', instagram: 'Instagram 계정', x: 'X 계정', threads: 'Threads 계정' };
     const total = queries.length;
     setProgress({ current: 0, total, message: `${platformLabels[monitorPlatform]}을 검색하고 있습니다...` });
 
@@ -3419,7 +3434,11 @@ export default function App() {
           ? await getTikTokChannelInfo(queries[i])
           : monitorPlatform === 'instagram'
             ? await getInstagramChannelInfo(queries[i])
-            : await getChannelInfo(ytKey, queries[i]);
+            : monitorPlatform === 'x'
+              ? await getXChannelInfo(queries[i])
+              : monitorPlatform === 'threads'
+                ? await getThreadsChannelInfo(queries[i])
+                : await getChannelInfo(ytKey, queries[i]);
 
         // Update Progress
         setProgress({ current: i + 1, total, message: infoFinal ? `등록 완료: ${infoFinal.title}` : `검색 중: ${queries[i]}` });
@@ -3431,7 +3450,10 @@ export default function App() {
             const newChannel: SavedChannel = { ...infoFinal, groupId: targetGroupId, addedAt: Date.now() };
             newChannels.push(newChannel);
             existingIds.add(infoFinal.id);
-            if (user) await saveChannelToDb(user.uid, newChannel);
+            if (user) {
+              try { await saveChannelToDb(user.uid, newChannel); }
+              catch (dbErr) { console.error('Failed to save channel to DB:', dbErr, newChannel); }
+            }
           }
         }
       }
@@ -3467,10 +3489,12 @@ export default function App() {
     if (newChannels.length > 0) {
       setSavedChannels(prev => [...newChannels, ...prev]);
       setNewlyAddedIds(prev => [...prev, ...newChannels.map(c => c.id)]); // Track new IDs
-      setHasPendingSync(true);
-      setIsSyncNoticeDismissed(false);
+      if (!isNonYoutubePlatform) {
+        setHasPendingSync(true);
+        setIsSyncNoticeDismissed(false);
+      }
     }
-    
+
     setChannelInput('');
     setBatchStatus(null);
     setLoading(false);
@@ -3478,17 +3502,23 @@ export default function App() {
     if (newChannels.length === 0) {
       if (duplicates.length === 0) {
         setAlertMessage({
-          title: "채널을 찾을 수 없습니다",
+          title: isNonYoutubePlatform ? "계정을 찾을 수 없습니다" : "채널을 찾을 수 없습니다",
           message: "입력한 URL, 핸들(@), 또는 채널 ID가 정확한지 확인해주세요.",
           type: 'error'
         });
       } else {
         setAlertMessage({
-          title: "이미 등록된 채널입니다",
-          message: `입력하신 ${duplicates.length}개의 채널은 모두 이미 등록되어 있습니다.`,
+          title: isNonYoutubePlatform ? "이미 등록된 계정입니다" : "이미 등록된 채널입니다",
+          message: `입력하신 ${duplicates.length}개의 ${isNonYoutubePlatform ? '계정' : '채널'}은 모두 이미 등록되어 있습니다.`,
           type: 'info'
         });
       }
+    } else if (isNonYoutubePlatform) {
+      setAlertMessage({
+        title: "계정 추가 완료",
+        message: `${newChannels.length}개의 계정이 성공적으로 추가되었습니다.`,
+        type: 'info'
+      });
     } else {
       // Success Case - Show Alert instead of auto-refreshing & Prepend to Video List
       setAlertMessage({
@@ -3501,7 +3531,7 @@ export default function App() {
       // Show message about manual refresh
       setTimeout(() => {
          setAlertMessage({
-            title: "추가 완료", 
+            title: "추가 완료",
             message: "채널이 리스트에 추가되었습니다.\n최신 데이터를 보려면 '분석 시작' 버튼을 눌러 새로고침해주세요.",
             type: 'info'
          });
@@ -3905,6 +3935,7 @@ export default function App() {
       const newGroup: ChannelGroup = {
         id: Date.now().toString(),
         name: newGroupName.trim(),
+        platform: monitorPlatform,
         ...(parentId ? { parentId } : {}),
       };
       setGroups(prev => [...prev, newGroup]);
@@ -3921,6 +3952,7 @@ export default function App() {
         id: Date.now().toString(),
         name: newParentGroupName.trim(),
         isParentGroup: true,
+        platform: monitorPlatform,
       };
       setGroups(prev => [...prev, newGroup]);
       if (user) saveGroupToDb(user.uid, newGroup);
@@ -3946,6 +3978,7 @@ export default function App() {
         ...(existing?.sortOrder != null ? { sortOrder: existing.sortOrder } : {}),
         ...(existing?.parentId ? { parentId: existing.parentId } : {}),
         ...(existing?.isParentGroup ? { isParentGroup: existing.isParentGroup } : {}),
+        ...(existing?.platform ? { platform: existing.platform } : {}),
       };
       setGroups(prev => prev.map(g => g.id === editingGroupId ? updatedGroup : g));
       if (user) saveGroupToDb(user.uid, updatedGroup);
@@ -5496,11 +5529,9 @@ export default function App() {
                       내 모니터링 리스트
                     </h2>
                     <p className="text-slate-500 text-[11px] font-medium leading-relaxed">
-                      {monitorPlatform === 'tiktok'
-                        ? <>모니터링할 TikTok 계정을 추가하세요. 계정당 <span className="text-accent-hot font-bold">최근 30개</span> 영상을 수집합니다.<br />공식 API가 아닌 스크래핑 방식이므로, 관심 채널 저장 및 최신 영상 확인 용도로 활용하세요.</>
-                        : monitorPlatform === 'instagram'
-                          ? <>모니터링할 Instagram 계정을 추가하세요. 계정당 <span className="text-accent-hot font-bold">최근 릴스 12개</span>를 수집합니다.<br />공식 API가 아닌 스크래핑 방식이므로, 관심 채널 저장 및 최신 릴스 확인 용도로 활용하세요.</>
-                          : <>모니터링할 유튜브 채널을 추가하세요. <br />추가된 채널들의 신규 영상은 <span className="text-accent-hot font-bold">실시간 통합 피드</span>에서 분석됩니다.</>
+                      {isNonYoutubePlatform
+                        ? <>관심 {monitorPlatform === 'tiktok' ? 'TikTok' : monitorPlatform === 'instagram' ? 'Instagram' : monitorPlatform === 'x' ? 'X' : 'Threads'} 계정을 추가하고 <span className="text-accent-hot font-bold">그룹별로 관리</span>하세요.<br />프로필 카드를 클릭하면 해당 계정 페이지로 이동합니다.</>
+                        : <>모니터링할 유튜브 채널을 추가하세요. <br />추가된 채널들의 신규 영상은 <span className="text-accent-hot font-bold">실시간 통합 피드</span>에서 분석됩니다.</>
                       }
                     </p>
                   </div>
@@ -5509,17 +5540,19 @@ export default function App() {
                 </div>
 
                 {/* ── 플랫폼 전환 탭 ── */}
-                <div className="flex items-center gap-2 -mb-2">
+                <div className="flex items-center gap-2 -mb-2 overflow-x-auto no-scrollbar">
                   {([
                     { id: 'youtube' as Platform, label: 'YouTube', icon: 'smart_display', activeClass: 'bg-red-600 text-white shadow-lg shadow-red-600/20' },
                     { id: 'tiktok' as Platform, label: 'TikTok', icon: 'music_note', activeClass: 'bg-black text-white shadow-lg' },
                     { id: 'instagram' as Platform, label: 'Instagram', icon: 'photo_camera', activeClass: 'bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg shadow-pink-500/20' },
+                    { id: 'x' as Platform, label: 'X', icon: 'tag', activeClass: 'bg-black text-white shadow-lg' },
+                    { id: 'threads' as Platform, label: 'Threads', icon: 'alternate_email', activeClass: 'bg-black text-white shadow-lg' },
                   ]).map(p => {
                     const count = savedChannels.filter(c => (c.platform || 'youtube') === p.id).length;
                     return (
                       <button
                         key={p.id}
-                        onClick={() => { setMonitorPlatform(p.id); setVideos([]); }}
+                        onClick={() => { setMonitorPlatform(p.id); setVideos([]); setActiveGroupId('all'); }}
                         className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-1.5 ${
                           monitorPlatform === p.id
                             ? p.activeClass
@@ -5540,26 +5573,24 @@ export default function App() {
                   <div className="flex-1 flex flex-col gap-2 justify-center min-w-0">
                     <textarea
                       value={channelInput} onChange={(e) => setChannelInput(e.target.value)}
-                      placeholder={monitorPlatform === 'tiktok' ? "@username 입력 (예: @bts_official_bighit)" : monitorPlatform === 'instagram' ? "@username 입력 (예: @bts.bighitofficial)" : "채널 추가..."}
+                      placeholder={monitorPlatform === 'tiktok' ? "@username 입력 (예: @bts_official_bighit)" : monitorPlatform === 'instagram' ? "@username 입력 (예: @bts.bighitofficial)" : monitorPlatform === 'x' ? "@username 입력 (예: @elonmusk)" : monitorPlatform === 'threads' ? "@username 입력 (예: @zuck)" : "채널 추가..."}
                       className="w-full bg-white dark:bg-background-dark border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-xs text-slate-900 dark:text-white focus:border-accent-neon outline-none transition-all shadow-inner resize-none h-12 flex items-center pt-3.5 placeholder:truncate"
                     />
                     <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold px-1 uppercase tracking-tighter italic hidden sm:block">
-                      {monitorPlatform === 'tiktok'
-                        ? '※ TikTok @username 또는 프로필 URL 입력. 계정당 최근 30개 영상 수집 (무료)'
-                        : monitorPlatform === 'instagram'
-                          ? '※ Instagram @username 또는 프로필 URL 입력. 계정당 최근 릴스 12개 수집 (무료)'
-                          : '※ 채널 주소 입력 시 자동으로 데이터가 수집 목록에 구성됩니다.'
+                      {monitorPlatform === 'youtube'
+                        ? '※ 채널 주소 입력 시 자동으로 데이터가 수집 목록에 구성됩니다.'
+                        : `※ ${monitorPlatform === 'tiktok' ? 'TikTok' : monitorPlatform === 'instagram' ? 'Instagram' : monitorPlatform === 'x' ? 'X' : 'Threads'} @username 또는 프로필 URL 입력 (무료)`
                       }
                     </p>
                   </div>
                   <div className="flex items-center gap-1 md:gap-2 h-12 self-start mt-0 sm:mt-0 shrink-0 relative">
                     <button onClick={handleAddChannelBatch} disabled={loading} className="bg-accent-hot text-white w-12 md:w-auto px-0 md:px-8 h-full rounded-xl text-xs font-black uppercase shadow-lg hover:scale-105 transition-all shrink-0 disabled:opacity-50 flex items-center justify-center">
-                        <span className="hidden md:inline">{loading ? '처리 중...' : '채널 추가'}</span>
+                        <span className="hidden md:inline">{loading ? '처리 중...' : isNonYoutubePlatform ? '계정 추가' : '채널 추가'}</span>
                         <span className="md:hidden material-symbols-outlined">add</span>
                     </button>
                     <div className="w-px h-8 bg-slate-300 dark:bg-white/10 mx-0.5 hidden md:block"></div>
                     
-                    {hasPendingSync && !isApiKeyMissing && !isSyncNoticeDismissed && (
+                    {!isNonYoutubePlatform && hasPendingSync && !isApiKeyMissing && !isSyncNoticeDismissed && (
                       <div className="absolute bottom-full mb-3 right-0 bg-accent-hot text-white text-[10px] font-black px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(255,0,85,0.4)] animate-bounce flex items-center gap-2 whitespace-nowrap z-50">
                         <span className="material-symbols-outlined text-sm animate-pulse">sync_problem</span>
                         <span className="hidden md:inline">내 모니터링 리스트 메뉴 에서 동기화 필요</span>
@@ -5571,17 +5602,19 @@ export default function App() {
                     <button onClick={handleExport} title="내보내기" className="h-full w-10 md:w-14 shrink-0 bg-white dark:bg-slate-900 substrate-detailed border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-accent-neon transition-all"><span className="material-symbols-outlined text-[18px] md:text-[24px]">download</span></button>
                     <button onClick={() => importInputRef.current?.click()} title="가져오기" className="h-full w-10 md:w-14 shrink-0 bg-white dark:bg-slate-900 substrate-detailed border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-accent-neon transition-all"><span className="material-symbols-outlined text-[18px] md:text-[24px]">upload_file</span></button>
                     <input type="file" ref={importInputRef} onChange={handleImport} accept=".json" className="hidden" />
-                    <button 
-                      onClick={() => loadVideos(true)} 
-                      title="새로고침" 
+                    {!isNonYoutubePlatform && (
+                    <button
+                      onClick={() => loadVideos(true)}
+                      title="새로고침"
                       className={`h-full w-10 md:w-14 shrink-0 border rounded-xl flex items-center justify-center transition-all ${
                         hasPendingSync && !isApiKeyMissing && !isSyncNoticeDismissed
-                        ? 'bg-accent-hot text-white border-transparent ring-4 ring-accent-hot/20 animate-pulse' 
+                        ? 'bg-accent-hot text-white border-transparent ring-4 ring-accent-hot/20 animate-pulse'
                         : 'bg-white dark:bg-slate-900 substrate-detailed border-slate-200 dark:border-slate-800 text-slate-500 hover:text-accent-neon'
                       }`}
                     >
                       <span className={`material-symbols-outlined ${loading ? 'animate-spin' : ''} text-[18px] md:text-[24px]`}>refresh</span>
                     </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -5973,7 +6006,7 @@ export default function App() {
                               이동할 그룹 선택
                             </p>
                             <div className="space-y-1">
-                              {groups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
+                              {platformGroups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
                                 const parent = g.parentId ? groups.find(pg => pg.id === g.parentId) : null;
                                 return (
                                   <button
@@ -6041,17 +6074,146 @@ export default function App() {
                 </div>
               )}
 
-               <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pt-2 transition-all duration-500 ease-in-out ${isChannelListExpanded ? 'opacity-100' : 'opacity-100'}`}>
+               {isNonYoutubePlatform ? (
+                /* ── 비유튜브: 프로필 카드 그리드 ── */
+                <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 pt-2 transition-all duration-500 ease-in-out`}>
+                  {currentGroupChannels.length === 0 ? (
+                    <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
+                      <span className="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-700 mb-3">
+                        {monitorPlatform === 'tiktok' ? 'music_note' : monitorPlatform === 'instagram' ? 'photo_camera' : monitorPlatform === 'x' ? 'tag' : 'alternate_email'}
+                      </span>
+                      <p className="text-sm font-bold text-slate-400 dark:text-slate-500">등록된 계정이 없습니다</p>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-600 mt-1">위 입력란에서 @username을 입력하여 계정을 추가하세요</p>
+                    </div>
+                  ) : currentGroupChannels.slice(0, isChannelListExpanded ? undefined : 10).map((ch) => {
+                    const isSelected = selectedChannelIds.includes(ch.id);
+                    const p = ch.platform || 'youtube';
+                    const profileUrl = p === 'tiktok' ? `https://www.tiktok.com/@${ch.id.replace(/^tt_/, '')}`
+                      : p === 'instagram' ? `https://www.instagram.com/${ch.id.replace(/^ig_/, '')}/`
+                      : p === 'x' ? `https://x.com/${ch.id.replace(/^x_/, '')}`
+                      : p === 'threads' ? `https://www.threads.net/@${ch.id.replace(/^th_/, '')}`
+                      : `https://www.youtube.com/channel/${ch.id}`;
+                    const username = p === 'tiktok' ? `@${ch.id.replace(/^tt_/, '')}`
+                      : p === 'instagram' ? `@${ch.id.replace(/^ig_/, '')}`
+                      : p === 'x' ? `@${ch.id.replace(/^x_/, '')}`
+                      : `@${ch.id.replace(/^th_/, '')}`;
+                    return (
+                      <div
+                        key={ch.id}
+                        className={`group/chip relative flex flex-col items-center gap-2 bg-slate-50 dark:bg-white/5 border p-4 rounded-2xl transition-all cursor-pointer hover:shadow-lg ${
+                          isSelected ? 'border-primary ring-1 ring-primary/30 bg-primary/5 dark:bg-primary/5' : 'border-slate-100 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'
+                        }`}
+                        onClick={() => window.open(profileUrl, '_blank')}
+                      >
+                        {/* 체크박스 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleChannelSelection(ch.id); }}
+                          className={`absolute -top-1.5 -left-1.5 z-30 size-6 rounded-full flex items-center justify-center transition-all ${
+                            isSelected ? 'bg-primary text-white scale-110 opacity-100' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 opacity-0 group-hover/chip:opacity-100 hover:text-primary shadow-sm'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[14px] font-black">{isSelected ? 'check' : 'check_box_outline_blank'}</span>
+                        </button>
+
+                        {/* NEW 뱃지 */}
+                        {newlyAddedIds.includes(ch.id) && (
+                          <span className="absolute -top-1.5 -right-1.5 z-30 bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none animate-pulse">NEW</span>
+                        )}
+
+                        {/* 프로필 사진 + 플랫폼 뱃지 */}
+                        <div className="relative">
+                          <img src={ch.thumbnail} className="size-16 sm:size-20 rounded-full border-2 border-black/5 dark:border-white/10 object-cover" alt="" referrerPolicy="no-referrer" />
+                          <span className={`absolute -bottom-1 -right-1 size-6 rounded-full flex items-center justify-center text-white text-[12px] ${
+                            p === 'tiktok' ? 'bg-black' : p === 'instagram' ? 'bg-gradient-to-tr from-purple-600 to-pink-500' : p === 'x' ? 'bg-black' : 'bg-black'
+                          }`}>
+                            <span className="material-symbols-outlined text-[14px]">
+                              {p === 'tiktok' ? 'music_note' : p === 'instagram' ? 'photo_camera' : p === 'x' ? 'tag' : 'alternate_email'}
+                            </span>
+                          </span>
+                        </div>
+
+                        {/* 이름 (링크) */}
+                        <a
+                          href={profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate max-w-full hover:text-primary hover:underline transition-colors text-center"
+                          title={ch.title}
+                        >{ch.title}</a>
+
+                        {/* @username */}
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-full -mt-1">{username}</span>
+
+                        {/* 팔로워 수 */}
+                        {ch.subscriberCount && (
+                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 -mt-1">
+                            {ch.subscriberCount} followers
+                          </span>
+                        )}
+
+                        {/* 그룹명 */}
+                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full truncate max-w-full">
+                          {groups.find(g => g.id === (ch.groupId || 'unassigned'))?.name}
+                        </span>
+
+                        {/* 호버 액션 (그룹이동/삭제) */}
+                        <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover/chip:opacity-100 transition-opacity">
+                          <div className="relative">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setIndividualMovingChannelId(prev => prev === ch.id ? null : ch.id); }}
+                              className={`size-7 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur flex items-center justify-center border border-black/5 dark:border-white/10 transition-colors ${individualMovingChannelId === ch.id ? 'text-primary' : 'text-slate-400 hover:text-primary'}`}
+                              title="그룹 이동"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">move_group</span>
+                            </button>
+                            {individualMovingChannelId === ch.id && (
+                              <div className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-card border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 min-w-[140px] animate-in zoom-in-95 fade-in">
+                                <p className="text-[9px] font-black text-slate-400 uppercase p-1 border-b border-slate-100 dark:border-white/5 mb-1">이동할 그룹 선택</p>
+                                {platformGroups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
+                                  const parent = g.parentId ? groups.find(pg => pg.id === g.parentId) : null;
+                                  return (
+                                    <button
+                                      key={g.id}
+                                      onClick={(e) => { e.stopPropagation(); executeIndividualMove(ch.id, g.id); }}
+                                      className={`w-full text-left px-2 py-1.5 text-[10px] font-bold hover:bg-primary/10 hover:text-primary rounded-lg transition-colors ${parent ? 'pl-4' : ''}`}
+                                    >
+                                      {parent && <span className="text-slate-400 text-[8px] mr-1">{parent.name} /</span>}
+                                      {g.name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if(user) await removeChannelFromDb(user.uid, ch.id);
+                              setSavedChannels(prev => prev.filter(c => c.id !== ch.id));
+                            }}
+                            className="size-7 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur flex items-center justify-center border border-black/5 dark:border-white/10 text-slate-400 hover:text-rose-500 transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">close</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+               ) : (
+                /* ── 유튜브: 기존 칩 그리드 ── */
+                <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pt-2 transition-all duration-500 ease-in-out ${isChannelListExpanded ? 'opacity-100' : 'opacity-100'}`}>
                 {currentGroupChannels.slice(0, isChannelListExpanded ? undefined : 10).map((ch) => {
                   const isSelected = selectedChannelIds.includes(ch.id);
                   return (
-                    <div 
-                      key={ch.id} 
+                    <div
+                      key={ch.id}
                       className={`group/chip relative flex items-center gap-3 bg-slate-50 dark:bg-white/5 border pl-2 pr-4 py-2 rounded-2xl transition-all ${
                         isSelected ? 'border-primary ring-1 ring-primary/30 bg-primary/5 dark:bg-primary/5' : 'border-slate-100 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'
                       }`}
                     >
-                      <button 
+                      <button
                         onClick={() => toggleChannelSelection(ch.id)}
                         className={`absolute -top-1.5 -left-1.5 z-30 size-6 rounded-full flex items-center justify-center transition-all ${
                           isSelected ? 'bg-primary text-white scale-110 opacity-100' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 opacity-0 group-hover/chip:opacity-100 hover:text-primary shadow-sm'
@@ -6064,11 +6226,7 @@ export default function App() {
                       <div className="flex flex-col flex-1 min-w-0 pr-6">
                         <div className="flex items-center gap-1.5 w-full">
                           <a
-                            href={
-                              (ch.platform || 'youtube') === 'tiktok' ? `https://www.tiktok.com/@${ch.id.replace(/^tt_/, '')}`
-                              : (ch.platform || 'youtube') === 'instagram' ? `https://www.instagram.com/${ch.id.replace(/^ig_/, '')}/`
-                              : `https://www.youtube.com/channel/${ch.id}`
-                            }
+                            href={`https://www.youtube.com/channel/${ch.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
@@ -6084,7 +6242,7 @@ export default function App() {
 
                       <div className="absolute right-2 opacity-0 group-hover/chip:opacity-100 transition-opacity">
                         <div className="relative">
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setIndividualMovingChannelId(prev => prev === ch.id ? null : ch.id); }}
                             className={`transition-colors ${individualMovingChannelId === ch.id ? 'text-primary' : 'text-slate-400 hover:text-primary'}`}
                             title="그룹 이동"
@@ -6094,7 +6252,7 @@ export default function App() {
                           {individualMovingChannelId === ch.id && (
                             <div className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-card border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-2 min-w-[140px] animate-in zoom-in-95 fade-in">
                               <p className="text-[9px] font-black text-slate-400 uppercase p-1 border-b border-slate-100 dark:border-white/5 mb-1">이동할 그룹 선택</p>
-                              {groups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
+                              {platformGroups.filter(g => g.id !== 'all' && !g.isParentGroup).map(g => {
                                 const parent = g.parentId ? groups.find(pg => pg.id === g.parentId) : null;
                                 return (
                                   <button
@@ -6110,11 +6268,11 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        <button 
-                          onClick={async (e) => { 
-                            e.stopPropagation(); 
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
                             if(user) await removeChannelFromDb(user.uid, ch.id);
-                            setSavedChannels(prev => prev.filter(c => c.id !== ch.id)); 
+                            setSavedChannels(prev => prev.filter(c => c.id !== ch.id));
                           }}
                           className="text-slate-400 hover:text-rose-500"
                         >
@@ -6125,9 +6283,10 @@ export default function App() {
                   );
                 })}
               </div>
+               )}
             </div>
           </>)}
-        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isCommunityMode && !isShortsMusicMode && !isRisingMode && !isRadarMode && !isMaterialsExplorerMode && (
+        {!isExplorerMode && !isUsageMode && !isPackageMode && !isShortsDetectorMode && !isTopicMode && !isNationalTrendMode && !isCategoryTrendMode && !isCommunityMode && !isShortsMusicMode && !isRisingMode && !isRadarMode && !isMaterialsExplorerMode && !(isMyMode && isNonYoutubePlatform) && (
             <div className="space-y-4 pb-20">
                {isMyMode && isPending && (
                   <RestrictedOverlay 

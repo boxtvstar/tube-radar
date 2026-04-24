@@ -1,15 +1,12 @@
 """
 TikTok 프로필 스크래퍼 — FastAPI 로컬 서버용
-yt-dlp + HTML 프로필 데이터 조합으로 채널 정보 + 영상 목록 추출
+yt-dlp 기반으로 프로필 정보 + 영상 목록 추출 (TikTok WAF 우회)
 """
 
 import json
-import re
 import subprocess
 import time
 import logging
-
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -17,66 +14,9 @@ _cache: dict = {}
 _cache_time: dict = {}
 CACHE_TTL = 3600  # 1시간
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-}
 
-
-def _fetch_profile_html(username: str) -> dict | None:
-    """HTML에서 프로필 정보 추출 (팔로워, 닉네임, 아바타 등)"""
-    try:
-        resp = requests.get(
-            f"https://www.tiktok.com/@{username}",
-            headers=HEADERS,
-            timeout=15,
-            allow_redirects=True,
-        )
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        logger.warning("TikTok HTML fetch failed for @%s: %s", username, e)
-        return None
-
-    pattern = r'<script\s+id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>'
-    match = re.search(pattern, resp.text, re.DOTALL)
-    if not match:
-        return None
-
-    try:
-        data = json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return None
-
-    user_info = (
-        data.get("__DEFAULT_SCOPE__", {})
-        .get("webapp.user-detail", {})
-        .get("userInfo", {})
-    )
-    if not user_info:
-        return None
-
-    user = user_info.get("user", {})
-    stats = user_info.get("stats", {})
-    return {
-        "id": f"tt_{username}",
-        "uniqueId": user.get("uniqueId", username),
-        "nickname": user.get("nickname", username),
-        "avatar": (
-            user.get("avatarLarger")
-            or user.get("avatarMedium")
-            or user.get("avatarThumb", "")
-        ),
-        "signature": user.get("signature", ""),
-        "followerCount": stats.get("followerCount", 0),
-        "followingCount": stats.get("followingCount", 0),
-        "heartCount": stats.get("heartCount", 0),
-        "videoCount": stats.get("videoCount", 0),
-    }
-
-
-def _fetch_videos_ytdlp(username: str, max_videos: int = 30) -> list[dict]:
-    """yt-dlp로 영상 목록 + 통계 추출"""
+def _fetch_via_ytdlp(username: str, max_videos: int = 30) -> dict | None:
+    """yt-dlp 한 번 호출로 프로필 정보 + 영상 목록 모두 추출"""
     url = f"https://www.tiktok.com/@{username}"
     cmd = [
         "yt-dlp",
@@ -89,25 +29,50 @@ def _fetch_videos_ytdlp(username: str, max_videos: int = 30) -> list[dict]:
     ]
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60
+            cmd, capture_output=True, text=True, timeout=90
         )
         if proc.returncode != 0:
-            logger.warning("yt-dlp failed for @%s: %s", username, proc.stderr[:200])
-            return []
+            logger.warning("yt-dlp failed for @%s: %s", username, proc.stderr[:300])
+            return None
     except subprocess.TimeoutExpired:
         logger.warning("yt-dlp timeout for @%s", username)
-        return []
+        return None
 
-    videos = []
+    items = []
     for line in proc.stdout.strip().split("\n"):
         if not line.strip():
             continue
         try:
-            item = json.loads(line)
+            items.append(json.loads(line))
         except json.JSONDecodeError:
             continue
 
-        # 썸네일 URL 추출 (originCover 우선)
+    if not items:
+        return None
+
+    # 첫 번째 영상 메타데이터에서 프로필 정보 추출
+    first = items[0]
+    nickname = first.get("channel") or first.get("uploader") or username
+    unique_id = first.get("uploader") or first.get("playlist") or username
+
+    # 프로필 이미지: unavatar.io 사용 (yt-dlp에 아바타 없음)
+    avatar = f"https://unavatar.io/tiktok/{unique_id}"
+
+    profile = {
+        "id": f"tt_{unique_id}",
+        "uniqueId": unique_id,
+        "nickname": nickname,
+        "avatar": avatar,
+        "signature": "",
+        "followerCount": 0,
+        "followingCount": 0,
+        "heartCount": 0,
+        "videoCount": len(items),
+    }
+
+    # 영상 목록 변환
+    videos = []
+    for item in items:
         cover = ""
         for thumb in item.get("thumbnails", []):
             if thumb.get("id") == "originCover":
@@ -126,10 +91,10 @@ def _fetch_videos_ytdlp(username: str, max_videos: int = 30) -> list[dict]:
             "shareCount": item.get("repost_count", 0) or 0,
             "duration": item.get("duration", 0) or 0,
             "cover": cover,
-            "videoUrl": f"https://www.tiktok.com/@{username}/video/{item.get('id', '')}",
+            "videoUrl": f"https://www.tiktok.com/@{unique_id}/video/{item.get('id', '')}",
         })
 
-    return videos
+    return {"profile": profile, "videos": videos}
 
 
 def scrape_tiktok_profile(username: str) -> dict:
@@ -143,19 +108,11 @@ def scrape_tiktok_profile(username: str) -> dict:
     if username in _cache and (now - _cache_time.get(username, 0)) < CACHE_TTL:
         return _cache[username]
 
-    # 1) HTML에서 프로필 정보 추출
-    profile = _fetch_profile_html(username)
-    if not profile:
+    result = _fetch_via_ytdlp(username, max_videos=30)
+    if not result:
         return {"error": f"@{username} 프로필을 찾을 수 없습니다."}
 
-    # 2) yt-dlp로 영상 목록 추출
-    videos = _fetch_videos_ytdlp(username, max_videos=30)
-
-    result = {
-        "profile": profile,
-        "videos": videos,
-        "scrapedAt": int(time.time()),
-    }
+    result["scrapedAt"] = int(time.time())
 
     # 캐시 저장
     _cache[username] = result

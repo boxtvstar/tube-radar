@@ -7,7 +7,7 @@ import time
 import logging
 from urllib.parse import quote
 
-import requests
+from curl_cffi import requests as cffi_requests
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +22,20 @@ HEADERS = {
 
 
 def _fetch_profile(username: str) -> dict | None:
-    """i.instagram.com API에서 프로필 + 최근 포스트 추출"""
+    """i.instagram.com API에서 프로필 + 최근 포스트 추출 — curl_cffi로 TLS fingerprint 우회"""
     try:
-        resp = requests.get(
+        resp = cffi_requests.get(
             f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
             headers=HEADERS,
             timeout=15,
+            impersonate="chrome",
         )
         if resp.status_code != 200:
             logger.warning("Instagram API returned %d for @%s", resp.status_code, username)
             return None
 
         data = resp.json()
-    except (requests.RequestException, ValueError) as e:
+    except Exception as e:
         logger.warning("Instagram fetch failed for @%s: %s", username, e)
         return None
 

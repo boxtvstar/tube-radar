@@ -1,5 +1,5 @@
 
-export type Platform = 'youtube' | 'tiktok' | 'instagram';
+export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'x' | 'threads';
 
 export interface VideoData {
   id: string;
@@ -41,6 +41,7 @@ export interface ChannelGroup {
   sortOrder?: number;
   parentId?: string;       // 소그룹일 때 대그룹 ID
   isParentGroup?: boolean; // true = 대그룹(폴더)
+  platform?: Platform;     // 소속 플랫폼 (없으면 'youtube')
 }
 
 export interface VideoSnippet {
