@@ -1740,6 +1740,7 @@ export default function App() {
   const [individualMovingChannelId, setIndividualMovingChannelId] = useState<string | null>(null);
 
   const [savedChannels, setSavedChannels] = useState<SavedChannel[]>([]);
+  const youtubeChannels = useMemo(() => savedChannels.filter(c => (c.platform || 'youtube') === 'youtube'), [savedChannels]);
   const [newlyAddedIds, setNewlyAddedIds] = useState<string[]>([]);
   
   const [isMyMode, setIsMyMode] = useState(true);
@@ -4481,7 +4482,7 @@ export default function App() {
           <div className="w-full">
             <UploadTimeAnalysis
               videos={videos}
-              savedChannels={savedChannels}
+              savedChannels={youtubeChannels}
               groups={groups}
               apiKey={ytKey}
               onClose={() => setIsUploadTimeMode(false)}
@@ -4512,7 +4513,7 @@ export default function App() {
             <RisingCreators
               apiKey={ytKey}
               groups={groups}
-              savedChannels={savedChannels}
+              savedChannels={youtubeChannels}
               isAdmin={isAdmin}
               onCreateGroup={async (name) => {
                 if (!user) throw new Error('로그인이 필요합니다.');
@@ -4608,7 +4609,7 @@ export default function App() {
             <div className="w-full">
               <ComparisonView
                 channels={comparisonChannels}
-                allChannels={savedChannels}
+                allChannels={youtubeChannels}
                 apiKey={ytKey}
                 onClose={() => {
                   setIsComparisonMode(false);
@@ -4639,7 +4640,7 @@ export default function App() {
                 groups={groups}
                 activeGroupId={activeGroupId}
                 mode={isPackageMode ? "package" : "topic"}
-                savedChannels={savedChannels}
+                savedChannels={youtubeChannels}
              />
           ) : isShortsDetectorMode ? (
              <div className="space-y-8 pb-20 animate-in slide-in-from-right-4 duration-500">
@@ -5135,7 +5136,7 @@ export default function App() {
                 onClose={() => setIsRadarMode(false)}
                 initialQuery={radarInitialQuery}
                 groups={groups}
-                savedChannels={savedChannels}
+                savedChannels={youtubeChannels}
                 onCreateGroup={async (name) => {
                   if (!user) throw new Error('로그인이 필요합니다.');
                   const trimmed = name.trim();
