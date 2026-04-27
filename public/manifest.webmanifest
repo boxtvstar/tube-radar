@@ -1,7 +1,7 @@
 {
-  "name": "Tube Radar 2.0",
-  "short_name": "Tube Radar",
-  "description": "유튜브 채널 분석, 키워드 탐색, 트렌드 추적, AI 인사이트를 한곳에서 제공하는 올인원 분석 플랫폼.",
+  "name": "튜브레이더 — 유튜브 채널 분석 플랫폼",
+  "short_name": "튜브레이더",
+  "description": "유튜브 채널 분석, 바이럴 영상 탐지, 키워드 트렌드, 쇼츠 음악 차트, AI 채널 진단까지 제공하는 올인원 유튜브 분석 플랫폼.",
   "lang": "ko",
   "start_url": "/",
   "display": "standalone",

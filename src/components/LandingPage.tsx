@@ -118,7 +118,7 @@ export const LandingPage = () => {
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${isScrolled ? 'bg-black/80 backdrop-blur-xl border-b border-white/5 shadow-2xl' : 'bg-transparent'}`}>
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <img src="/logo.png" alt="Logo" className="h-8 w-auto" />
+            <img src="/logo.png" alt="튜브레이더 Tube Radar 로고" className="h-8 w-auto" />
           </div>
           <div className="flex items-center gap-2 sm:gap-6">
             <button onClick={() => scrollTo(featuresRef)} className="text-slate-400 hover:text-white text-xs sm:text-sm font-bold transition-colors">기능 소개</button>
@@ -156,10 +156,10 @@ export const LandingPage = () => {
         </div>
 
         <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-white leading-[1.1] mb-6 tracking-tight">
-          유튜브 크리에이터의
+          유튜브 채널 분석의
           <br />
           <span className="bg-gradient-to-r from-indigo-400 via-cyan-400 to-purple-400 bg-clip-text text-transparent">
-            비밀 무기
+            올인원 플랫폼
           </span>
         </h1>
 
