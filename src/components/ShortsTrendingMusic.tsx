@@ -272,7 +272,8 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
     setRelatedShorts([]);
     try {
       const q = encodeURIComponent(`${track.name} ${track.artist}`);
-      const res = await fetch(`${apiBase}/api/shorts-music?q=${q}`);
+      const videoIdParam = track.videoId ? `&videoId=${encodeURIComponent(track.videoId)}` : '';
+      const res = await fetch(`${apiBase}/api/shorts-music?q=${q}${videoIdParam}`);
       if (res.ok) {
         const data = await res.json();
         const searched = (data.videos || []).filter((short: ShortsVideo) => !!short.videoId);
@@ -667,9 +668,21 @@ export const ShortsTrendingMusic: React.FC<ShortsTrendingMusicProps> = ({ onTrac
                 {/* Track Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-                      {track.name}
-                    </p>
+                    {track.videoId ? (
+                      <a
+                        href={`https://www.youtube.com/watch?v=${track.videoId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate hover:text-violet-600 dark:hover:text-violet-400 hover:underline transition-colors"
+                      >
+                        {track.name}
+                      </a>
+                    ) : (
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                        {track.name}
+                      </p>
+                    )}
                     {track.addedByAdmin && (
                       <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">
                         <span className="material-symbols-outlined text-[10px]">verified</span>

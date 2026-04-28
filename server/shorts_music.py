@@ -129,8 +129,81 @@ _search_cache: dict[str, dict] = {}
 SEARCH_CACHE_TTL = 3600
 
 
-def search_shorts(query: str) -> list[dict]:
-    """YouTube 검색 HTML에서 쇼츠 추출"""
+def _fetch_shorts_from_video_page(video_id: str) -> list[dict]:
+    """뮤직비디오 페이지에서 해당 곡을 사용한 쇼츠를 추출한다."""
+    url = f"https://www.youtube.com/watch?v={video_id}&hl=ko"
+    resp = requests.get(url, headers=CHARTS_HEADERS, timeout=12)
+    resp.raise_for_status()
+
+    m = _re.search(r"var ytInitialData\s*=\s*({.*?});</script>", resp.text)
+    if not m:
+        return []
+
+    data = _json.loads(m.group(1))
+    shorts: list[dict] = []
+    seen: set[str] = set()
+    _collect_shorts_from_page(data, shorts, seen)
+    return shorts[:20]
+
+
+def _collect_shorts_from_page(node, shorts: list[dict], seen: set[str]):
+    """페이지 데이터에서 reelItemRenderer / shortsLockupViewModel 재귀 탐색"""
+    if isinstance(node, dict):
+        # reelItemRenderer (쇼츠 셸프 아이템)
+        reel = node.get("reelItemRenderer")
+        if isinstance(reel, dict):
+            vid = reel.get("videoId", "")
+            if vid and vid not in seen:
+                seen.add(vid)
+                title = ""
+                headline = reel.get("headline")
+                if headline:
+                    title = _text_value(headline)
+                shorts.append({
+                    "videoId": vid,
+                    "title": title or f"Shorts {vid}",
+                    "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                })
+
+        # shortsLockupViewModel
+        slv = node.get("shortsLockupViewModel")
+        if isinstance(slv, dict):
+            tap = slv.get("onTap", {}).get("innertubeCommand", {}).get("reelWatchEndpoint", {})
+            vid = tap.get("videoId", "")
+            if vid and vid not in seen:
+                seen.add(vid)
+                title = (slv.get("accessibilityText") or "").split(",")[0]
+                shorts.append({
+                    "videoId": vid,
+                    "title": title,
+                    "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                })
+
+        for value in node.values():
+            _collect_shorts_from_page(value, shorts, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _collect_shorts_from_page(item, shorts, seen)
+
+
+def search_shorts(query: str, video_id: str = "") -> list[dict]:
+    """YouTube에서 쇼츠 검색. video_id가 있으면 뮤직비디오 페이지에서 먼저 시도."""
+    # 1) 뮤직비디오 페이지에서 실제 이 곡을 사용한 쇼츠 가져오기
+    if video_id:
+        cache_key = f"vid:{video_id}"
+        if cache_key in _search_cache:
+            cached = _search_cache[cache_key]
+            if time.time() - cached["_time"] < SEARCH_CACHE_TTL:
+                return cached["results"]
+        try:
+            results = _fetch_shorts_from_video_page(video_id)
+            if results:
+                _search_cache[cache_key] = {"results": results, "_time": time.time()}
+                return results
+        except Exception as e:
+            logger.warning("Failed to fetch shorts from video page %s: %s", video_id, e)
+
+    # 2) Fallback: 텍스트 기반 YouTube 검색
     cache_key = query.lower().strip()
     if cache_key in _search_cache:
         cached = _search_cache[cache_key]
@@ -250,6 +323,23 @@ def _largest_thumbnail(thumbnails: list[dict]) -> str:
     return sorted_thumbs[0].get("url", "") if sorted_thumbs else ""
 
 
+def _extract_music_video_id_from_card(card: dict) -> str:
+    """videoAttributeViewModel의 네비게이션에서 뮤직비디오 ID를 추출한다."""
+    on_tap = card.get("onTap", {})
+    cmd = on_tap.get("innertubeCommand", {})
+    watch_ep = cmd.get("watchEndpoint", {})
+    vid = watch_ep.get("videoId", "")
+    if vid:
+        return vid
+    web_meta = cmd.get("commandMetadata", {}).get("webCommandMetadata", {})
+    url_path = web_meta.get("url", "")
+    if url_path:
+        m = _re.search(r"/watch\?v=([a-zA-Z0-9_-]{11})", url_path)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def _find_music_card(data: dict) -> dict | None:
     found: dict | None = None
 
@@ -265,10 +355,12 @@ def _find_music_card(data: dict) -> dict | None:
                 if title and artist:
                     image = card.get("image", {})
                     sources = image.get("sources", []) if isinstance(image, dict) else []
+                    video_id = _extract_music_video_id_from_card(card)
                     found = {
                         "name": title,
                         "artist": artist,
                         "thumbnail": _largest_thumbnail(sources),
+                        "videoId": video_id,
                     }
                     return
             for value in node.values():
@@ -346,7 +438,7 @@ def extract_shorts_music_track(short_url: str) -> dict:
             "name": track.get("name", "").strip(),
             "artist": track.get("artist", "").strip(),
             "thumbnail": track.get("thumbnail", "").strip() or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-            "videoId": "",
+            "videoId": track.get("videoId", ""),
         },
         "sourceShort": {
             "videoId": video_id,
