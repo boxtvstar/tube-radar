@@ -662,14 +662,20 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
          await syncUsersWithWhitelist(details, { logPrefix: 'CSV 재동기화' });
 
-         // Immediately downgrade removed users
+         // Immediately downgrade removed users (skip manualOverride)
          const revokedNames: string[] = [];
+         const skippedManual: string[] = [];
          for (const member of removed) {
             const foundUser = users.find(u => {
                const uChannelId = (u as any).channelId || '';
                return uChannelId && uChannelId === member.id;
             });
             if (foundUser && ['trial', 'silver', 'gold', 'platinum'].includes(foundUser.status || deriveStatusFromLegacy(foundUser as any))) {
+               // 관리자가 수동으로 등급 부여한 사용자는 다운그레이드하지 않음
+               if ((foundUser as any).manualOverride) {
+                  skippedManual.push(foundUser.displayName || member.name || member.id);
+                  continue;
+               }
                await updateDoc(doc(db, 'users', foundUser.uid), {
                   status: 'pending',
                   role: 'pending',
@@ -693,6 +699,9 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
          if (added.length > 0 || removed.length > 0) {
             setWhitelistDiff({ added, removed });
+            if (skippedManual.length > 0) {
+               alert(`ℹ️ 수동 등급 부여 사용자 ${skippedManual.length}명은 다운그레이드에서 제외됨:\n${skippedManual.join(', ')}`);
+            }
          } else {
             alert("✅ 멤버십 명단이 업데이트되었습니다. (변경 사항 없음)");
          }
@@ -1605,13 +1614,14 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
               const newRole = getLegacyRoleFromStatus(resolvedStatus, foundUser.email);
               const newPlan = getLegacyPlanFromStatus(resolvedStatus);
 
-              // Update User Doc
+              // Update User Doc (수동 등급 부여 → manualOverride 보호)
               await updateDoc(doc(db, 'users', foundUser.uid), {
                   status: resolvedStatus,
                   role: newRole,
                   plan: newPlan,
                   membershipTier: targetTier, // Store original display string
-                  expiresAt: newExpiryDate.toISOString()
+                  expiresAt: newExpiryDate.toISOString(),
+                  manualOverride: true
               });
 
               // Add History Log
@@ -1760,6 +1770,10 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         updates.membershipTier = null;
         updates.trialStatus = selectedUser.trialUsed ? 'expired' : null;
         updates.trialExpiresAt = null;
+        updates.manualOverride = false;
+      } else {
+        // 관리자 수동 등급 변경 시 CSV 동기화에서 보호
+        updates.manualOverride = true;
       }
       await updateDoc(doc(db, 'users', selectedUser.uid), updates);
       
