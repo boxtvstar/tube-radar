@@ -226,10 +226,50 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   const platformColor = platform === 'tiktok' ? 'bg-black hover:bg-gray-800' : platform === 'instagram' ? 'bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-500 hover:to-pink-400' : 'bg-red-600 hover:bg-red-500';
   const platformShadow = platform === 'tiktok' ? 'shadow-black/20' : platform === 'instagram' ? 'shadow-pink-500/20' : 'shadow-red-600/20';
 
+  // Detect Shorts by thumbnail aspect ratio (vertical = Shorts)
+  const [isShorts, setIsShorts] = useState(false);
+  useEffect(() => {
+    if (platform !== 'youtube' || !video.thumbnailUrl) { setIsShorts(false); return; }
+    const img = new Image();
+    img.onload = () => setIsShorts(img.naturalHeight > img.naturalWidth);
+    img.src = video.thumbnailUrl;
+  }, [video.id, video.thumbnailUrl, platform]);
+  const showPlayer = platform === 'youtube' && video.duration !== '0:00';
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
-      <div 
-        className="bg-slate-950/95 backdrop-blur-xl w-full max-w-md h-full overflow-y-auto shadow-2xl border-l border-white/10 relative animate-in slide-in-from-right duration-500 ease-out" 
+    <div className="fixed inset-0 z-[100] flex items-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
+      {/* Left: Video Player (desktop only, YouTube) */}
+      {showPlayer && (
+        <div className="hidden md:flex flex-1 h-full items-center justify-center p-8 lg:p-12">
+          {isShorts ? (
+            /* Shorts: vertical player */
+            <div className="relative h-[min(80vh,720px)] aspect-[9/16] rounded-2xl overflow-hidden bg-black shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+              <iframe
+                src={`https://www.youtube.com/embed/${video.id}?autoplay=1&rel=0`}
+                className="absolute inset-0 w-full h-full"
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+                title={video.title}
+              />
+            </div>
+          ) : (
+            /* Long-form: horizontal player */
+            <div className="relative w-full max-w-4xl aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+              <iframe
+                src={`https://www.youtube.com/embed/${video.id}?autoplay=1&rel=0`}
+                className="absolute inset-0 w-full h-full"
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+                title={video.title}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Right: Detail Panel */}
+      <div
+        className="bg-slate-950/95 backdrop-blur-xl w-full max-w-md h-full overflow-y-auto shadow-2xl border-l border-white/10 relative animate-in slide-in-from-right duration-500 ease-out ml-auto"
         onClick={e => e.stopPropagation()}
       >
         
@@ -464,10 +504,6 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     <div className="text-[8px] text-white/70 mt-1 font-bold">평소보다 {stats.outlier}배 인기</div>
                   </div>
                 </div>
-              </div>
-
-              {/* Stats Grid - 2x3 */}
-              <div className="grid grid-cols-2 gap-2.5">
                 {/* Views */}
                 <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 h-24 flex flex-col justify-center">
                   <div className="flex items-center gap-1.5 mb-1.5">
