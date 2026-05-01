@@ -170,7 +170,7 @@ def tiktok_profile(username: str = Query(..., description="TikTok @username")):
 def image_proxy(url: str = Query(..., description="이미지 URL")):
     """Instagram/TikTok 등 CORS 차단 이미지를 프록시"""
     from starlette.responses import Response
-    if not any(d in url for d in ("cdninstagram.com", "tiktokcdn.com", "tiktokcdn-", "scontent-", "fbcdn.net")):
+    if not any(d in url for d in ("cdninstagram.com", "tiktokcdn.com", "tiktokcdn-", "scontent-", "fbcdn.net", "ruliweb.com", "ppomppu.co.kr", "slrclub.com", "todayhumor.co.kr", "theqoo.net", "namu.la", "inven.co.kr", "fmkorea.com")):
         raise HTTPException(status_code=400, detail="허용되지 않는 도메인")
     try:
         resp = _req.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, stream=True)
@@ -220,14 +220,24 @@ _preview_cache: dict[str, dict] = {}
 
 # 사이트별 본문 추출 셀렉터 (OG 태그 없는 사이트 대비)
 _BODY_SELECTORS: list[str] = [
-    ".xe_content",          # theqoo (XE 기반)
+    ".xe_content",          # theqoo, fmkorea (XE 기반)
+    "div.document_content", # fmkorea alternative
     "div#articleBody",      # 82cook
     "td.board-contents",    # ppomppu
     "div.bodyCont",         # bobaedream
     "div.rd_body",          # theqoo alternative
+    "div.write_div",        # dcinside
+    "div.gallery_re_page",  # dcinside gallery
+    "article.content",      # arca_live
+    "div.article_content",  # clien
+    "div.post_article",     # ruliweb
+    "div.view_content",     # inven, generic
+    "div.slrbbs",           # slrclub
+    "div.whole_box",        # todayhumor
+    "div.bo_v_con",         # gasengi
     "article.article-body", # generic
-    "div.view_content",     # generic
     "div.read_body",        # generic
+    "div.entry-content",    # generic blog
 ]
 
 
@@ -263,17 +273,33 @@ def _extract_body_text(soup: _BS, max_len: int = 300) -> str:
 
 
 def _extract_body_image(soup: _BS) -> str:
-    """본문 영역에서 첫 번째 이미지 추출"""
+    """본문 영역에서 첫 번째 ��미지 추출 (data-original/data-src 포함)"""
     for sel in _BODY_SELECTORS:
         el = soup.select_one(sel)
-        if el:
-            img = el.select_one("img[src]")
-            if img:
-                src = img.get("src", "")
-                if src and not src.endswith((".gif", ".svg")) and "icon" not in src and "btn" not in src:
-                    if src.startswith("//"):
-                        src = "https:" + src
-                    return src
+        if not el:
+            continue
+        # data-original, data-src, src 순서로 시도
+        for img in el.select("img"):
+            src = (img.get("data-original") or img.get("data-src")
+                   or img.get("data-lazy-src") or img.get("src") or "")
+            if not src or src.endswith((".gif", ".svg")):
+                continue
+            if any(x in src for x in ("icon", "btn", "logo", "transparent", "blank", "spacer")):
+                continue
+            if src.startswith("//"):
+                src = "https:" + src
+            if src.startswith("http"):
+                return src
+    return ""
+
+
+def _extract_youtube_thumb(soup: _BS) -> str:
+    """YouTube iframe에서 썸네일 URL 추출"""
+    iframe = soup.select_one('iframe[src*="youtube.com/embed/"], iframe[src*="youtu.be/"]')
+    if iframe:
+        m = _re.search(r"(?:embed|youtu\.be)/([a-zA-Z0-9_-]{11})", iframe.get("src", ""))
+        if m:
+            return f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg"
     return ""
 
 
@@ -340,16 +366,36 @@ def community_preview(url: str = Query(...)):
         if og_img:
             img = (og_img.get("content") or "").strip()
 
+        # OG 이미지가 아이콘/비이미지인 경우 무시
+        if img and _re.search(r"icon_app|apple-icon|/icon[_-]|/logo[_-]|\.(mp4|webm|mp3|svg)(\?|$)", img, _re.I):
+            img = ""
+
+        # twitter:image 폴백
+        if not img:
+            tw_img = soup.select_one('meta[name="twitter:image"], meta[property="twitter:image"]')
+            if tw_img:
+                img = (tw_img.get("content") or "").strip()
+
         # 본문 이미지 폴백
         if not img:
             img = _extract_body_image(soup)
 
+        # YouTube iframe 폴백
+        if not img:
+            img = _extract_youtube_thumb(soup)
+
         # 프로토콜 보정
         if img.startswith("//"):
             img = "https:" + img
+        elif img.startswith("http://"):
+            img = "https://" + img[7:]
+        elif img and not img.startswith("http"):
+            img = ""  # 상대 경로 무시
 
         result = {"description": desc[:300], "image": img}
         _preview_cache[url] = result
         return result
-    except Exception:
+    except Exception as e:
+        import logging, traceback
+        logging.getLogger(__name__).warning("Preview failed for %s: %s\n%s", url, e, traceback.format_exc())
         return {"description": "", "image": ""}

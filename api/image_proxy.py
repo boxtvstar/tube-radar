@@ -17,6 +17,14 @@ ALLOWED_DOMAINS = (
     "scontent-",
     "tiktokcdn.com",
     "tiktokcdn-",
+    "ruliweb.com",
+    "ppomppu.co.kr",
+    "slrclub.com",
+    "todayhumor.co.kr",
+    "theqoo.net",
+    "namu.la",
+    "inven.co.kr",
+    "fmkorea.com",
 )
 
 

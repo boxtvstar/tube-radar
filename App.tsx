@@ -1835,6 +1835,7 @@ export default function App() {
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   
   const [channelFilterQuery, setChannelFilterQuery] = useState('');
+  const [folderFilterQuery, setFolderFilterQuery] = useState('');
   const [channelSortMode, setChannelSortMode] = useState<'latest' | 'name'>('latest');
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -2088,6 +2089,45 @@ export default function App() {
 
     return { system, parentGroups, standalone: [...standalone, ...orphaned], getChildren };
   }, [platformGroups]);
+
+  const filteredGroupHierarchy = useMemo(() => {
+    if (!folderFilterQuery.trim()) return groupHierarchy;
+    const q = folderFilterQuery.toLowerCase();
+    const filteredParents = groupHierarchy.parentGroups.filter(pg => {
+      if (pg.name.toLowerCase().includes(q)) return true;
+      return groupHierarchy.getChildren(pg.id).some(c => c.name.toLowerCase().includes(q));
+    });
+    const filteredStandalone = groupHierarchy.standalone.filter(g => g.name.toLowerCase().includes(q));
+    return { ...groupHierarchy, parentGroups: filteredParents, standalone: filteredStandalone };
+  }, [groupHierarchy, folderFilterQuery]);
+
+  // 폴더 검색 시 매칭 대그룹 자동 펼침
+  const folderSearchExpandedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!folderFilterQuery.trim()) {
+      // 검색 해제 시 검색으로 펼친 그룹 접기
+      if (folderSearchExpandedRef.current.size > 0) {
+        setExpandedParentGroups(prev => {
+          const next = new Set(prev);
+          folderSearchExpandedRef.current.forEach(id => next.delete(id));
+          return next;
+        });
+        folderSearchExpandedRef.current.clear();
+      }
+      return;
+    }
+    const q = folderFilterQuery.toLowerCase();
+    const toExpand = new Set<string>();
+    filteredGroupHierarchy.parentGroups.forEach(pg => {
+      const children = groupHierarchy.getChildren(pg.id);
+      if (children.some(c => c.name.toLowerCase().includes(q))) toExpand.add(pg.id);
+    });
+    setExpandedParentGroups(prev => {
+      const next = new Set(prev);
+      toExpand.forEach(id => { if (!prev.has(id)) { next.add(id); folderSearchExpandedRef.current.add(id); } });
+      return next;
+    });
+  }, [folderFilterQuery, filteredGroupHierarchy]);
 
   // 그룹 영역 높이 감지 (3줄 초과 여부)
   useEffect(() => {
@@ -5630,6 +5670,7 @@ export default function App() {
                   className={`flex flex-col gap-2 pb-4 border-b border-slate-100 dark:border-white/5 transition-all duration-300 ${!isGroupsExpanded && groupsOverflow ? 'max-h-[136px] overflow-hidden' : ''}`}
                 >
                 {/* ── 시스템 그룹 (전체, 미지정) ── */}
+                {!folderFilterQuery && (
                 <div className="flex flex-wrap items-center gap-3">
                   {groupHierarchy.system.map(group => (
                     <button
@@ -5646,9 +5687,10 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                )}
 
                 {/* ── 대그룹 + 소그룹 계층 ── */}
-                {groupHierarchy.parentGroups.map(parentGroup => {
+                {filteredGroupHierarchy.parentGroups.map(parentGroup => {
                   const isExpanded = expandedParentGroups.has(parentGroup.id);
                   const children = groupHierarchy.getChildren(parentGroup.id);
                   const isParentActive = activeGroupId === parentGroup.id;
@@ -5792,9 +5834,9 @@ export default function App() {
                 })}
 
                 {/* ── 독립 그룹 (parentId 없는 일반 그룹) ── */}
-                {groupHierarchy.standalone.length > 0 && (
+                {filteredGroupHierarchy.standalone.length > 0 && (
                   <div className="flex flex-wrap items-center gap-3">
-                    {groupHierarchy.standalone.map(group => (
+                    {filteredGroupHierarchy.standalone.map(group => (
                       <div
                         key={group.id}
                         className={`relative group/tab shrink-0 ${dragGroupId === group.id ? 'opacity-40' : ''} ${dragOverGroupId === group.id ? 'border-l-2 border-primary' : ''}`}
@@ -5922,18 +5964,34 @@ export default function App() {
                 )}
               </div>
 
-              <div className="relative flex flex-row items-center gap-2 sm:justify-between px-1 mt-4 overflow-x-auto no-scrollbar pb-2">
-                  <div className="relative w-40 sm:w-64 shrink-0">
+              <div className="relative flex flex-row items-center gap-2 px-1 pt-1 mt-4 overflow-x-auto no-scrollbar pb-2">
+                  <div className="relative flex-1 min-w-0">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[16px] text-slate-400">search</span>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={channelFilterQuery}
                       onChange={(e) => setChannelFilterQuery(e.target.value)}
-                      placeholder="채널 검색..." 
+                      placeholder="채널 검색..."
                       className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold focus:ring-1 focus:ring-primary focus:border-primary transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
                     />
                     {channelFilterQuery && (
                       <button onClick={() => setChannelFilterQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500">
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="relative flex-1 min-w-0">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[16px] text-slate-400">folder_open</span>
+                    <input
+                      type="text"
+                      value={folderFilterQuery}
+                      onChange={(e) => { setFolderFilterQuery(e.target.value); if (!isGroupsExpanded) setIsGroupsExpanded(true); }}
+                      placeholder="폴더 검색..."
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold focus:ring-1 focus:ring-primary focus:border-primary transition-all text-slate-900 dark:text-white placeholder:text-slate-400"
+                    />
+                    {folderFilterQuery && (
+                      <button onClick={() => setFolderFilterQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500">
                         <span className="material-symbols-outlined text-[16px]">cancel</span>
                       </button>
                     )}

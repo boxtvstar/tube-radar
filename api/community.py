@@ -132,8 +132,27 @@ def _scrape_dcinside() -> list[dict]:
     return posts
 
 
+def _extract_thumbnail(el, extra_selectors: list[str] | None = None) -> str:
+    """리스트 아이템에서 썸네일 URL 추출."""
+    if not el:
+        return ""
+    selectors = extra_selectors or []
+    selectors += ["img[data-original]", "img[data-src]", "img[data-lazy-src]", "img[src]"]
+    for selector in selectors:
+        img = el.select_one(selector)
+        if not img:
+            continue
+        src = (img.get("data-original") or img.get("data-src")
+               or img.get("data-lazy-src") or img.get("src") or "")
+        if src and "transparent" not in src and "blank" not in src and "icon" not in src:
+            if src.startswith("//"): src = "https:" + src
+            if src.startswith("http") and not src.endswith((".gif", ".svg")):
+                return src
+    return ""
+
+
 def _scrape_fmkorea() -> list[dict]:
-    """Vercel에서는 Playwright 사용 불가 → requests로 시도 (430이면 빈 결과)"""
+    """에펨코리아 포텐 (requests, 차단 시 빈 결과)"""
     posts = []
     soup = _get_soup("https://www.fmkorea.com/best2")
     if not soup: return posts
@@ -146,6 +165,7 @@ def _scrape_fmkorea() -> list[dict]:
         title = re.sub(r"\s*\[\d+\]\s*$", "", title)
         href = a.get("href", "")
         if href and not href.startswith("http"): href = "https://www.fmkorea.com" + href
+        thumbnail = _extract_thumbnail(item)
         comment_count = 0
         cmt_el = item.select_one("span.comment_count")
         if cmt_el: comment_count = _parse_number(cmt_el.get_text())
@@ -155,7 +175,7 @@ def _scrape_fmkorea() -> list[dict]:
         timestamp = None
         d = item.select_one("span.regdate")
         if d: timestamp = _parse_date(d.get_text(strip=True))
-        posts.append({"rank": rank, "title": title, "url": href, "source": "에펨코리아", "source_id": "fmkorea", "category": "유머", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp})
+        posts.append({"rank": rank, "title": title, "url": href, "source": "에펨코리아", "source_id": "fmkorea", "category": "유머", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp, "thumbnail": thumbnail})
     return posts
 
 
@@ -524,7 +544,8 @@ def _scrape_slrclub() -> list[dict]:
         timestamp = None
         d = item.select_one("td.list_date")
         if d: timestamp = _parse_date(d.get_text(strip=True))
-        posts.append({"rank": rank, "title": title, "url": href, "source": "SLR클럽", "source_id": "slrclub", "category": "테크", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp})
+        thumb = _extract_thumbnail(item)
+        posts.append({"rank": rank, "title": title, "url": href, "source": "SLR클럽", "source_id": "slrclub", "category": "테크", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp, "thumbnail": thumb})
     return posts
 
 def _scrape_gasengi() -> list[dict]:
@@ -545,7 +566,8 @@ def _scrape_gasengi() -> list[dict]:
         if badge: comment_count = _parse_number(badge.get_text())
         timestamp = None
         if len(tds) >= 5: timestamp = _parse_date(tds[4].get_text(strip=True))
-        posts.append({"rank": rank, "title": title, "url": href, "source": "가생이", "source_id": "gasengi", "category": "이슈", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp})
+        thumb = _extract_thumbnail(item)
+        posts.append({"rank": rank, "title": title, "url": href, "source": "가생이", "source_id": "gasengi", "category": "이슈", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp, "thumbnail": thumb})
     return posts
 
 def _scrape_todayhumor() -> list[dict]:
@@ -572,7 +594,8 @@ def _scrape_todayhumor() -> list[dict]:
         timestamp = None
         d = item.select_one("td.date")
         if d: timestamp = _parse_date(d.get_text(strip=True))
-        posts.append({"rank": rank, "title": title, "url": href, "source": "오늘의유머", "source_id": "todayhumor", "category": "유머", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp})
+        thumb = _extract_thumbnail(item)
+        posts.append({"rank": rank, "title": title, "url": href, "source": "오늘의유머", "source_id": "todayhumor", "category": "유머", "view_count": view_count, "comment_count": comment_count, "timestamp": timestamp, "thumbnail": thumb})
     return posts
 
 
@@ -581,7 +604,7 @@ def _scrape_todayhumor() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _ALL_SCRAPERS = [
-    _scrape_dcinside, _scrape_ruliweb, _scrape_theqoo,
+    _scrape_dcinside, _scrape_fmkorea, _scrape_ruliweb, _scrape_theqoo,
     _scrape_arca_live, _scrape_inven, _scrape_ppomppu, _scrape_mlbpark,
     _scrape_clien, _scrape_nate_pann,
     # Phase 2 (일베/인스티즈/오르비/다모앙/해연갤은 SPA/JS렌더링/차단으로 제외)
@@ -620,6 +643,10 @@ def _fetch_hot_posts(force: bool = False) -> dict:
 
     # 공지/광고 제거 + 오래된 게시글 제거 (2일 이내만)
     all_posts = [p for p in all_posts if not _is_noise(p["title"]) and not _is_too_old(p.get("timestamp"))]
+
+    # thumbnail 기본값 보장
+    for p in all_posts:
+        p.setdefault("thumbnail", "")
 
     # 조회수 + 댓글수 기반 통합 랭킹 정렬 (댓글 가중치 ×10)
     all_posts.sort(key=lambda p: p["view_count"] + p["comment_count"] * 10, reverse=True)

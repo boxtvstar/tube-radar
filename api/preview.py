@@ -19,14 +19,24 @@ _preview_cache: dict[str, dict] = {}
 
 # 사이트별 본문 추출 셀렉터
 _BODY_SELECTORS: list[str] = [
-    ".xe_content",          # theqoo (XE 기반)
+    ".xe_content",          # theqoo, fmkorea (XE 기반)
+    "div.document_content", # fmkorea alternative
     "div#articleBody",      # 82cook
     "td.board-contents",    # ppomppu
     "div.bodyCont",         # bobaedream
     "div.rd_body",          # theqoo alternative
-    "article.article-body",
-    "div.view_content",
-    "div.read_body",
+    "div.write_div",        # dcinside
+    "div.gallery_re_page",  # dcinside gallery
+    "article.content",      # arca_live
+    "div.article_content",  # clien
+    "div.post_article",     # ruliweb
+    "div.view_content",     # inven, generic
+    "div.slrbbs",           # slrclub
+    "div.whole_box",        # todayhumor
+    "div.bo_v_con",         # gasengi
+    "article.article-body", # generic
+    "div.read_body",        # generic
+    "div.entry-content",    # generic blog
 ]
 
 
@@ -59,14 +69,28 @@ def _extract_body_text(soup: BeautifulSoup, max_len: int = 300) -> str:
 def _extract_body_image(soup: BeautifulSoup) -> str:
     for sel in _BODY_SELECTORS:
         el = soup.select_one(sel)
-        if el:
-            img = el.select_one("img[src]")
-            if img:
-                src = img.get("src", "")
-                if src and not src.endswith((".gif", ".svg")) and "icon" not in src and "btn" not in src:
-                    if src.startswith("//"):
-                        src = "https:" + src
-                    return src
+        if not el:
+            continue
+        for img in el.select("img"):
+            src = (img.get("data-original") or img.get("data-src")
+                   or img.get("data-lazy-src") or img.get("src") or "")
+            if not src or src.endswith((".gif", ".svg")):
+                continue
+            if any(x in src for x in ("icon", "btn", "logo", "transparent", "blank", "spacer")):
+                continue
+            if src.startswith("//"):
+                src = "https:" + src
+            if src.startswith("http"):
+                return src
+    return ""
+
+
+def _extract_youtube_thumb(soup: BeautifulSoup) -> str:
+    iframe = soup.select_one('iframe[src*="youtube.com/embed/"], iframe[src*="youtu.be/"]')
+    if iframe:
+        m = re.search(r"(?:embed|youtu\.be)/([a-zA-Z0-9_-]{11})", iframe.get("src", ""))
+        if m:
+            return f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg"
     return ""
 
 
@@ -125,12 +149,30 @@ def _fetch_preview(url: str) -> dict:
         if og_img:
             img = (og_img.get("content") or "").strip()
 
+        # OG 이미지가 아이콘/비이미지인 경우 무시
+        if img and re.search(r"icon_app|apple-icon|/icon[_-]|/logo[_-]|\.(mp4|webm|mp3|svg)(\?|$)", img, re.I):
+            img = ""
+
+        # twitter:image 폴백
+        if not img:
+            tw_img = soup.select_one('meta[name="twitter:image"], meta[property="twitter:image"]')
+            if tw_img:
+                img = (tw_img.get("content") or "").strip()
+
         # 본문 이미지 폴백
         if not img:
             img = _extract_body_image(soup)
 
+        # YouTube iframe 폴백
+        if not img:
+            img = _extract_youtube_thumb(soup)
+
         if img.startswith("//"):
             img = "https:" + img
+        elif img.startswith("http://"):
+            img = "https://" + img[7:]
+        elif img and not img.startswith("http"):
+            img = ""  # 상대 경로 무시
 
         result = {"description": desc[:300], "image": img}
         _preview_cache[url] = result

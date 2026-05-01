@@ -5,6 +5,94 @@ interface PreviewData {
   image: string;
 }
 
+/* ------------------------------------------------------------------ */
+/* Lazy-loaded thumbnail component (IntersectionObserver + preview API) */
+/* ------------------------------------------------------------------ */
+const thumbnailCache: Record<string, string | null> = {};
+
+const PROXY_DOMAINS = ['ruliweb.com', 'ppomppu.co.kr', 'slrclub.com', 'todayhumor.co.kr', 'theqoo.net', 'namu.la', 'inven.co.kr', 'fmkorea.com'];
+
+const needsProxy = (imgUrl: string) => PROXY_DOMAINS.some(d => imgUrl.includes(d));
+
+const isValidImage = (imgUrl: string) => {
+  if (!imgUrl) return false;
+  if (!imgUrl.startsWith('http')) return false;
+  if (/\.(mp4|webm|mp3|svg|gif)(\?|$)/i.test(imgUrl)) return false;
+  if (/icon_app|apple-icon|\/icon[_-]|\/logo[_-]/i.test(imgUrl)) return false;
+  return true;
+};
+
+const toProxySrc = (imgUrl: string, apiBase: string) =>
+  needsProxy(imgUrl) ? `${apiBase}/api/image-proxy?url=${encodeURIComponent(imgUrl)}` : imgUrl;
+
+const PostThumbnail: React.FC<{ url: string; backendThumb?: string; apiBase: string; sourceColor?: string }> = ({ url, backendThumb, apiBase, sourceColor }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const initial = backendThumb || thumbnailCache[url] || null;
+  const [src, setSrc] = useState<string | null>(initial ? toProxySrc(initial, apiBase) : null);
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+  const fetched = useRef(!!backendThumb);
+
+  useEffect(() => {
+    if (backendThumb) thumbnailCache[url] = backendThumb;
+  }, [backendThumb, url]);
+
+  useEffect(() => {
+    if (fetched.current || src) return;
+    if (url in thumbnailCache) {
+      if (thumbnailCache[url]) setSrc(toProxySrc(thumbnailCache[url]!, apiBase));
+      else setErrored(true);
+      return;
+    }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting || fetched.current) return;
+        fetched.current = true;
+        observer.disconnect();
+        fetch(`${apiBase}/api/preview?url=${encodeURIComponent(url)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then((data: PreviewData | null) => {
+            const img = data?.image || null;
+            if (img && isValidImage(img)) {
+              thumbnailCache[url] = img;
+              setSrc(toProxySrc(img, apiBase));
+            } else {
+              thumbnailCache[url] = null;
+              setErrored(true);
+            }
+          })
+          .catch(() => { thumbnailCache[url] = null; setErrored(true); });
+      },
+      { rootMargin: '300px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [url, apiBase, src]);
+
+  return (
+    <div ref={ref} className="shrink-0 w-10 h-10 md:w-11 md:h-11 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800">
+      {src && !errored ? (
+        <img
+          src={src}
+          alt=""
+          className={`w-full h-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setLoaded(true)}
+          onError={() => { setErrored(true); thumbnailCache[url] = null; }}
+          loading="lazy"
+        />
+      ) : errored ? (
+        <div className={`w-full h-full flex items-center justify-center ${sourceColor || 'bg-slate-200 dark:bg-slate-700'}`}>
+          <span className="material-symbols-outlined text-white/80 text-base">article</span>
+        </div>
+      ) : (
+        <div className="w-full h-full animate-pulse" />
+      )}
+    </div>
+  );
+};
+
 interface CommunityPost {
   rank: number;
   title: string;
@@ -15,6 +103,7 @@ interface CommunityPost {
   view_count: number;
   comment_count: number;
   timestamp: string | null;
+  thumbnail?: string;
 }
 
 interface HotPostsResponse {
@@ -29,6 +118,7 @@ const CACHE_TTL = 3600 * 1000; // 1 hour in ms
 const SOURCES = [
   { id: 'all', label: '전체' },
   { id: 'dcinside', label: '디시인사이드' },
+  { id: 'fmkorea', label: '에펨코리아' },
   { id: 'ruliweb', label: '루리웹' },
   { id: 'theqoo', label: '더쿠' },
   { id: 'arca_live', label: '아카라이브' },
@@ -48,6 +138,7 @@ const SOURCES = [
 
 const SOURCE_COLORS: Record<string, string> = {
   dcinside: 'bg-blue-500',
+  fmkorea: 'bg-sky-500',
   ruliweb: 'bg-indigo-500',
   theqoo: 'bg-pink-500',
   arca_live: 'bg-teal-500',
@@ -235,13 +326,13 @@ export const CommunityHotPosts: React.FC<CommunityHotPostsProps> = ({ onTrackUsa
         </button>
       </div>
 
-      {/* Source Filter */}
-      <div className="flex flex-wrap gap-1.5 md:gap-2 mb-4 md:mb-6">
-        {SOURCES.map(src => (
+      {/* Source Filter — 게시글이 있는 소스만 표시 */}
+      <div className="flex flex-wrap gap-1 md:gap-2 mb-3 md:mb-6">
+        {SOURCES.filter(src => src.id === 'all' || posts.some(p => p.source_id === src.id)).map(src => (
           <button
             key={src.id}
             onClick={() => setSelectedSource(src.id)}
-            className={`px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl text-xs md:text-sm font-bold transition-all ${
+            className={`px-1.5 md:px-4 py-0.5 md:py-2 rounded-md md:rounded-xl text-[10px] md:text-sm font-bold transition-all ${
               selectedSource === src.id
                 ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
                 : 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700'
@@ -288,6 +379,9 @@ export const CommunityHotPosts: React.FC<CommunityHotPostsProps> = ({ onTrackUsa
               }`}>
                 {idx + 1}
               </span>
+
+              {/* Thumbnail */}
+              <PostThumbnail url={post.url} backendThumb={post.thumbnail} apiBase={apiBase} sourceColor={SOURCE_COLORS[post.source_id]} />
 
               {/* Source Badge */}
               <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold text-white ${SOURCE_COLORS[post.source_id] || 'bg-slate-500'}`}>
