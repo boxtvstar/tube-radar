@@ -192,14 +192,16 @@ def _scrape_fmkorea() -> list[dict]:
     posts = []
     soup = _get_soup("https://www.fmkorea.com/best2")
 
-    # Playwright 폴백
-    if not soup:
+    # Playwright 폴백 (Cloudflare 430 우회)
+    if not soup or not soup.select("li.li"):
         try:
+            import time as _time
             from playwright.sync_api import sync_playwright
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
-                page.goto("https://www.fmkorea.com/best2", wait_until="networkidle", timeout=20000)
+                page.goto("https://www.fmkorea.com/best2", wait_until="domcontentloaded", timeout=20000)
+                _time.sleep(2)
                 html = page.content()
                 browser.close()
             soup = BeautifulSoup(html, "lxml")
