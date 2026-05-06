@@ -192,6 +192,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        const targetStatus = resolvedStatus || fallbackStatus;
                        const targetPlan = getLegacyPlanFromStatus(targetStatus);
 
+                       // 수동 등급 부여 사용자는 화이트리스트가 더 낮은 등급이면 건너뜀
+                       const _tierRank: Record<string, number> = { pending: 0, trial: 1, silver: 2, gold: 3, platinum: 4 };
+                       if (data.manualOverride && (_tierRank[targetStatus] || 0) < (_tierRank[nextStatus] || 0)) {
+                         // manualOverride 보호: 다운그레이드 방지
+                       } else {
+
                        // LOGIC: Calculate Expiry
                        let newExpiry = '';
                        const now = new Date();
@@ -324,9 +330,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                              nextStatus = targetStatus;
                              effectiveTier = match.tier || null;
                              effectiveExpiresAt = newExpiry;
+                       } // end else (manualOverride protection)
                     } else {
                        // Whitelist에서 제거된 경우: 유료 등급 사용자를 pending으로 다운그레이드
-                       if ((nextStatus === 'silver' || nextStatus === 'gold' || nextStatus === 'platinum') && !hasActiveTrial) {
+                       // 단, 수동 등급 부여 사용자는 보호
+                       if ((nextStatus === 'silver' || nextStatus === 'gold' || nextStatus === 'platinum') && !hasActiveTrial && !data.manualOverride) {
                           await updateDoc(userRef, {
                              status: 'pending',
                              role: 'pending',
