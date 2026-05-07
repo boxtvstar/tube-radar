@@ -402,16 +402,15 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
       if (!foundUser) continue;
 
+      // 수동 등급 부여 사용자는 CSV 동기화에서 완전히 제외
+      if ((foundUser as any).manualOverride) {
+        continue;
+      }
+
       const resolvedStatus = resolveStatusFromTier(member.tier);
       if (!resolvedStatus) continue;
 
       const currentStatus = foundUser.status || deriveStatusFromLegacy(foundUser as any);
-
-      // 수동 등급 부여 사용자는 CSV가 더 낮은 등급으로 덮어쓰지 못하도록 보호
-      const tierRank: Record<string, number> = { pending: 0, trial: 1, silver: 2, gold: 3, platinum: 4 };
-      if ((foundUser as any).manualOverride && (tierRank[resolvedStatus] || 0) < (tierRank[currentStatus] || 0)) {
-        continue;
-      }
 
       const nextRole = getLegacyRoleFromStatus(resolvedStatus, foundUser.email);
       const nextPlan = getLegacyPlanFromStatus(resolvedStatus);
