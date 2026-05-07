@@ -668,26 +668,21 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
          await syncUsersWithWhitelist(details, { logPrefix: 'CSV 재동기화' });
 
-         // Immediately downgrade removed users (skip manualOverride)
+         // Immediately downgrade removed users (탈퇴 처리 — manualOverride도 해제)
          const revokedNames: string[] = [];
-         const skippedManual: string[] = [];
          for (const member of removed) {
             const foundUser = users.find(u => {
                const uChannelId = (u as any).channelId || '';
                return uChannelId && uChannelId === member.id;
             });
             if (foundUser && ['trial', 'silver', 'gold', 'platinum'].includes(foundUser.status || deriveStatusFromLegacy(foundUser as any))) {
-               // 관리자가 수동으로 등급 부여한 사용자는 다운그레이드하지 않음
-               if ((foundUser as any).manualOverride) {
-                  skippedManual.push(foundUser.displayName || member.name || member.id);
-                  continue;
-               }
                await updateDoc(doc(db, 'users', foundUser.uid), {
                   status: 'pending',
                   role: 'pending',
                   plan: 'free',
                   membershipTier: null,
                   expiresAt: null,
+                  manualOverride: false,
                });
                try {
                   await addDoc(collection(db, 'users', foundUser.uid, 'history'), {
@@ -705,9 +700,6 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
          if (added.length > 0 || removed.length > 0) {
             setWhitelistDiff({ added, removed });
-            if (skippedManual.length > 0) {
-               alert(`ℹ️ 수동 등급 부여 사용자 ${skippedManual.length}명은 다운그레이드에서 제외됨:\n${skippedManual.join(', ')}`);
-            }
          } else {
             alert("✅ 멤버십 명단이 업데이트되었습니다. (변경 사항 없음)");
          }
