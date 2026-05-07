@@ -1628,7 +1628,9 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                   plan: newPlan,
                   membershipTier: targetTier, // Store original display string
                   expiresAt: newExpiryDate.toISOString(),
-                  manualOverride: true
+                  manualOverride: true,
+                  trialStatus: foundUser.trialStatus === 'active' ? 'converted' : (foundUser.trialStatus || null),
+                  trialExpiresAt: null
               });
 
               // Add History Log

@@ -138,7 +138,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const effectiveStatusNow = getEffectiveStatus(nextStatus, user.email);
         const hasActiveTrial = nextStatus === 'trial' && trialExpiryTime > Date.now();
 
-        if (effectiveStatusNow !== 'admin' && nextStatus === 'trial' && currentTrialExpiresAt && trialExpiryTime <= Date.now()) {
+        // 수동 등급 부여 사용자는 모든 자동 동기화 로직을 건너뜀
+        const isManualOverride = !!data.manualOverride;
+
+        if (!isManualOverride && effectiveStatusNow !== 'admin' && nextStatus === 'trial' && currentTrialExpiresAt && trialExpiryTime <= Date.now()) {
           try {
             await updateDoc(userRef, {
               status: 'pending',
@@ -162,15 +165,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           nextStatus = 'pending';
           effectiveTier = null;
           effectiveExpiresAt = null;
-        } else if (effectiveStatusNow !== 'admin' && hasActiveTrial) {
+        } else if (!isManualOverride && effectiveStatusNow !== 'admin' && hasActiveTrial) {
           nextStatus = 'trial';
           effectiveTier = null;
           effectiveExpiresAt = currentTrialExpiresAt;
         }
-        
+
         // --- Membership Auto-Approval Logic (Real-time) ---
         // If channelId is present (e.g. just submitted), check whitelist.
-        if (storedChannelId) {
+        if (storedChannelId && !isManualOverride) {
              try {
                  const whitelistRef = doc(db, 'system_data', 'membership_whitelist');
                  const whitelistSnap = await getDoc(whitelistRef);
@@ -192,11 +195,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        const targetStatus = resolvedStatus || fallbackStatus;
                        const targetPlan = getLegacyPlanFromStatus(targetStatus);
 
-                       // 수동 등급 부여 사용자는 화이트리스트가 더 낮은 등급이면 건너뜀
-                       const _tierRank: Record<string, number> = { pending: 0, trial: 1, silver: 2, gold: 3, platinum: 4 };
-                       if (data.manualOverride && (_tierRank[targetStatus] || 0) < (_tierRank[nextStatus] || 0)) {
-                         // manualOverride 보호: 다운그레이드 방지
-                       } else {
+                       {
 
                        // LOGIC: Calculate Expiry
                        let newExpiry = '';
@@ -330,7 +329,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                              nextStatus = targetStatus;
                              effectiveTier = match.tier || null;
                              effectiveExpiresAt = newExpiry;
-                       } // end else (manualOverride protection)
+                       }
                     } else {
                        // Whitelist에서 제거된 경우: 유료 등급 사용자를 pending으로 다운그레이드
                        // 단, 수동 등급 부여 사용자는 보호
