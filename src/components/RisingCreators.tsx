@@ -4,6 +4,8 @@ import {
   saveRisingChannelToDb,
   deleteRisingChannelFromDb,
   getRisingChannelsFromDb,
+  getAccumulatedRisingChannels,
+  saveAccumulatedRisingChannels,
   AdminRisingChannel,
 } from '../../services/dbService';
 
@@ -330,18 +332,29 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
   // 사용 가능한 그룹 (all 제외)
   const availableGroups = (groups ?? []).filter(g => g.id !== 'all');
 
-  const loadFromCache = useCallback(() => {
-    const cached = loadCachedChannels();
-    if (cached.length > 0) {
-      setChannels(cached);
-      try {
-        const raw = localStorage.getItem(CACHE_KEY);
-        if (raw) {
-          const { timestamp } = JSON.parse(raw);
-          setLastUpdated(new Date(timestamp).toLocaleString('ko-KR'));
-        }
-      } catch { /* ignore */ }
-      return true;
+  /** Firebase에서 누적 채널 로드 (source of truth) */
+  const loadAccumulated = useCallback(async () => {
+    try {
+      const accumulated = await getAccumulatedRisingChannels();
+      if (accumulated.length > 0) {
+        setChannels(accumulated as RisingChannel[]);
+        setLastUpdated(new Date().toLocaleString('ko-KR'));
+        return true;
+      }
+      // Firebase에 없으면 localStorage 마이그레이션
+      const cached = loadCachedChannels();
+      if (cached.length > 0) {
+        setChannels(cached);
+        await saveAccumulatedRisingChannels(cached as AdminRisingChannel[]);
+        return true;
+      }
+    } catch (e) {
+      console.warn('Firebase 누적 채널 로드 실패, localStorage 폴백', e);
+      const cached = loadCachedChannels();
+      if (cached.length > 0) {
+        setChannels(cached);
+        return true;
+      }
     }
     return false;
   }, []);
@@ -361,11 +374,27 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
       if (data.error) throw new Error(data.error);
 
       const serverChannels: RisingChannel[] = data.channels || [];
-      const existing = loadCachedChannels();
+
+      // Firebase에서 현재 누적 목록 로드 (최신 상태)
+      let existing: RisingChannel[] = [];
+      try {
+        existing = (await getAccumulatedRisingChannels()) as RisingChannel[];
+      } catch {
+        existing = loadCachedChannels(); // 폴백
+      }
+
       const merged = mergeChannels(existing, serverChannels);
 
       setChannels(merged);
-      saveCachedChannels(merged);
+      saveCachedChannels(merged); // localStorage 캐시 유지
+
+      // Firebase에 누적 목록 영구 저장
+      try {
+        await saveAccumulatedRisingChannels(merged as AdminRisingChannel[]);
+      } catch (e) {
+        console.warn('Firebase 누적 저장 실패', e);
+      }
+
       setLastUpdated(new Date().toLocaleString('ko-KR'));
     } catch (e: any) {
       setError(e.message || '데이터를 불러오는 중 오류가 발생했습니다.');
@@ -459,8 +488,9 @@ export const RisingCreators: React.FC<RisingCreatorsProps> = ({ apiKey, groups, 
   };
 
   useEffect(() => {
-    const hasCached = loadFromCache();
-    // 캐시가 있어도 서버에서 새 데이터 확인 (merge됨)
+    // Firebase에서 누적 채널 로드 (source of truth)
+    loadAccumulated();
+    // 서버에서 새 데이터 확인 (merge 후 Firebase에 저장)
     fetchData(false);
     // Firebase 관리자 추가 채널 로드
     loadAdminChannels();

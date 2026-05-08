@@ -161,6 +161,26 @@ export const getRisingChannelsFromDb = async (): Promise<AdminRisingChannel[]> =
     .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
 };
 
+// --- Rising Channels Accumulated (Firebase persistent store) ---
+
+export const getAccumulatedRisingChannels = async (): Promise<AdminRisingChannel[]> => {
+  const snap = await getDoc(doc(db, "system_data", "rising_channels_accumulated"));
+  if (snap.exists()) {
+    const data = snap.data();
+    return (data.channels || []) as AdminRisingChannel[];
+  }
+  return [];
+};
+
+export const saveAccumulatedRisingChannels = async (channels: AdminRisingChannel[]) => {
+  const sanitized = channels.map(c => removeUndefinedFields(c));
+  await setDoc(doc(db, "system_data", "rising_channels_accumulated"), {
+    channels: sanitized,
+    updatedAt: new Date().toISOString(),
+    count: sanitized.length,
+  });
+};
+
 // --- Shorts Trending Music (Admin Manual Adds) ---
 
 export interface AdminShortsMusicGroup {
