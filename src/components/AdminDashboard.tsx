@@ -3,8 +3,8 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianG
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc, where, addDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { RecommendedPackage, SavedChannel, ApiUsage } from '../../types';
-import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb, getAnalyticsOverview, AnalyticsOverview, getAnnouncement, saveAnnouncement, Announcement } from '../../services/dbService';
+import { RecommendedPackage, SavedChannel, ChannelGroup, ApiUsage } from '../../types';
+import { getPackagesFromDb, savePackageToDb, deletePackageFromDb, getTopicsFromDb, saveTopicToDb, deleteTopicFromDb, sendNotification, logAdminMessage, getInquiries, replyToInquiry, getUsageFromDb, getAnalyticsOverview, AnalyticsOverview, getAnnouncement, saveAnnouncement, Announcement, getChannelsFromDb, getGroupsFromDb } from '../../services/dbService';
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import { generateChannelRecommendation } from '../../services/geminiService';
 import DatePicker, { registerLocale } from 'react-datepicker';
@@ -295,6 +295,33 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
   const [viewingHistoryUser, setViewingHistoryUser] = useState<UserData | null>(null);
   const [historyList, setHistoryList] = useState<any[]>([]);
+
+  // Channel viewing state
+  const [viewingChannelsUser, setViewingChannelsUser] = useState<UserData | null>(null);
+  const [viewingChannelsList, setViewingChannelsList] = useState<SavedChannel[]>([]);
+  const [viewingGroupsList, setViewingGroupsList] = useState<ChannelGroup[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+  const [channelsGroupFilter, setChannelsGroupFilter] = useState<string>('all');
+
+  const handleViewChannels = async (u: UserData) => {
+    setViewingChannelsUser(u);
+    setChannelsGroupFilter('all');
+    setChannelsLoading(true);
+    try {
+      const [channels, groups] = await Promise.all([
+        getChannelsFromDb(u.uid),
+        getGroupsFromDb(u.uid)
+      ]);
+      setViewingChannelsList(channels);
+      setViewingGroupsList(groups);
+    } catch (e) {
+      console.error('Failed to load channels:', e);
+      setViewingChannelsList([]);
+      setViewingGroupsList([]);
+    } finally {
+      setChannelsLoading(false);
+    }
+  };
 
   useEffect(() => {
      if (viewingHistoryUser) {
@@ -668,13 +695,16 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
          await syncUsersWithWhitelist(details, { logPrefix: 'CSV 재동기화' });
 
-         // Immediately downgrade removed users (탈퇴 처리 — manualOverride도 해제)
+         // Immediately downgrade removed users (탈퇴 처리 — manualOverride 사용자는 보호)
          const revokedNames: string[] = [];
          for (const member of removed) {
             const foundUser = users.find(u => {
                const uChannelId = (u as any).channelId || '';
                return uChannelId && uChannelId === member.id;
             });
+            if (foundUser && (foundUser as any).manualOverride) {
+               continue; // 수동 등급 부여 사용자는 CSV 제거에서 보호
+            }
             if (foundUser && ['trial', 'silver', 'gold', 'platinum'].includes(foundUser.status || deriveStatusFromLegacy(foundUser as any))) {
                await updateDoc(doc(db, 'users', foundUser.uid), {
                   status: 'pending',
@@ -682,7 +712,6 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
                   plan: 'free',
                   membershipTier: null,
                   expiresAt: null,
-                  manualOverride: false,
                });
                try {
                   await addDoc(collection(db, 'users', foundUser.uid, 'history'), {
@@ -2285,7 +2314,15 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                             <span className="material-symbols-outlined text-[14px]">history</span>
                             기록
                          </button>
-                         <button 
+                         <button
+                           onClick={() => handleViewChannels(u)}
+                           className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 font-bold px-2 py-1 rounded text-[10px] transition-colors"
+                           title="모니터링 채널 보기"
+                         >
+                            <span className="material-symbols-outlined text-[14px]">subscriptions</span>
+                            채널
+                         </button>
+                         <button
                            onClick={() => openNotifModal(u, 'individual')}
                            className="flex items-center gap-1 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-900/30 text-slate-500 hover:text-indigo-500 font-bold px-2 py-1 rounded text-[10px] transition-colors"
                            title="메시지 보내기"
@@ -3652,6 +3689,128 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                                 <span className="text-[10px] text-slate-400">{new Date(h.date).toLocaleString()}</span>
                              </div>
                              <p className="text-sm text-slate-700 dark:text-slate-300 break-keep leading-relaxed">{h.details}</p>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+               </div>
+             </div>
+           </div>
+        )}
+        {/* User Channels View Modal */}
+        {viewingChannelsUser && (
+           <div className="absolute inset-0 z-20 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+             <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+               <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                 <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                       <span className="material-symbols-outlined text-indigo-500">subscriptions</span>
+                       모니터링 채널
+                    </h3>
+                    <p className="text-xs text-slate-500">{viewingChannelsUser.displayName} 님의 채널 · 총 {viewingChannelsList.length}개</p>
+                 </div>
+                 <button onClick={() => setViewingChannelsUser(null)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                    <span className="material-symbols-outlined">close</span>
+                 </button>
+               </div>
+
+               {/* Group filter tabs */}
+               {viewingGroupsList.length > 0 && (
+                 <div className="px-5 pt-3 flex gap-1.5 flex-wrap">
+                   <button
+                     onClick={() => setChannelsGroupFilter('all')}
+                     className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${channelsGroupFilter === 'all' ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                   >
+                     전체 ({viewingChannelsList.length})
+                   </button>
+                   {viewingGroupsList.filter(g => !g.isParentGroup).map(g => {
+                     const count = viewingChannelsList.filter(c => c.groupId === g.id).length;
+                     return (
+                       <button
+                         key={g.id}
+                         onClick={() => setChannelsGroupFilter(g.id)}
+                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${channelsGroupFilter === g.id ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                       >
+                         {g.name} ({count})
+                       </button>
+                     );
+                   })}
+                   {(() => {
+                     const ungroupedCount = viewingChannelsList.filter(c => !c.groupId).length;
+                     return ungroupedCount > 0 ? (
+                       <button
+                         onClick={() => setChannelsGroupFilter('ungrouped')}
+                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${channelsGroupFilter === 'ungrouped' ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                       >
+                         미분류 ({ungroupedCount})
+                       </button>
+                     ) : null;
+                   })()}
+                 </div>
+               )}
+
+               <div className="p-0 max-h-[60vh] overflow-y-auto">
+                 {channelsLoading ? (
+                    <div className="text-center py-12 text-slate-400 text-sm flex flex-col items-center gap-2">
+                       <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                       채널 목록 불러오는 중...
+                    </div>
+                 ) : viewingChannelsList.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 text-sm">모니터링 채널이 없습니다.</div>
+                 ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                       {viewingChannelsList
+                         .filter(c => {
+                           if (channelsGroupFilter === 'all') return true;
+                           if (channelsGroupFilter === 'ungrouped') return !c.groupId;
+                           return c.groupId === channelsGroupFilter;
+                         })
+                         .map(ch => (
+                          <div key={ch.id} className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center gap-3">
+                             {ch.thumbnail && ch.platform !== 'x' && ch.platform !== 'threads' ? (
+                               <img
+                                 src={ch.thumbnail}
+                                 alt={ch.title}
+                                 className="w-9 h-9 rounded-full object-cover bg-slate-200 dark:bg-slate-700 flex-shrink-0"
+                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                               />
+                             ) : null}
+                             <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-white text-sm font-bold ${
+                               ch.platform === 'tiktok' ? 'bg-slate-800' :
+                               ch.platform === 'instagram' ? 'bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400' :
+                               ch.platform === 'x' ? 'bg-slate-900 dark:bg-slate-600' :
+                               ch.platform === 'threads' ? 'bg-slate-900 dark:bg-slate-600' :
+                               'bg-red-500'
+                             } ${ch.thumbnail && ch.platform !== 'x' && ch.platform !== 'threads' ? 'hidden' : ''}`}>
+                               {ch.platform === 'tiktok' ? '♪' :
+                                ch.platform === 'instagram' ? 'IG' :
+                                ch.platform === 'x' ? '𝕏' :
+                                ch.platform === 'threads' ? '@' :
+                                ch.title?.charAt(0)?.toUpperCase() || 'Y'}
+                             </div>
+                             <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{ch.title}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {ch.subscriberCount && (
+                                    <span className="text-[10px] text-slate-400">구독 {Number(ch.subscriberCount).toLocaleString()}명</span>
+                                  )}
+                                  {ch.groupId && (() => {
+                                    const group = viewingGroupsList.find(g => g.id === ch.groupId);
+                                    return group ? (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-400">{group.name}</span>
+                                    ) : null;
+                                  })()}
+                                </div>
+                             </div>
+                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                               ch.platform === 'tiktok' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' :
+                               ch.platform === 'instagram' ? 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400' :
+                               ch.platform === 'x' ? 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300' :
+                               ch.platform === 'threads' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' :
+                               'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                             }`}>
+                               {ch.platform === 'tiktok' ? 'TikTok' : ch.platform === 'instagram' ? 'IG' : ch.platform === 'x' ? 'X' : ch.platform === 'threads' ? 'Threads' : 'YT'}
+                             </span>
                           </div>
                        ))}
                     </div>
