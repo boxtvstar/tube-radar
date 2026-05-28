@@ -3709,9 +3709,38 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     </h3>
                     <p className="text-xs text-slate-500">{viewingChannelsUser.displayName} 님의 채널 · 총 {viewingChannelsList.length}개</p>
                  </div>
-                 <button onClick={() => setViewingChannelsUser(null)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                 <div className="flex items-center gap-1">
+                   <button
+                     onClick={() => {
+                       const filtered = viewingChannelsList.filter(c => {
+                         if (channelsGroupFilter === 'all') return true;
+                         if (channelsGroupFilter === 'ungrouped') return !c.groupId;
+                         return c.groupId === channelsGroupFilter;
+                       });
+                       const getUrl = (ch: SavedChannel) => {
+                         if (ch.platform === 'tiktok') return `https://www.tiktok.com/${ch.customUrl || ch.id}`;
+                         if (ch.platform === 'instagram') return `https://www.instagram.com/${ch.customUrl || ch.id}`;
+                         if (ch.platform === 'x') return `https://x.com/${ch.customUrl || ch.id}`;
+                         if (ch.platform === 'threads') return `https://www.threads.net/${ch.customUrl || ch.id}`;
+                         return ch.customUrl ? `https://www.youtube.com/${ch.customUrl}` : `https://www.youtube.com/channel/${ch.id}`;
+                       };
+                       const csv = '\uFEFF채널명,채널주소\n' + filtered.map(ch => `"${ch.title.replace(/"/g, '""')}","${getUrl(ch)}"`).join('\n');
+                       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                       const a = document.createElement('a');
+                       a.href = URL.createObjectURL(blob);
+                       a.download = `${viewingChannelsUser.displayName}_channels.csv`;
+                       a.click();
+                       URL.revokeObjectURL(a.href);
+                     }}
+                     className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+                     title="CSV 다운로드"
+                   >
+                     <span className="material-symbols-outlined text-[20px]">download</span>
+                   </button>
+                   <button onClick={() => setViewingChannelsUser(null)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
                     <span className="material-symbols-outlined">close</span>
                  </button>
+                 </div>
                </div>
 
                {/* Group filter tabs */}
@@ -3790,6 +3819,13 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                              </div>
                              <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{ch.title}</p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  {ch.platform === 'tiktok' ? `tiktok.com/${ch.customUrl || ch.id}` :
+                                   ch.platform === 'instagram' ? `instagram.com/${ch.customUrl || ch.id}` :
+                                   ch.platform === 'x' ? `x.com/${ch.customUrl || ch.id}` :
+                                   ch.platform === 'threads' ? `threads.net/${ch.customUrl || ch.id}` :
+                                   ch.customUrl ? `youtube.com/${ch.customUrl}` : `youtube.com/channel/${ch.id}`}
+                                </p>
                                 <div className="flex items-center gap-2 mt-0.5">
                                   {ch.subscriberCount && (
                                     <span className="text-[10px] text-slate-400">구독 {Number(ch.subscriberCount).toLocaleString()}명</span>
