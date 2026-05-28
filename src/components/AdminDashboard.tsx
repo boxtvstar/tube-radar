@@ -3724,7 +3724,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                          if (ch.platform === 'threads') return `https://www.threads.net/${ch.customUrl || ch.id}`;
                          return ch.customUrl ? `https://www.youtube.com/${ch.customUrl}` : `https://www.youtube.com/channel/${ch.id}`;
                        };
-                       const csv = '\uFEFF채널명,채널주소\n' + filtered.map(ch => `"${ch.title.replace(/"/g, '""')}","${getUrl(ch)}"`).join('\n');
+                       const csv = '\uFEFF채널명,채널주소,플랫폼,구독자수\n' + filtered.map(ch => `"${ch.title.replace(/"/g, '""')}","${getUrl(ch)}","${ch.platform === 'tiktok' ? 'TikTok' : ch.platform === 'instagram' ? 'Instagram' : ch.platform === 'x' ? 'X' : ch.platform === 'threads' ? 'Threads' : 'YouTube'}","${ch.subscriberCount || ''}"`).join('\n');
                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                        const a = document.createElement('a');
                        a.href = URL.createObjectURL(blob);
@@ -3819,13 +3819,21 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                              </div>
                              <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{ch.title}</p>
-                                <p className="text-[10px] text-slate-400 truncate">
+                                <a
+                                  href={ch.platform === 'tiktok' ? `https://www.tiktok.com/${ch.customUrl || ch.id}` :
+                                        ch.platform === 'instagram' ? `https://www.instagram.com/${ch.customUrl || ch.id}` :
+                                        ch.platform === 'x' ? `https://x.com/${ch.customUrl || ch.id}` :
+                                        ch.platform === 'threads' ? `https://www.threads.net/${ch.customUrl || ch.id}` :
+                                        ch.customUrl ? `https://www.youtube.com/${ch.customUrl}` : `https://www.youtube.com/channel/${ch.id}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline truncate block"
+                                >
                                   {ch.platform === 'tiktok' ? `tiktok.com/${ch.customUrl || ch.id}` :
                                    ch.platform === 'instagram' ? `instagram.com/${ch.customUrl || ch.id}` :
                                    ch.platform === 'x' ? `x.com/${ch.customUrl || ch.id}` :
                                    ch.platform === 'threads' ? `threads.net/${ch.customUrl || ch.id}` :
                                    ch.customUrl ? `youtube.com/${ch.customUrl}` : `youtube.com/channel/${ch.id}`}
-                                </p>
+                                </a>
                                 <div className="flex items-center gap-2 mt-0.5">
                                   {ch.subscriberCount && (
                                     <span className="text-[10px] text-slate-400">구독 {Number(ch.subscriberCount).toLocaleString()}명</span>
