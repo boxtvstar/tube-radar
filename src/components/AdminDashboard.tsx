@@ -2073,6 +2073,46 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         <span className="text-slate-400">({userFilterCounts[status]})</span>
                       </button>
                     ))}
+                    <button
+                      onClick={async () => {
+                        const btn = document.getElementById('allChannelsDownloadBtn');
+                        if (btn) { btn.textContent = '추출 중...'; (btn as HTMLButtonElement).disabled = true; }
+                        try {
+                          const allRows: string[] = [];
+                          for (const u of users) {
+                            const [channels, groups] = await Promise.all([
+                              getChannelsFromDb(u.uid),
+                              getGroupsFromDb(u.uid)
+                            ]);
+                            const getUrl = (ch: SavedChannel) => {
+                              if (ch.platform === 'tiktok') return `https://www.tiktok.com/${ch.customUrl || ch.id}`;
+                              if (ch.platform === 'instagram') return `https://www.instagram.com/${ch.customUrl || ch.id}`;
+                              if (ch.platform === 'x') return `https://x.com/${ch.customUrl || ch.id}`;
+                              if (ch.platform === 'threads') return `https://www.threads.net/${ch.customUrl || ch.id}`;
+                              return ch.customUrl ? `https://www.youtube.com/${ch.customUrl}` : `https://www.youtube.com/channel/${ch.id}`;
+                            };
+                            for (const ch of channels) {
+                              const group = groups.find(g => g.id === ch.groupId);
+                              const platform = ch.platform === 'tiktok' ? 'TikTok' : ch.platform === 'instagram' ? 'Instagram' : ch.platform === 'x' ? 'X' : ch.platform === 'threads' ? 'Threads' : 'YouTube';
+                              allRows.push(`"${u.displayName?.replace(/"/g, '""') || ''}","${u.email?.replace(/"/g, '""') || ''}","${ch.title.replace(/"/g, '""')}","${getUrl(ch)}","${platform}","${group?.name?.replace(/"/g, '""') || '미분류'}","${ch.subscriberCount || ''}"`);
+                            }
+                          }
+                          const csv = '\uFEFF사용자명,이메일,채널명,채널주소,플랫폼,카테고리(그룹),구독자수\n' + allRows.join('\n');
+                          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                          const a = document.createElement('a');
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `전체_사용자_채널_${new Date().toISOString().slice(0,10)}.csv`;
+                          a.click();
+                          URL.revokeObjectURL(a.href);
+                        } catch (e) { console.error(e); alert('다운로드 실패: ' + e); }
+                        finally { if (btn) { btn.textContent = '전체 사용자 채널 CSV'; (btn as HTMLButtonElement).disabled = false; } }
+                      }}
+                      id="allChannelsDownloadBtn"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 text-xs font-bold text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all whitespace-nowrap"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">download</span>
+                      전체 사용자 채널 CSV
+                    </button>
                   </div>
                 </div>
 
