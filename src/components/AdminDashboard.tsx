@@ -47,6 +47,7 @@ interface UserData {
   trialExpiresAt?: string | null;
   trialUsed?: boolean;
   status?: MembershipStatus;
+  source?: 'tuberadar' | 'shoppingfactory' | 'both';
 }
 
 // Notice Interface
@@ -1580,6 +1581,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
 
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [editStatus, setEditStatus] = useState<MembershipStatus>('pending');
+  const [editSource, setEditSource] = useState<'tuberadar' | 'shoppingfactory' | 'both' | ''>('');
   const [expiryDays, setExpiryDays] = useState<string>(''); // '' means no change or custom
   const [customExpiry, setCustomExpiry] = useState('');
 
@@ -1763,6 +1765,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
   const handleEditClick = (u: UserData) => {
     setSelectedUser(u);
     setEditStatus(u.status || deriveStatusFromLegacy(u as any));
+    setEditSource(u.source || '');
     setExpiryDays('');
     setCustomExpiry(u.expiresAt ? new Date(u.expiresAt).toISOString().split('T')[0] : '');
   };
@@ -1784,7 +1787,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
     try {
       const nextRole = getLegacyRoleFromStatus(editStatus, selectedUser.email);
       const nextPlan = getLegacyPlanFromStatus(editStatus);
-      const updates: any = { 
+      const updates: any = {
         status: editStatus,
         role: nextRole,
         plan: nextPlan,
@@ -1793,7 +1796,8 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         trialExpiresAt: editStatus === 'trial'
           ? (selectedUser.trialExpiresAt || calculateExpiry(3))
           : null,
-        expiresAt: newExpiresAt || null
+        expiresAt: newExpiresAt || null,
+        source: editSource || null
       };
       if (editStatus === 'pending') {
         updates.membershipTier = null;
@@ -2113,6 +2117,31 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       <span className="material-symbols-outlined text-[14px]">download</span>
                       전체 사용자 채널 CSV
                     </button>
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/30 text-xs font-bold text-orange-600 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-all whitespace-nowrap cursor-pointer">
+                      <span className="material-symbols-outlined text-[14px]">upload</span>
+                      SF 화이트리스트 업로드
+                      <input type="file" accept=".xls,.xlsx,.csv,.tsv,.txt" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const text = await file.text();
+                        const lines = text.replace(/^\uFEFF/, '').split('\n').filter(l => l.trim());
+                        const emails: string[] = [];
+                        for (let i = 1; i < lines.length; i++) {
+                          const cols = lines[i].split('\t');
+                          const email = (cols[1] || '').trim().toLowerCase();
+                          const sfEmail = (cols[2] || '').trim().toLowerCase();
+                          if (email && email.includes('@')) emails.push(email);
+                          if (sfEmail && sfEmail.includes('@') && sfEmail !== email) emails.push(sfEmail);
+                        }
+                        const unique = [...new Set(emails)];
+                        if (!window.confirm(`${unique.length}개 이메일을 SF 화이트리스트에 등록하시겠습니까?`)) return;
+                        try {
+                          await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: unique, updatedAt: new Date().toISOString(), count: unique.length });
+                          alert(`SF 화이트리스트 ${unique.length}개 이메일 등록 완료!`);
+                        } catch (err) { alert('등록 실패: ' + err); }
+                        e.target.value = '';
+                      }} />
+                    </label>
                   </div>
                 </div>
 
@@ -2346,7 +2375,15 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-wide border ${getUserAccessBadge(u).style}`}>
                         {getDisplayLabelFromStatus(getEffectiveStatus(u.status || deriveStatusFromLegacy(u as any), u.email))}
                       </span>
-
+                      {u.source && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ml-1 ${
+                          u.source === 'shoppingfactory' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-800' :
+                          u.source === 'both' ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800' :
+                          'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
+                        }`}>
+                          {u.source === 'shoppingfactory' ? 'SF' : u.source === 'both' ? 'TR+SF' : 'TR'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-3">
                        <div className="flex gap-2">
@@ -3385,9 +3422,31 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                  </div>
 
                  <div>
+                   <label className="block text-xs font-bold text-slate-500 mb-1">소속</label>
+                   <div className="flex gap-2">
+                     {([['', '없음'], ['tuberadar', 'TR멤버'], ['shoppingfactory', 'SF멤버'], ['both', 'TR+SF']] as const).map(([val, label]) => (
+                       <button
+                         key={val}
+                         onClick={() => setEditSource(val as any)}
+                         className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${
+                           editSource === val
+                             ? val === 'shoppingfactory' ? 'bg-orange-500 text-white border-orange-500'
+                               : val === 'both' ? 'bg-purple-500 text-white border-purple-500'
+                               : val === 'tuberadar' ? 'bg-blue-500 text-white border-blue-500'
+                               : 'bg-slate-500 text-white border-slate-500'
+                             : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+                         }`}
+                       >
+                         {label}
+                       </button>
+                     ))}
+                   </div>
+                 </div>
+
+                 <div>
                    <label className="block text-xs font-bold text-slate-500 mb-1">이용 기간 연장</label>
-                   <select 
-                     value={expiryDays} 
+                   <select
+                     value={expiryDays}
                      onChange={(e) => {
                        setExpiryDays(e.target.value);
                        if(e.target.value) setCustomExpiry(''); // Clear custom if preset selected

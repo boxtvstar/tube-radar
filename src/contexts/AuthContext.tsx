@@ -88,22 +88,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const initUser = async () => {
        const snap = await getDoc(userRef);
        if (!snap.exists()) {
+          // Check if email is in SF whitelist for auto-approval
+          let isSfMember = false;
+          try {
+            const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
+            if (sfDoc.exists()) {
+              const emails: string[] = sfDoc.data().emails || [];
+              isSfMember = emails.includes((user.email || '').toLowerCase());
+            }
+          } catch (e) { console.warn('SF whitelist check failed:', e); }
+
+          // SF 멤버 만료일: 1년 후 또는 2027-06-30 중 빠른 날짜
+          const oneYearLater = new Date();
+          oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+          const maxExpiry = new Date('2027-06-30T23:59:59');
+          const sfExpiry = oneYearLater < maxExpiry ? oneYearLater : maxExpiry;
+
           await setDoc(userRef, {
             email: user.email,
             displayName: user.displayName,
             photoURL: user.photoURL,
-            status: 'pending',
-            role: 'pending',
+            status: isSfMember ? 'gold' : 'pending',
+            role: isSfMember ? 'pro' : 'pending',
             createdAt: new Date().toISOString(),
             lastLoginAt: new Date().toISOString(),
-            expiresAt: null,
-            plan: 'free',
+            expiresAt: isSfMember ? sfExpiry.toISOString() : null,
+            plan: isSfMember ? 'gold' : 'free',
             channelId: null,
             trialStatus: null,
             trialExpiresAt: null,
             trialStartedAt: null,
             trialUsed: false,
-            trialSource: null
+            trialSource: null,
+            ...(isSfMember ? { source: 'shoppingfactory', manualOverride: true, membershipTier: '골드 버튼' } : {})
           }, { merge: true });
        } else {
           // Update last login
