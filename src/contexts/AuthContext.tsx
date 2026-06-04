@@ -123,13 +123,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             ...(isSfMember ? { source: 'shoppingfactory', manualOverride: true, membershipTier: '골드 버튼' } : {})
           }, { merge: true });
        } else {
-          // Update last login
-          await updateDoc(userRef, {
+          const data = snap.data();
+          const updateFields: any = {
              lastLoginAt: new Date().toISOString(),
-             // Update profile info if changed
              displayName: user.displayName,
              photoURL: user.photoURL
-          });
+          };
+
+          // 기존 유저가 SF 명단에 있는데 source가 아직 없으면 → both로 업그레이드
+          if (!data.source || (data.source === 'tuberadar')) {
+            try {
+              const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
+              if (sfDoc.exists()) {
+                const emails: string[] = sfDoc.data().emails || [];
+                if (emails.includes((user.email || '').toLowerCase())) {
+                  updateFields.source = data.source === 'tuberadar' ? 'both' : 'both';
+                  // 골드 미만이면 골드로 업그레이드
+                  const curStatus = data.status || 'pending';
+                  if (curStatus !== 'gold' && curStatus !== 'platinum') {
+                    const oneYearLater = new Date();
+                    oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+                    const maxExpiry = new Date('2027-06-30T23:59:59');
+                    const sfExpiry = oneYearLater < maxExpiry ? oneYearLater : maxExpiry;
+                    updateFields.status = 'gold';
+                    updateFields.role = 'pro';
+                    updateFields.plan = 'gold';
+                    updateFields.membershipTier = '골드 버튼';
+                    updateFields.manualOverride = true;
+                    // 기존 만료일이 더 길면 유지
+                    const curExpiry = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
+                    if (sfExpiry.getTime() > curExpiry) {
+                      updateFields.expiresAt = sfExpiry.toISOString();
+                    }
+                  }
+                }
+              }
+            } catch (e) { console.warn('SF whitelist check failed:', e); }
+          }
+
+          await updateDoc(userRef, updateFields);
        }
     };
     initUser();
