@@ -130,16 +130,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
              photoURL: user.photoURL
           };
 
-          // 기존 유저가 SF 명단에 있는데 source가 아직 없으면 → both로 업그레이드
-          if (!data.source || (data.source === 'tuberadar')) {
+          // 기존 유저가 SF 명단에 있는지 체크
+          if (!data.source || data.source === 'tuberadar') {
             try {
               const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
               if (sfDoc.exists()) {
                 const emails: string[] = sfDoc.data().emails || [];
                 if (emails.includes((user.email || '').toLowerCase())) {
-                  updateFields.source = data.source === 'tuberadar' ? 'both' : 'both';
-                  // 골드 미만이면 골드로 업그레이드
+                  // 실제 TR 멤버(silver 이상 유료 등급)만 both, 나머지는 shoppingfactory
                   const curStatus = data.status || 'pending';
+                  const isTrMember = data.source === 'tuberadar' || (curStatus === 'silver' || curStatus === 'gold' || curStatus === 'platinum');
+                  updateFields.source = isTrMember ? 'both' : 'shoppingfactory';
+                  // 골드 미만이면 골드로 업그레이드
                   if (curStatus !== 'gold' && curStatus !== 'platinum') {
                     const oneYearLater = new Date();
                     oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
@@ -150,7 +152,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     updateFields.plan = 'gold';
                     updateFields.membershipTier = '골드 버튼';
                     updateFields.manualOverride = true;
-                    // 기존 만료일이 더 길면 유지
                     const curExpiry = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
                     if (sfExpiry.getTime() > curExpiry) {
                       updateFields.expiresAt = sfExpiry.toISOString();
