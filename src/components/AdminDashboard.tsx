@@ -297,6 +297,9 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   const [viewingHistoryUser, setViewingHistoryUser] = useState<UserData | null>(null);
   const [historyList, setHistoryList] = useState<any[]>([]);
 
+  // SF whitelist state
+  const [sfWhitelistInfo, setSfWhitelistInfo] = useState<{ count: number; updatedAt: string } | null>(null);
+
   // Channel viewing state
   const [viewingChannelsUser, setViewingChannelsUser] = useState<UserData | null>(null);
   const [viewingChannelsList, setViewingChannelsList] = useState<SavedChannel[]>([]);
@@ -1316,6 +1319,15 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
         console.log("No notice found or init error");
       }
 
+      // Fetch SF whitelist info
+      try {
+        const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
+        if (sfDoc.exists()) {
+          const d = sfDoc.data();
+          setSfWhitelistInfo({ count: d.count || (d.emails?.length || 0), updatedAt: d.updatedAt || '' });
+        }
+      } catch (e) { console.log("No SF whitelist found"); }
+
     } catch (error) {
       console.error("Error fetching users:", error);
     } finally {
@@ -2136,12 +2148,19 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                         const unique = [...new Set(emails)];
                         if (!window.confirm(`${unique.length}개 이메일을 SF 화이트리스트에 등록하시겠습니까?`)) return;
                         try {
-                          await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: unique, updatedAt: new Date().toISOString(), count: unique.length });
+                          const now = new Date().toISOString();
+                          await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: unique, updatedAt: now, count: unique.length });
+                          setSfWhitelistInfo({ count: unique.length, updatedAt: now });
                           alert(`SF 화이트리스트 ${unique.length}개 이메일 등록 완료!`);
                         } catch (err) { alert('등록 실패: ' + err); }
                         e.target.value = '';
                       }} />
                     </label>
+                    {sfWhitelistInfo && (
+                      <span className="text-[10px] text-orange-500 dark:text-orange-400 font-bold whitespace-nowrap">
+                        SF {sfWhitelistInfo.count}명 등록 · {sfWhitelistInfo.updatedAt ? new Date(sfWhitelistInfo.updatedAt).toLocaleDateString() : ''} · 로그인한 SF: {users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').length}명
+                      </span>
+                    )}
                   </div>
                 </div>
 
