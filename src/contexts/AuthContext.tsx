@@ -130,18 +130,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
              photoURL: user.photoURL
           };
 
-          // 기존 유저가 SF 명단에 있는지 체크
-          if (!data.source || data.source === 'tuberadar') {
+          // 기존 유저가 SF 명단에 있는지 체크 (매 로그인 시 재평가)
+          if (data.source !== 'shoppingfactory') {
             try {
               const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
               if (sfDoc.exists()) {
                 const emails: string[] = sfDoc.data().emails || [];
                 if (emails.includes((user.email || '').toLowerCase())) {
-                  // 실제 TR 멤버(silver 이상 유료 등급)만 both, 나머지는 shoppingfactory
                   const curStatus = data.status || 'pending';
-                  const isTrMember = data.source === 'tuberadar' || (curStatus === 'silver' || curStatus === 'gold' || curStatus === 'platinum');
-                  updateFields.source = isTrMember ? 'both' : 'shoppingfactory';
-                  // 골드 미만이면 골드로 업그레이드
+                  // TR 멤버십 CSV에 등록된 유료 멤버만 both, 나머지는 shoppingfactory
+                  const hasTrMembership = data.membershipTier && (curStatus === 'silver' || curStatus === 'gold' || curStatus === 'platinum') && data.source !== 'shoppingfactory' && data.source !== 'both';
+                  updateFields.source = hasTrMembership ? 'both' : 'shoppingfactory';
+                  // 골드 미만이면 골드로 업그레이드 (접속 가능하게)
                   if (curStatus !== 'gold' && curStatus !== 'platinum') {
                     const oneYearLater = new Date();
                     oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
