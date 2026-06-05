@@ -834,7 +834,7 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
   };
 
   // --- Recommended Packages & Topics State ---
-const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership' | 'notices' | 'analytics'>('users');
+const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'inquiries' | 'membership' | 'notices' | 'analytics' | 'sf'>('users');
   const [analyticsDays, setAnalyticsDays] = useState<1 | 7 | 30>(1);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
@@ -2006,7 +2006,16 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       {activeTab !== 'membership' && <span className="bg-rose-500 size-2 rounded-full"></span>}
                    </div>
                  </button>
-                 <button 
+                 <button
+                   onClick={() => setActiveTab('sf')}
+                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'sf' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
+                 >
+                   <div className="flex items-center gap-1">
+                      <span>쇼핑팩토리</span>
+                      {activeTab !== 'sf' && <span className="bg-orange-500 size-2 rounded-full"></span>}
+                   </div>
+                 </button>
+                 <button
                    onClick={() => { setActiveTab('notices'); fetchNotices(); fetchAnnouncementData(); setNoticeViewMode('list'); }}
                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'notices' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'}`}
                  >
@@ -2026,6 +2035,125 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                  </button>
               </div>
           </div>
+
+          {/* SF Members Tab */}
+          {activeTab === 'sf' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <span className="material-symbols-outlined text-orange-500">storefront</span>
+                    쇼핑팩토리 멤버 관리
+                  </h3>
+                  {sfWhitelistInfo && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      화이트리스트 {sfWhitelistInfo.count}명 등록 · 등록일 {sfWhitelistInfo.updatedAt ? new Date(sfWhitelistInfo.updatedAt).toLocaleDateString() : '-'}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/30 text-xs font-bold text-orange-600 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-all cursor-pointer">
+                    <span className="material-symbols-outlined text-[14px]">upload</span>
+                    명단 업로드
+                    <input type="file" accept=".xls,.xlsx,.csv,.tsv,.txt" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const text = await file.text();
+                      const lines = text.replace(/^\uFEFF/, '').split('\n').filter(l => l.trim());
+                      const emails: string[] = [];
+                      for (let i = 1; i < lines.length; i++) {
+                        const cols = lines[i].split('\t');
+                        const email = (cols[1] || '').trim().toLowerCase();
+                        const sfEmail = (cols[2] || '').trim().toLowerCase();
+                        if (email && email.includes('@')) emails.push(email);
+                        if (sfEmail && sfEmail.includes('@') && sfEmail !== email) emails.push(sfEmail);
+                      }
+                      const unique = [...new Set(emails)];
+                      if (!window.confirm(`${unique.length}개 이메일을 SF 화이트리스트에 등록하시겠습니까?`)) return;
+                      try {
+                        const now = new Date().toISOString();
+                        await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: unique, updatedAt: now, count: unique.length });
+                        setSfWhitelistInfo({ count: unique.length, updatedAt: now });
+                        alert(`SF 화이트리스트 ${unique.length}개 이메일 등록 완료!`);
+                      } catch (err) { alert('등록 실패: ' + err); }
+                      e.target.value = '';
+                    }} />
+                  </label>
+                </div>
+              </div>
+
+              {/* Stats cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">화이트리스트</p>
+                  <p className="text-2xl font-black text-orange-600 dark:text-orange-300">{sfWhitelistInfo?.count || 0}</p>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">로그인 완료</p>
+                  <p className="text-2xl font-black text-emerald-600 dark:text-emerald-300">{users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').length}</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">TR+SF 겸용</p>
+                  <p className="text-2xl font-black text-blue-600 dark:text-blue-300">{users.filter(u => u.source === 'both').length}</p>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">미가입</p>
+                  <p className="text-2xl font-black text-slate-600 dark:text-slate-300">{(sfWhitelistInfo?.count || 0) - users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').length}</p>
+                </div>
+              </div>
+
+              {/* SF Members table */}
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left">사용자</th>
+                      <th className="px-4 py-3 text-left">이메일</th>
+                      <th className="px-4 py-3 text-left">소속</th>
+                      <th className="px-4 py-3 text-left">등급</th>
+                      <th className="px-4 py-3 text-left">만료일</th>
+                      <th className="px-4 py-3 text-left">가입일</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-sm">아직 로그인한 SF 멤버가 없습니다.</td></tr>
+                    ) : (
+                      users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').map(u => (
+                        <tr key={u.uid} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <img src={u.photoURL} alt="" className="w-7 h-7 rounded-full bg-slate-200" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              <span className="text-sm font-bold text-slate-800 dark:text-white">{u.displayName}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500 font-mono">{u.email}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              u.source === 'both' ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                            }`}>
+                              {u.source === 'both' ? 'TR+SF' : 'SF'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-wide border ${getUserAccessBadge(u).style}`}>
+                              {getDisplayLabelFromStatus(getEffectiveStatus(u.status || deriveStatusFromLegacy(u as any), u.email))}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                            {u.expiresAt ? (() => { const d = new Date(u.expiresAt); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`; })() : '무제한'}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-400">
+                            {new Date(u.createdAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
             {activeTab === 'users' && (
