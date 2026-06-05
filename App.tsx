@@ -1587,7 +1587,7 @@ const DEFAULT_GROUPS: ChannelGroup[] = [
 ];
 
 export default function App() {
-  const { user, status, role: authRole, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem } = useAuth();
+  const { user, status, role: authRole, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, loading: authLoading, logout, membershipJustApproved, setMembershipJustApproved, hiddenItemIds, dismissItem, source } = useAuth();
   
   const effectiveStatus = getEffectiveStatus(status, user?.email);
   const isAdmin = effectiveStatus === 'admin';
@@ -4218,6 +4218,7 @@ export default function App() {
         daysLeft={membershipJustApproved.daysLeft}
         plan={membershipJustApproved.plan}
         limit={membershipJustApproved.limit}
+        isSf={membershipJustApproved.isSf}
       />
     );
   }
@@ -4442,6 +4443,7 @@ export default function App() {
             expiresAt={expiresAt}
             trialStatus={trialStatus}
             trialExpiresAt={trialExpiresAt}
+            source={source}
             onLogout={logout}
             ytKey={ytKey}
             onYtKeyChange={setYtKey}

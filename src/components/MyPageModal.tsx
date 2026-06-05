@@ -18,6 +18,7 @@ interface MyPageModalProps {
   expiresAt: string | null;
   trialStatus?: string | null;
   trialExpiresAt?: string | null;
+  source?: 'tuberadar' | 'shoppingfactory' | 'both' | null;
   onLogout: () => void;
   onMarkRead: (id: string) => void;
   initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage';
@@ -42,6 +43,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   expiresAt,
   trialStatus,
   trialExpiresAt,
+  source,
   onLogout,
   onMarkRead,
   initialTab = 'dashboard',
@@ -338,6 +340,11 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       {isTrialActive && (
                         <span className="text-[10px] text-sky-500 font-bold tracking-tight">
                           무료 체험 D-{trialDaysLeft}
+                        </span>
+                      )}
+                      {(source === 'shoppingfactory' || source === 'both') && (
+                        <span className="text-[10px] text-orange-500 font-bold tracking-tight">
+                          쇼핑팩토리 멤버 {dDay !== null && dDay > 0 ? `· D-${dDay}` : ''}
                         </span>
                       )}
                    </div>

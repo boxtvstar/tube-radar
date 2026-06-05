@@ -27,10 +27,11 @@ interface AuthContextType {
   trialUsed: boolean;
   loading: boolean;
   hiddenItemIds: string[];
+  source: 'tuberadar' | 'shoppingfactory' | 'both' | null;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  membershipJustApproved: { matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null;
-  setMembershipJustApproved: (val: { matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null) => void;
+  membershipJustApproved: { matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number; isSf?: boolean } | null;
+  setMembershipJustApproved: (val: { matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number; isSf?: boolean } | null) => void;
   dismissItem: (itemId: string) => Promise<void>;
 }
 
@@ -50,7 +51,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [trialUsed, setTrialUsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hiddenItemIds, setHiddenItemIds] = useState<string[]>([]);
-  const [membershipJustApproved, setMembershipJustApproved] = useState<{ matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number } | null>(null);
+  const [source, setSource] = useState<'tuberadar' | 'shoppingfactory' | 'both' | null>(null);
+  const [membershipJustApproved, setMembershipJustApproved] = useState<{ matches: boolean; daysLeft: number; name: string; plan?: string; limit?: number; isSf?: boolean } | null>(null);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
@@ -65,6 +67,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setTrialExpiresAt(null);
         setTrialUsed(false);
         setHiddenItemIds([]);
+        setSource(null);
         setLoading(false);
         return;
       }
@@ -122,6 +125,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             trialSource: null,
             ...(isSfMember ? { source: 'shoppingfactory', manualOverride: true, membershipTier: '골드 버튼' } : {})
           }, { merge: true });
+
+          // SF 첫 로그인 팝업
+          if (isSfMember) {
+            const diffMs = sfExpiry.getTime() - Date.now();
+            const daysLeft = Math.max(Math.ceil(diffMs / (1000 * 60 * 60 * 24)), 0);
+            setMembershipJustApproved({
+              matches: true,
+              daysLeft,
+              name: user.displayName || '회원',
+              plan: 'gold',
+              limit: 5000,
+              isSf: true
+            });
+          }
        } else {
           const data = snap.data();
           const updateFields: any = {
@@ -155,6 +172,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     const curExpiry = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
                     if (sfExpiry.getTime() > curExpiry) {
                       updateFields.expiresAt = sfExpiry.toISOString();
+                    }
+                    // SF 첫 전환 팝업 (기존에 source가 없거나 both가 아닌 경우)
+                    const sfPopupKey = `sf_welcome_${user.uid}`;
+                    if (!sessionStorage.getItem(sfPopupKey)) {
+                      const expiry = updateFields.expiresAt ? new Date(updateFields.expiresAt) : (data.expiresAt ? new Date(data.expiresAt) : new Date());
+                      const daysLeft = Math.max(Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)), 0);
+                      setMembershipJustApproved({
+                        matches: true,
+                        daysLeft,
+                        name: user.displayName || '회원',
+                        plan: 'gold',
+                        limit: 5000,
+                        isSf: true
+                      });
+                      sessionStorage.setItem(sfPopupKey, 'true');
                     }
                   }
                 }
@@ -438,6 +470,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setTrialExpiresAt(currentTrialExpiresAt || null);
         setTrialUsed(currentTrialUsed);
         setHiddenItemIds(currentHiddenItemIds);
+        setSource(data.source || null);
 
         setLoading(false);
     });
@@ -555,7 +588,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <AuthContext.Provider value={{ user, status, role, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, trialUsed, loading, hiddenItemIds, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
+    <AuthContext.Provider value={{ user, status, role, plan, membershipTier, expiresAt, trialStatus, trialExpiresAt, trialUsed, loading, hiddenItemIds, source, signInWithGoogle, logout, membershipJustApproved, setMembershipJustApproved, dismissItem }}>
       {children}
     </AuthContext.Provider>
   );
