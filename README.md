@@ -21,18 +21,19 @@ View your app in AI Studio: https://ai.studio/apps/drive/1upggWguSrMyEZLMit2WWA7
 
 ## 배포 (Deployment)
 
-- **플랫폼:** Vercel
-- **프로덕션 브랜치:** `feature/admin-dashboard-enhancements` (Vercel에서 설정됨)
-- **개발 브랜치:** `main`
+- **플랫폼:** Vercel (프로젝트: `tuberadar`, 도메인: `tuberadar.vercel.app`)
+- **프로덕션 브랜치:** `main` (Vercel 설정 기준)
 
 ### 배포 흐름
 
 1. `main` 브랜치에서 작업 및 커밋
 2. `main`에 push
-3. 프로덕션 배포를 위해 feature 브랜치도 동기화:
-   ```bash
-   git push origin main:feature/admin-dashboard-enhancements
-   ```
-4. Vercel이 `feature/admin-dashboard-enhancements` 브랜치 변경을 감지하여 자동 배포
+3. Vercel이 자동으로 프로덕션 배포
 
-> **참고:** Vercel 프로덕션 브랜치를 `main`으로 변경하면 3번 과정을 생략할 수 있음 (Vercel Dashboard → Settings → Git → Production Branch)
+> **주의:** `main` 이외 브랜치에 push하면 preview 배포만 생성되고 실서비스에는 반영되지 않음.
+> 과거 사용하던 `feature/admin-dashboard-enhancements` 브랜치는 더 이상 배포와 무관함.
+
+### 롤백
+
+- Vercel Dashboard → Deployments → 이전 배포 선택 → **Instant Rollback**
+- 백업 지점: `backup/deployed-2026-07-20` 브랜치 / `deployed-2026-07-20` 태그
