@@ -92,7 +92,7 @@ const getGeminiErrorMessage = (status: number, errorText: string) => {
       return 'Gemini API 오류 (400): 공개(Public) 상태의 YouTube 영상만 분석할 수 있습니다. 비공개/일부공개 영상은 지원되지 않습니다.';
     }
 
-    return 'Gemini API 오류 (400): Gemini가 이 YouTube 영상을 처리하지 못했습니다. 공개 영상인지 확인하고, 잠시 후 다시 시도해주세요.';
+    return 'Gemini API 오류 (400): Gemini가 이 YouTube 영상을 처리하지 못했습니다. 공개 영상인지, 3시간 이내 영상인지 확인하고 잠시 후 다시 시도해주세요.';
   }
 
   if (status === 403) {
@@ -121,7 +121,8 @@ const normalizeYouTubeUrl = (url: string) => {
 const postToGemini = async (
   apiKey: string,
   parts: Array<Record<string, unknown>>,
-  model = DEFAULT_TEXT_MODEL
+  model = DEFAULT_TEXT_MODEL,
+  generationConfig?: Record<string, unknown>
 ) => {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -130,6 +131,7 @@ const postToGemini = async (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: parts.map(toRestPart) }],
+        ...(generationConfig ? { generationConfig } : {}),
       }),
     }
   );
@@ -192,10 +194,11 @@ export const analyzeBenchmarkVideo = async (
 }
   `.trim();
 
+  // 저해상도 처리로 프레임당 토큰을 258 -> 66으로 줄여 최대 3시간 영상까지 분석 가능
   const raw = await postToGemini(apiKey, [
     { fileData: { fileUri: normalizedUrl } },
     { text: prompt },
-  ], DEFAULT_TEXT_MODEL);
+  ], DEFAULT_TEXT_MODEL, { mediaResolution: 'MEDIA_RESOLUTION_LOW' });
   const parsed = extractJson<Partial<BenchmarkVideoInsight>>(raw);
 
   return {
