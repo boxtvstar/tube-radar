@@ -3904,7 +3904,8 @@ export default function App() {
                    </div>
 
   const handleAnalyzeViral = async (result: AutoDetectResult) => {
-    if (isApiKeyMissing) return alert("유효한 YouTube API 키를 먼저 설정하세요.");
+    const geminiKey = localStorage.getItem('gemini_api_key') || localStorage.getItem('admin_gemini_key') || '';
+    if (!geminiKey) return alert("Gemini API 키가 필요합니다. 마이페이지 대시보드에서 설정해주세요.");
     setAnalyzingVideoId(result.id);
     setAnalysisResult(null);
 
@@ -3929,7 +3930,7 @@ export default function App() {
     };
 
     try {
-      const analysis = await analyzeVideoVirality(videoData, ytKey);
+      const analysis = await analyzeVideoVirality(videoData, geminiKey);
       setAnalysisResult(analysis);
     } catch (e) {
       alert("분석 중 오류가 발생했습니다.");

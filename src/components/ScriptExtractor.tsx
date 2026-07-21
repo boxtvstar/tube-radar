@@ -80,9 +80,9 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         console.warn('YouTube API Info fetch failed');
       }
 
-      // 2. Apify 자막 추출 API 호출
-      const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || '';
-      const apifyUrl = `https://api.apify.com/v2/acts/pintostudio~youtube-transcript-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`;
+      // 2. 자막 추출 (서버 프록시 경유 — Apify 토큰은 서버에만 존재)
+      const backendBase = (import.meta.env.VITE_BACKEND_URL || '').trim().replace(/\/$/, '');
+      const apifyUrl = `${backendBase}/api/apify-transcript`;
 
       const payload = {
         "videoUrl": url,

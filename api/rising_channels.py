@@ -36,18 +36,15 @@ MIN_AVG_VIEWS = 300_000
 MAX_CHANNELS_PER_SCAN = 20  # 하루 최대 20채널
 
 
-_runtime_api_key: str = ""
-
-
-def _get_api_key() -> str:
-    key = _runtime_api_key or os.environ.get("YOUTUBE_API_KEY", "")
+def _get_api_key(override: str = "") -> str:
+    key = override or os.environ.get("YOUTUBE_API_KEY", "")
     if not key:
         raise RuntimeError("YOUTUBE_API_KEY 환경변수가 설정되지 않았습니다")
     return key
 
 
-def _yt_get(path: str, params: dict) -> dict:
-    params["key"] = _get_api_key()
+def _yt_get(path: str, params: dict, api_key: str = "") -> dict:
+    params["key"] = _get_api_key(api_key)
     resp = requests.get(f"{YOUTUBE_BASE}/{path}", params=params, timeout=15)
     resp.raise_for_status()
     data = resp.json()
@@ -62,7 +59,7 @@ def _yt_get(path: str, params: dict) -> dict:
     return data
 
 
-def _discover() -> list[dict]:
+def _discover(api_key: str = "") -> list[dict]:
     """
     카테고리×리전별 인기 영상에서 채널 추출 → 필터링 → 상위 20개만 영상 조회
 
@@ -86,7 +83,7 @@ def _discover() -> list[dict]:
                     "regionCode": region,
                     "videoCategoryId": cat_id,
                     "maxResults": 50,
-                })
+                }, api_key=api_key)
                 all_videos.extend(data.get("items", []))
             except Exception as e:
                 if "QUOTA_EXCEEDED" in str(e):
@@ -111,7 +108,7 @@ def _discover() -> list[dict]:
             data = _yt_get("channels", {
                 "part": "snippet,statistics",
                 "id": ",".join(batch),
-            })
+            }, api_key=api_key)
             all_channels.extend(data.get("items", []))
         except Exception as e:
             if "QUOTA_EXCEEDED" in str(e):
@@ -157,7 +154,7 @@ def _discover() -> list[dict]:
             detail = _yt_get("channels", {
                 "part": "contentDetails",
                 "id": ch["id"],
-            })
+            }, api_key=api_key)
             uploads_id = (
                 detail.get("items", [{}])[0]
                 .get("contentDetails", {})
@@ -171,7 +168,7 @@ def _discover() -> list[dict]:
                 "part": "snippet",
                 "playlistId": uploads_id,
                 "maxResults": 20,
-            })
+            }, api_key=api_key)
             video_ids = [
                 item["snippet"]["resourceId"]["videoId"]
                 for item in pl.get("items", [])
@@ -183,7 +180,7 @@ def _discover() -> list[dict]:
             vdata = _yt_get("videos", {
                 "part": "snippet,statistics",
                 "id": ",".join(video_ids),
-            })
+            }, api_key=api_key)
             top_videos = []
             for v in vdata.get("items", []):
                 top_videos.append({
@@ -255,14 +252,12 @@ def _merge_accumulated(new_channels: list[dict]) -> list[dict]:
 
 
 def _fetch_rising_channels(force: bool = False, api_key: str = "") -> dict:
-    global _cache, _cache_time, _runtime_api_key
-    if api_key:
-        _runtime_api_key = api_key
+    global _cache, _cache_time
 
     if not force and _cache and (time.time() - _cache_time) < CACHE_TTL:
         return {**_cache, "cached": True}
 
-    new_channels = _discover()
+    new_channels = _discover(api_key)
     merged = _merge_accumulated(new_channels)
     now = datetime.now(_KST).isoformat()
 

@@ -20,6 +20,9 @@
     },
     "api/image_proxy.py": {
       "maxDuration": 10
+    },
+    "api/apify_transcript.py": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -30,6 +33,7 @@
     { "source": "/api/tiktok/profile", "destination": "/api/tiktok" },
     { "source": "/api/instagram/profile", "destination": "/api/instagram" },
     { "source": "/api/threads/profile", "destination": "/api/threads" },
-    { "source": "/api/image-proxy", "destination": "/api/image_proxy" }
+    { "source": "/api/image-proxy", "destination": "/api/image_proxy" },
+    { "source": "/api/apify-transcript", "destination": "/api/apify_transcript" }
   ]
 }
