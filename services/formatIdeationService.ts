@@ -41,7 +41,8 @@ const stripCodeFence = (value: string) =>
 
 const extractJson = <T>(raw: string): T => JSON.parse(stripCodeFence(raw)) as T;
 
-const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash';
+// gemini-2.5-flash는 신규 발급 키에서 404 (기존 키만 사용 가능) — stable인 3.6으로 통일
+const DEFAULT_TEXT_MODEL = 'gemini-3.6-flash';
 
 const toRestPart = (part: Record<string, unknown>) => {
   if ('fileData' in part) {

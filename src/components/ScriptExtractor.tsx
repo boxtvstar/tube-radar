@@ -195,7 +195,7 @@ export const ScriptExtractor: React.FC<ScriptExtractorProps> = ({ apiKey, initia
         ? `다음 유튜브 영상 대본을 자연스러운 한국어로 번역해주세요. 의역보다는 직역에 가깝되 자연스럽게 번역하세요.\n\n${transcript.substring(0, 15000)}`
         : `다음 유튜브 영상 대본을 한국어로 핵심 내용을 요약해주세요. 주요 포인트를 불릿 포인트로 정리하고, 전체 요약을 3-5문장으로 작성해주세요.\n\n${transcript.substring(0, 15000)}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

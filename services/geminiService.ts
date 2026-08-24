@@ -9,7 +9,7 @@ export const generateChannelRecommendation = async (
   videoTitles: string[]
 ): Promise<string> => {
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
     
     const promptText = `
       당신은 유튜브 채널 분석 전문가입니다.
@@ -70,7 +70,7 @@ export interface AnalysisResponse {
  */
 export const analyzeVideoVirality = async (video: any, apiKey: string): Promise<AnalysisResponse> => {
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
     
     const promptText = `
       당신은 유튜브 알고리즘 분석 AI입니다. 다음 비디오 데이터를 분석하여 왜 이 영상이 반응을 얻고 있는지(또는 얻을 것인지) 분석해주세요.
