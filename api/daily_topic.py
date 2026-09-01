@@ -247,11 +247,37 @@ def generate_description(channel_title: str, channel_desc: str, video_titles: li
 
 # ---------------------------------------------------------------- 메인 로직
 
+def _parse_service_account(raw: str) -> dict:
+    """붙여넣기 과정에서 흔히 섞이는 BOM/공백/감싼 따옴표를 정리한 뒤 JSON 파싱."""
+    s = raw.strip().lstrip("﻿").strip()
+    if len(s) >= 2 and s[0] in "\"'" and s[-1] == s[0]:
+        s = s[1:-1]
+    # 이스케이프된 개행이 실제 개행으로 바뀐 경우까지는 json이 처리하므로 그대로 파싱
+    return json.loads(s)
+
+
 def run(dry: bool) -> dict:
     sa_raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "")
     if not sa_raw or not os.environ.get("TUBELAB_API_KEY"):
-        return {"skipped": True, "reason": "not configured (env vars missing)"}
-    sa_info = json.loads(sa_raw)
+        return {
+            "skipped": True,
+            "reason": "not configured (env vars missing)",
+            "has_firebase": bool(sa_raw),
+            "has_tubelab": bool(os.environ.get("TUBELAB_API_KEY")),
+            "has_gemini": bool(os.environ.get("GEMINI_API_KEY_SERVER")),
+        }
+    try:
+        sa_info = _parse_service_account(sa_raw)
+    except Exception as e:
+        # 비밀은 노출하지 않고 진단 정보만 반환
+        head = sa_raw.lstrip()[:1]
+        return {
+            "error": "FIREBASE_SERVICE_ACCOUNT is not valid JSON",
+            "detail": str(e)[:120],
+            "length": len(sa_raw),
+            "starts_with": repr(head),
+            "looks_like_json": sa_raw.strip().startswith("{"),
+        }
 
     fs = Firestore(sa_info)
     queue = fs.get("system_data/topic_queue")
