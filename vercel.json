@@ -23,8 +23,14 @@
     },
     "api/apify_transcript.py": {
       "maxDuration": 60
+    },
+    "api/daily_topic.py": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    { "path": "/api/daily_topic", "schedule": "0 0 * * *" }
+  ],
   "rewrites": [
     { "source": "/api/community/hot-posts", "destination": "/api/community" },
     { "source": "/api/community/preview", "destination": "/api/preview" },

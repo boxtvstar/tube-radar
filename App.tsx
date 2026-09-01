@@ -458,6 +458,7 @@ const Sidebar = ({
   onToggleShortsDetectorMode,
   isTopicMode,
   onToggleTopicMode,
+  newTopicCount = 0,
   isMembershipMode,
   onToggleMembershipMode,
   hasPendingSync,
@@ -528,6 +529,7 @@ const Sidebar = ({
   onToggleShortsDetectorMode: (val: boolean) => void,
   isTopicMode: boolean,
   onToggleTopicMode: (val: boolean) => void,
+  newTopicCount?: number,
   isMembershipMode: boolean,
   onToggleMembershipMode: (val: boolean) => void,
   isReadOnly?: boolean;
@@ -766,6 +768,11 @@ const Sidebar = ({
                      {!hasGoldAccess ? 'lock' : 'stars'}
                    </span>
                 </span>
+                {newTopicCount > 0 && (
+                  <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm">
+                    {newTopicCount > 9 ? '9+' : newTopicCount}
+                  </span>
+                )}
               </span>
             }
             active={isTopicMode} 
@@ -1814,6 +1821,7 @@ export default function App() {
   };
 
   const [recommendedTopics, setRecommendedTopics] = useState<RecommendedPackage[]>([]);
+  const [newTopicCount, setNewTopicCount] = useState(0);
 
   const [channelInput, setChannelInput] = useState('');
   const [explorerQuery, setExplorerQuery] = useState('');
@@ -2292,8 +2300,25 @@ export default function App() {
   useEffect(() => {
     if (isTopicMode && user) {
       getTopicsFromDb().then(setRecommendedTopics);
+      // 메뉴를 열면 새 소재를 확인한 것으로 처리 → 배지 제거
+      localStorage.setItem('secret_topics_seen', String(Date.now()));
+      setNewTopicCount(0);
     }
   }, [isTopicMode, user]);
+
+  // 새로 올라온 추천 소재 개수 (사이드바 배지)
+  useEffect(() => {
+    if (!user) return;
+    getTopicsFromDb()
+      .then(topics => {
+        const seen = Number(localStorage.getItem('secret_topics_seen') || 0);
+        const count = topics.filter(
+          t => (!t.status || t.status === 'approved') && t.createdAt > seen
+        ).length;
+        setNewTopicCount(count);
+      })
+      .catch(() => {});
+  }, [user]);
 
   const handleApiUsage = async (cost: number, type: 'search' | 'list' | 'script', details?: string) => {
     if (!user) return;
@@ -4286,6 +4311,7 @@ export default function App() {
         hasPendingSync={hasPendingSync}
         isSyncNoticeDismissed={isSyncNoticeDismissed}
         isApiKeyMissing={isApiKeyMissing}
+        newTopicCount={newTopicCount}
 
         usage={usage}
         isReadOnly={isPending}
