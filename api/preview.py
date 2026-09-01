@@ -160,22 +160,26 @@ def _fetch_preview(url: str) -> dict:
         if not desc:
             desc = _extract_title_text(soup)
 
+        def _usable_meta_image(candidate: str) -> str:
+            # 아이콘/비이미지/사이트 기본(placeholder) 이미지는 무시
+            if not candidate:
+                return ""
+            if re.search(r"icon_app|apple-icon|/icon[_-]|/logo[_-]|\.(mp4|webm|mp3|svg)(\?|$)", candidate, re.I):
+                return ""
+            if any(g in candidate for g in _GENERIC_OG_IMAGES):
+                return ""
+            return candidate
+
         # OG image
         og_img = soup.select_one('meta[property="og:image"]')
         if og_img:
-            img = (og_img.get("content") or "").strip()
-
-        # OG 이미지가 아이콘/비이미지/사이트 기본 이미지인 경우 무시
-        if img and re.search(r"icon_app|apple-icon|/icon[_-]|/logo[_-]|\.(mp4|webm|mp3|svg)(\?|$)", img, re.I):
-            img = ""
-        if img and any(g in img for g in _GENERIC_OG_IMAGES):
-            img = ""
+            img = _usable_meta_image((og_img.get("content") or "").strip())
 
         # twitter:image 폴백
         if not img:
             tw_img = soup.select_one('meta[name="twitter:image"], meta[property="twitter:image"]')
             if tw_img:
-                img = (tw_img.get("content") or "").strip()
+                img = _usable_meta_image((tw_img.get("content") or "").strip())
 
         # 본문 이미지 폴백
         if not img:
