@@ -15,6 +15,13 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
+    "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Upgrade-Insecure-Requests": "1",
 }
 
 # 사이트 기본(placeholder) og:image — 실제 콘텐츠 이미지가 아니므로 무시
@@ -195,6 +202,10 @@ def _fetch_preview(url: str) -> dict:
             img = "https://" + img[7:]
         elif img and not img.startswith("http"):
             img = ""  # 상대 경로 무시
+
+        # 클리앙 CDN은 scale 파라미터가 있어야만 이미지를 반환 (없으면 에러 페이지로 302)
+        if "edgio.clien.net" in img and "scale=" not in img:
+            img += "?scale=width:740"
 
         result = {"description": desc[:300], "image": img}
         _preview_cache[url] = result
