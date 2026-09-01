@@ -25,7 +25,26 @@ ALLOWED_DOMAINS = (
     "namu.la",
     "inven.co.kr",
     "fmkorea.com",
+    "humoruniv.com",
 )
+
+# 핫링크 차단 우회용 — 이미지 호스트별로 보내야 할 Referer
+_REFERER_MAP = {
+    "humoruniv.com": "https://web.humoruniv.com/",
+    "ppomppu.co.kr": "https://www.ppomppu.co.kr/",
+    "ruliweb.com": "https://bbs.ruliweb.com/",
+    "inven.co.kr": "https://www.inven.co.kr/",
+    "fmkorea.com": "https://www.fmkorea.com/",
+    "theqoo.net": "https://theqoo.net/",
+}
+
+
+def _referer_for(url: str) -> str:
+    for domain, ref in _REFERER_MAP.items():
+        if domain in url:
+            return ref
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}/"
 
 
 class handler(BaseHTTPRequestHandler):
@@ -49,7 +68,12 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            resp = requests.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": _referer_for(url)},
+                timeout=10,
+                allow_redirects=True,
+            )
             resp.raise_for_status()
             ct = resp.headers.get("content-type", "image/jpeg")
 

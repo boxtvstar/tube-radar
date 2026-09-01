@@ -13,12 +13,23 @@ from bs4 import BeautifulSoup
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
 }
+
+# 사이트 기본(placeholder) og:image — 실제 콘텐츠 이미지가 아니므로 무시
+_GENERIC_OG_IMAGES = (
+    "img.pann.com/images/og-",
+    "/images/og_default",
+    "/img/og_image",
+)
 
 _preview_cache: dict[str, dict] = {}
 
 # 사이트별 본문 추출 셀렉터
 _BODY_SELECTORS: list[str] = [
+    "div.body_editor",      # humoruniv
+    "div#contentArea",      # nate pann
     ".xe_content",          # theqoo, fmkorea (XE 기반)
     "div.document_content", # fmkorea alternative
     "div#articleBody",      # 82cook
@@ -118,7 +129,12 @@ def _fetch_preview(url: str) -> dict:
     if url in _preview_cache:
         return _preview_cache[url]
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=6)
+        origin = urlparse(url)
+        headers = {**HEADERS, "Referer": f"{origin.scheme}://{origin.netloc}/"}
+        resp = requests.get(url, headers=headers, timeout=6)
+        if resp.status_code != 200:
+            # 차단/에러 페이지를 파싱하면 "403 Forbidden" 같은 쓰레기 설명이 나옴
+            return {"description": "", "image": ""}
         _fix_encoding(resp)
         soup = BeautifulSoup(resp.text, "lxml")
 
@@ -149,8 +165,10 @@ def _fetch_preview(url: str) -> dict:
         if og_img:
             img = (og_img.get("content") or "").strip()
 
-        # OG 이미지가 아이콘/비이미지인 경우 무시
+        # OG 이미지가 아이콘/비이미지/사이트 기본 이미지인 경우 무시
         if img and re.search(r"icon_app|apple-icon|/icon[_-]|/logo[_-]|\.(mp4|webm|mp3|svg)(\?|$)", img, re.I):
+            img = ""
+        if img and any(g in img for g in _GENERIC_OG_IMAGES):
             img = ""
 
         # twitter:image 폴백

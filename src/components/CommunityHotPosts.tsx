@@ -10,7 +10,7 @@ interface PreviewData {
 /* ------------------------------------------------------------------ */
 const thumbnailCache: Record<string, string | null> = {};
 
-const PROXY_DOMAINS = ['ruliweb.com', 'ppomppu.co.kr', 'slrclub.com', 'todayhumor.co.kr', 'theqoo.net', 'namu.la', 'inven.co.kr', 'fmkorea.com'];
+const PROXY_DOMAINS = ['ruliweb.com', 'ppomppu.co.kr', 'slrclub.com', 'todayhumor.co.kr', 'theqoo.net', 'namu.la', 'inven.co.kr', 'fmkorea.com', 'humoruniv.com'];
 
 const needsProxy = (imgUrl: string) => PROXY_DOMAINS.some(d => imgUrl.includes(d));
 
