@@ -16,16 +16,186 @@ Firebase 누적 목록(system_data/rising_channels_accumulated)에 병합 저장
 
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from datetime import datetime, timezone, timedelta
 import json
 import os
 import time
 
 import requests
 
-# 발굴 로직은 기존 엔드포인트와 동일한 것을 재사용
-from rising_channels import _discover
-
 MAX_ACCUMULATED = 500
+
+# --- 채널 발굴 로직 (rising_channels.py와 동일, Vercel 함수 격리 때문에 자립형으로 내장) ---
+YOUTUBE_BASE = "https://www.googleapis.com/youtube/v3"
+CATEGORY_IDS = ["1", "2", "10", "15", "17", "19", "20", "22", "23", "24", "25", "26", "28"]
+REGION_CODES = ["KR", "JP", "US"]
+MAX_CHANNEL_AGE_DAYS = 365
+MAX_VIDEO_COUNT = 100
+MIN_AVG_VIEWS = 300_000
+MAX_CHANNELS_PER_SCAN = 20
+
+
+def _yt_get(path: str, params: dict, api_key: str) -> dict:
+    params["key"] = api_key
+    resp = requests.get(f"{YOUTUBE_BASE}/{path}", params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    if "error" in data:
+        code = data["error"].get("code", 0)
+        if code == 404:
+            return {"items": []}
+        msg = data["error"].get("message", "")
+        if code == 403 and "quota" in msg.lower():
+            raise RuntimeError("QUOTA_EXCEEDED")
+        return {"items": []}
+    return data
+
+
+def _discover(api_key: str) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    one_year_ago = now - timedelta(days=MAX_CHANNEL_AGE_DAYS)
+
+    all_videos: list[dict] = []
+    for region in REGION_CODES:
+        for cat_id in CATEGORY_IDS:
+            try:
+                data = _yt_get("videos", {
+                    "part": "snippet,statistics",
+                    "chart": "mostPopular",
+                    "regionCode": region,
+                    "videoCategoryId": cat_id,
+                    "maxResults": 50,
+                }, api_key)
+                all_videos.extend(data.get("items", []))
+            except Exception as e:
+                if "QUOTA_EXCEEDED" in str(e):
+                    raise
+                continue
+
+    channel_ids: set[str] = set()
+    for v in all_videos:
+        cid = v.get("snippet", {}).get("channelId")
+        if cid:
+            channel_ids.add(cid)
+    if not channel_ids:
+        return []
+
+    channel_list = list(channel_ids)
+    all_channels: list[dict] = []
+    for i in range(0, len(channel_list), 50):
+        batch = channel_list[i:i + 50]
+        try:
+            data = _yt_get("channels", {
+                "part": "snippet,statistics",
+                "id": ",".join(batch),
+            }, api_key)
+            all_channels.extend(data.get("items", []))
+        except Exception as e:
+            if "QUOTA_EXCEEDED" in str(e):
+                raise
+            continue
+
+    qualified: list[dict] = []
+    for ch in all_channels:
+        try:
+            published = datetime.fromisoformat(
+                ch["snippet"]["publishedAt"].replace("Z", "+00:00")
+            )
+            stats = ch.get("statistics", {})
+            video_count = int(stats.get("videoCount", "0"))
+            total_views = int(stats.get("viewCount", "0"))
+            avg_views = total_views / video_count if video_count > 0 else 0
+            if (
+                published >= one_year_ago
+                and 0 < video_count <= MAX_VIDEO_COUNT
+                and avg_views >= MIN_AVG_VIEWS
+            ):
+                qualified.append(ch)
+        except (KeyError, ValueError):
+            continue
+
+    qualified.sort(
+        key=lambda c: int(c.get("statistics", {}).get("viewCount", "0"))
+        / max(int(c.get("statistics", {}).get("videoCount", "1")), 1),
+        reverse=True,
+    )
+    qualified = qualified[:MAX_CHANNELS_PER_SCAN]
+    if not qualified:
+        return []
+
+    results: list[dict] = []
+    for ch in qualified:
+        try:
+            detail = _yt_get("channels", {
+                "part": "contentDetails",
+                "id": ch["id"],
+            }, api_key)
+            uploads_id = (
+                detail.get("items", [{}])[0]
+                .get("contentDetails", {})
+                .get("relatedPlaylists", {})
+                .get("uploads")
+            )
+            if not uploads_id:
+                continue
+            pl = _yt_get("playlistItems", {
+                "part": "snippet",
+                "playlistId": uploads_id,
+                "maxResults": 20,
+            }, api_key)
+            video_ids = [
+                item["snippet"]["resourceId"]["videoId"]
+                for item in pl.get("items", [])
+                if item.get("snippet", {}).get("resourceId", {}).get("videoId")
+            ]
+            if not video_ids:
+                continue
+            vdata = _yt_get("videos", {
+                "part": "snippet,statistics",
+                "id": ",".join(video_ids),
+            }, api_key)
+            top_videos = []
+            for v in vdata.get("items", []):
+                top_videos.append({
+                    "videoId": v["id"],
+                    "title": v["snippet"]["title"],
+                    "thumbnail": (
+                        v["snippet"].get("thumbnails", {}).get("high", {}).get("url")
+                        or v["snippet"].get("thumbnails", {}).get("medium", {}).get("url")
+                        or v["snippet"].get("thumbnails", {}).get("default", {}).get("url", "")
+                    ),
+                    "views": int(v.get("statistics", {}).get("viewCount", "0")),
+                    "publishedAt": v["snippet"]["publishedAt"],
+                })
+            top_videos.sort(key=lambda x: x["views"], reverse=True)
+            top_videos = top_videos[:4]
+
+            stats = ch.get("statistics", {})
+            video_count = int(stats.get("videoCount", "0"))
+            total_views = int(stats.get("viewCount", "0"))
+            results.append({
+                "id": ch["id"],
+                "title": ch["snippet"]["title"],
+                "thumbnail": (
+                    ch["snippet"].get("thumbnails", {}).get("high", {}).get("url")
+                    or ch["snippet"].get("thumbnails", {}).get("medium", {}).get("url")
+                    or ch["snippet"].get("thumbnails", {}).get("default", {}).get("url", "")
+                ),
+                "subscriberCount": int(stats.get("subscriberCount", "0")),
+                "videoCount": video_count,
+                "totalViews": total_views,
+                "avgViews": round(total_views / video_count) if video_count > 0 else 0,
+                "joinDate": ch["snippet"]["publishedAt"],
+                "country": ch["snippet"].get("country"),
+                "topVideos": top_videos,
+            })
+        except Exception as e:
+            if "QUOTA_EXCEEDED" in str(e):
+                raise
+            continue
+
+    results.sort(key=lambda x: x["avgViews"], reverse=True)
+    return results
 
 
 # ---------------------------------------------------------------- Firestore REST
