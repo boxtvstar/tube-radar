@@ -49,6 +49,7 @@ import {
   saveUserPreferences,
   subscribeToAnnouncement,
   resetUserUsage,
+  getAccumulatedRisingChannels,
   Announcement
 } from './services/dbService';
 import { VideoData, AnalysisResponse, ChannelGroup, SavedChannel, ViralStat, ApiUsage, ApiUsageLog, RecommendedPackage, Notification as AppNotification, Platform } from './types';
@@ -497,9 +498,11 @@ const Sidebar = ({
   onToggleRevenueMode,
   isCommunityMode,
   onToggleCommunityMode,
+  hasNewCommunity = false,
   isShortsMusicMode,
   onToggleShortsMusicMode,
   isRisingMode,
+  newRisingCount = 0,
   onToggleRisingMode,
   userGrade, // Added userGrade
   onShowAlert, // Added onShowAlert
@@ -562,9 +565,11 @@ const Sidebar = ({
   onToggleRevenueMode: (val: boolean) => void;
   isCommunityMode: boolean;
   onToggleCommunityMode: (val: boolean) => void;
+  hasNewCommunity?: boolean;
   isShortsMusicMode: boolean;
   onToggleShortsMusicMode: (val: boolean) => void;
   isRisingMode: boolean;
+  newRisingCount?: number;
   onToggleRisingMode: (val: boolean) => void | Promise<void>;
   userGrade?: string;
   onShowAlert?: (alert: { title: string, message: string, type?: 'info' | 'error', showSubscribeButton?: boolean, onSubscribe?: () => void }) => void;
@@ -656,6 +661,11 @@ const Sidebar = ({
                      {!hasGoldAccess ? 'lock' : 'search'}
                    </span>
                 </span>
+                {newRisingCount > 0 && (
+                  <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm">
+                    {newRisingCount > 99 ? '99+' : newRisingCount}
+                  </span>
+                )}
               </span>
             }
             active={isRisingMode}
@@ -841,6 +851,11 @@ const Sidebar = ({
                      {!hasGoldAccess ? 'lock' : 'local_fire_department'}
                    </span>
                 </span>
+                {hasNewCommunity && (
+                  <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm">
+                    N
+                  </span>
+                )}
               </span>
             }
             active={isCommunityMode}
@@ -1885,8 +1900,10 @@ export default function App() {
   const [nationalTrendCache, setNationalTrendCache] = useState<Record<string, VideoData[]>>({});
   const [isCategoryTrendMode, setIsCategoryTrendMode] = useState(false);
   const [isCommunityMode, setIsCommunityMode] = useState(false);
+  const [hasNewCommunity, setHasNewCommunity] = useState(false);
   const [isShortsMusicMode, setIsShortsMusicMode] = useState(false);
   const [isRisingMode, setIsRisingMode] = useState(false);
+  const [newRisingCount, setNewRisingCount] = useState(0);
   const [isApiQuotaExceeded, setIsApiQuotaExceeded] = useState(false);
 
   // Removed isUsageMode state (integrated into MyPage)
@@ -2319,6 +2336,55 @@ export default function App() {
       })
       .catch(() => {});
   }, [user]);
+
+  // 커뮤니티 핫게시글이 마지막 방문 이후 갱신됐는지 (사이드바 N 배지)
+  useEffect(() => {
+    if (!user) return;
+    const base = (import.meta.env.VITE_BACKEND_URL || '').trim().replace(/\/$/, '');
+    fetch(`${base}/api/community/hot-posts`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        const updatedAt = data?.updated_at;
+        if (!updatedAt) return;
+        const seen = localStorage.getItem('community_hot_seen') || '';
+        if (updatedAt > seen) setHasNewCommunity(true);
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // 커뮤니티 메뉴 진입 시 현재 갱신 시각을 확인 처리 → 배지 제거
+  useEffect(() => {
+    if (isCommunityMode) {
+      const base = (import.meta.env.VITE_BACKEND_URL || '').trim().replace(/\/$/, '');
+      fetch(`${base}/api/community/hot-posts`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (data?.updated_at) localStorage.setItem('community_hot_seen', data.updated_at);
+        })
+        .catch(() => {});
+      setHasNewCommunity(false);
+    }
+  }, [isCommunityMode]);
+
+  // 채널 신규 발굴: 마지막 방문 이후 새로 발굴된 채널 수 (사이드바 배지)
+  useEffect(() => {
+    if (!user) return;
+    getAccumulatedRisingChannels()
+      .then(channels => {
+        const seen = Number(localStorage.getItem('rising_channels_seen') || 0);
+        const count = channels.filter(c => (c.addedAt || 0) > seen).length;
+        setNewRisingCount(count);
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // 채널 신규 발굴 메뉴 진입 시 → 확인 처리 → 배지 제거
+  useEffect(() => {
+    if (isRisingMode) {
+      localStorage.setItem('rising_channels_seen', String(Date.now()));
+      setNewRisingCount(0);
+    }
+  }, [isRisingMode]);
 
   const handleApiUsage = async (cost: number, type: 'search' | 'list' | 'script', details?: string) => {
     if (!user) return;
@@ -4340,10 +4406,12 @@ export default function App() {
         isRevenueMode={isRevenueMode}
         onToggleRevenueMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsRevenueMode(val); }}
         isCommunityMode={isCommunityMode}
+        hasNewCommunity={hasNewCommunity}
         onToggleCommunityMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsShortsMusicMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsCommunityMode(val); }}
         isShortsMusicMode={isShortsMusicMode}
         onToggleShortsMusicMode={(val) => { if(val) { setLoading(false); setIsRadarMode(false); setIsMyMode(false); setIsExplorerMode(false); setIsUsageMode(false); setIsPackageMode(false); setIsShortsDetectorMode(false); setIsTopicMode(false); setIsMembershipMode(false); setIsComparisonMode(false); setIsNationalTrendMode(false); setIsCategoryTrendMode(false); setIsMaterialsExplorerMode(false); setIsScriptMode(false); setIsVideoDownloadMode(false); setIsSourceFinderMode(false); setIsFormatStudioMode(false); setIsUploadTimeMode(false); setIsRevenueMode(false); setIsCommunityMode(false); setIsRisingMode(false); setScriptModeUrl(''); } setIsShortsMusicMode(val); }}
         isRisingMode={isRisingMode}
+        newRisingCount={newRisingCount}
         onToggleRisingMode={async (val) => {
           if (val) {
             // 오늘 이미 300P 차감했는지 확인

@@ -26,10 +26,14 @@
     },
     "api/daily_topic.py": {
       "maxDuration": 60
+    },
+    "api/daily_rising.py": {
+      "maxDuration": 60
     }
   },
   "crons": [
-    { "path": "/api/daily_topic", "schedule": "0 0 * * *" }
+    { "path": "/api/daily_topic", "schedule": "0 0 * * *" },
+    { "path": "/api/daily_rising", "schedule": "0 23 * * *" }
   ],
   "rewrites": [
     { "source": "/api/community/hot-posts", "destination": "/api/community" },
