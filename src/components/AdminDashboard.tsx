@@ -299,6 +299,43 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
   // SF whitelist state
   const [sfWhitelistInfo, setSfWhitelistInfo] = useState<{ count: number; updatedAt: string } | null>(null);
+  // SF 화이트리스트 업로드: 기존 명단은 유지하고, 파일의 새 이메일만 추가 (합집합 저장)
+  const handleSfWhitelistUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.replace(/^\uFEFF/, '').split('\n').filter(l => l.trim());
+    const parsed: string[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split('\t');
+      const email = (cols[1] || '').trim().toLowerCase();
+      const sfEmail = (cols[2] || '').trim().toLowerCase();
+      if (email && email.includes('@')) parsed.push(email);
+      if (sfEmail && sfEmail.includes('@') && sfEmail !== email) parsed.push(sfEmail);
+    }
+    const fileUnique = [...new Set(parsed)];
+    if (fileUnique.length === 0) {
+      alert('파일에서 이메일을 찾지 못했습니다. 탭(TSV) 구분이고 이메일이 2·3번째 칸에 있는지 확인해주세요.');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
+      const existing: string[] = sfDoc.exists() ? (sfDoc.data().emails || []) : [];
+      const existingSet = new Set(existing.map(x => String(x).toLowerCase()));
+      const added = fileUnique.filter(x => !existingSet.has(x));
+      const merged = [...existing, ...added];
+      if (!window.confirm(`파일 ${fileUnique.length}명 중 신규 ${added.length}명 추가 → 총 ${merged.length}명 (기존 ${existing.length}명 유지). 등록하시겠습니까?`)) {
+        e.target.value = '';
+        return;
+      }
+      const now = new Date().toISOString();
+      await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: merged, updatedAt: now, count: merged.length });
+      setSfWhitelistInfo({ count: merged.length, updatedAt: now });
+      alert(`SF 화이트리스트 등록 완료! 신규 ${added.length}명 추가, 총 ${merged.length}명`);
+    } catch (err) { alert('등록 실패: ' + err); }
+    e.target.value = '';
+  };
 
   // Channel viewing state
   const [viewingChannelsUser, setViewingChannelsUser] = useState<UserData | null>(null);
@@ -2056,27 +2093,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                     <span className="material-symbols-outlined text-[14px]">upload</span>
                     명단 업로드
                     <input type="file" accept=".xls,.xlsx,.csv,.tsv,.txt" className="hidden" onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const text = await file.text();
-                      const lines = text.replace(/^\uFEFF/, '').split('\n').filter(l => l.trim());
-                      const emails: string[] = [];
-                      for (let i = 1; i < lines.length; i++) {
-                        const cols = lines[i].split('\t');
-                        const email = (cols[1] || '').trim().toLowerCase();
-                        const sfEmail = (cols[2] || '').trim().toLowerCase();
-                        if (email && email.includes('@')) emails.push(email);
-                        if (sfEmail && sfEmail.includes('@') && sfEmail !== email) emails.push(sfEmail);
-                      }
-                      const unique = [...new Set(emails)];
-                      if (!window.confirm(`${unique.length}개 이메일을 SF 화이트리스트에 등록하시겠습니까?`)) return;
-                      try {
-                        const now = new Date().toISOString();
-                        await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: unique, updatedAt: now, count: unique.length });
-                        setSfWhitelistInfo({ count: unique.length, updatedAt: now });
-                        alert(`SF 화이트리스트 ${unique.length}개 이메일 등록 완료!`);
-                      } catch (err) { alert('등록 실패: ' + err); }
-                      e.target.value = '';
+                      await handleSfWhitelistUpload(e);
                     }} />
                   </label>
                 </div>
@@ -2261,27 +2278,7 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                       <span className="material-symbols-outlined text-[14px]">upload</span>
                       SF 화이트리스트 업로드
                       <input type="file" accept=".xls,.xlsx,.csv,.tsv,.txt" className="hidden" onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const text = await file.text();
-                        const lines = text.replace(/^\uFEFF/, '').split('\n').filter(l => l.trim());
-                        const emails: string[] = [];
-                        for (let i = 1; i < lines.length; i++) {
-                          const cols = lines[i].split('\t');
-                          const email = (cols[1] || '').trim().toLowerCase();
-                          const sfEmail = (cols[2] || '').trim().toLowerCase();
-                          if (email && email.includes('@')) emails.push(email);
-                          if (sfEmail && sfEmail.includes('@') && sfEmail !== email) emails.push(sfEmail);
-                        }
-                        const unique = [...new Set(emails)];
-                        if (!window.confirm(`${unique.length}개 이메일을 SF 화이트리스트에 등록하시겠습니까?`)) return;
-                        try {
-                          const now = new Date().toISOString();
-                          await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: unique, updatedAt: now, count: unique.length });
-                          setSfWhitelistInfo({ count: unique.length, updatedAt: now });
-                          alert(`SF 화이트리스트 ${unique.length}개 이메일 등록 완료!`);
-                        } catch (err) { alert('등록 실패: ' + err); }
-                        e.target.value = '';
+                        await handleSfWhitelistUpload(e);
                       }} />
                     </label>
                     {sfWhitelistInfo && (
