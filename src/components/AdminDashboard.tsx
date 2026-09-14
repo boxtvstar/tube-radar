@@ -1828,6 +1828,16 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
      }
   }, [selectedUser]);
 
+  // SF 멤버 목록 검색 (이름/이메일)
+  const [sfSearch, setSfSearch] = useState('');
+  const sfMembers = useMemo(() => {
+    const q = sfSearch.trim().toLowerCase();
+    return users.filter(u =>
+      (u.source === 'shoppingfactory' || u.source === 'both') &&
+      (!q || (u.displayName || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q))
+    );
+  }, [users, sfSearch]);
+
   const handleEditClick = (u: UserData) => {
     setSelectedUser(u);
     setEditStatus(u.status || deriveStatusFromLegacy(u as any));
@@ -2154,23 +2164,42 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
               </div>
 
               {/* SF Members table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative w-full max-w-sm">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                  <input
+                    type="text"
+                    value={sfSearch}
+                    onChange={(e) => setSfSearch(e.target.value)}
+                    placeholder="이름 또는 이메일 검색"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 pl-10 pr-9 py-2 text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none"
+                  />
+                  {sfSearch && (
+                    <button type="button" onClick={() => setSfSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="검색어 지우기">
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  )}
+                </div>
+                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{sfMembers.length}명</span>
+              </div>
+              <div className="overflow-x-auto max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <table className="w-full">
-                  <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-slate-50 dark:bg-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                       <th className="px-4 py-3 text-left">사용자</th>
                       <th className="px-4 py-3 text-left">이메일</th>
                       <th className="px-4 py-3 text-left">소속</th>
                       <th className="px-4 py-3 text-left">등급</th>
                       <th className="px-4 py-3 text-left">만료일</th>
                       <th className="px-4 py-3 text-left">가입일</th>
+                      <th className="px-4 py-3 text-right">관리</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-sm">아직 로그인한 SF 멤버가 없습니다.</td></tr>
+                    {sfMembers.length === 0 ? (
+                      <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400 text-sm">{sfSearch ? '검색 결과가 없습니다.' : '아직 로그인한 SF 멤버가 없습니다.'}</td></tr>
                     ) : (
-                      users.filter(u => u.source === 'shoppingfactory' || u.source === 'both').map(u => (
+                      sfMembers.map(u => (
                         <tr key={u.uid} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
@@ -2196,6 +2225,17 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-400">
                             {new Date(u.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleEditClick(u)}
+                              title="등급·만료일 수정"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-200 hover:border-orange-300 hover:text-orange-600 transition-all whitespace-nowrap"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">edit_calendar</span>
+                              수정
+                            </button>
                           </td>
                         </tr>
                       ))
