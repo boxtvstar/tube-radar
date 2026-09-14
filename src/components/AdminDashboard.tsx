@@ -299,7 +299,36 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
 
   // SF whitelist state
   const [sfWhitelistInfo, setSfWhitelistInfo] = useState<{ count: number; updatedAt: string } | null>(null);
-  // SF 화이트리스트 업로드: 기존 명단은 유지하고, 파일의 새 이메일만 추가 (합집합 저장)
+  // SF 화이트리스트: 기존 명단은 유지하고 새 이메일만 합집합으로 추가 (파일 업로드·수동 추가 공용)
+  const applySfWhitelistMerge = async (candidates: string[], source: 'file' | 'manual'): Promise<boolean> => {
+    const unique = [...new Set(candidates.map(x => x.trim().toLowerCase()).filter(x => x.includes('@')))];
+    if (unique.length === 0) {
+      alert(source === 'file'
+        ? '파일에서 이메일을 찾지 못했습니다. 탭(TSV) 구분이고 이메일이 2·3번째 칸에 있는지 확인해주세요.'
+        : '추가할 이메일이 없습니다. 이메일 형식을 확인해주세요.');
+      return false;
+    }
+    try {
+      const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
+      const existing: string[] = sfDoc.exists() ? (sfDoc.data().emails || []) : [];
+      const existingSet = new Set(existing.map(x => String(x).toLowerCase()));
+      const added = unique.filter(x => !existingSet.has(x));
+      const merged = [...existing, ...added];
+      if (added.length === 0) {
+        alert(`입력한 ${unique.length}명은 이미 모두 명단에 있습니다. (총 ${existing.length}명)`);
+        return false;
+      }
+      const label = source === 'file' ? '파일' : '입력';
+      if (!window.confirm(`${label} ${unique.length}명 중 신규 ${added.length}명 추가 → 총 ${merged.length}명 (기존 ${existing.length}명 유지). 등록하시겠습니까?`)) return false;
+      const now = new Date().toISOString();
+      await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: merged, updatedAt: now, count: merged.length });
+      setSfWhitelistInfo({ count: merged.length, updatedAt: now });
+      alert(`SF 화이트리스트 등록 완료! 신규 ${added.length}명 추가, 총 ${merged.length}명`);
+      return true;
+    } catch (err) { alert('등록 실패: ' + err); return false; }
+  };
+
+  // 파일 업로드 (TSV: 2·3번째 칸이 이메일)
   const handleSfWhitelistUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -313,28 +342,16 @@ export const AdminDashboard = ({ onClose, apiKey }: { onClose: () => void, apiKe
       if (email && email.includes('@')) parsed.push(email);
       if (sfEmail && sfEmail.includes('@') && sfEmail !== email) parsed.push(sfEmail);
     }
-    const fileUnique = [...new Set(parsed)];
-    if (fileUnique.length === 0) {
-      alert('파일에서 이메일을 찾지 못했습니다. 탭(TSV) 구분이고 이메일이 2·3번째 칸에 있는지 확인해주세요.');
-      e.target.value = '';
-      return;
-    }
-    try {
-      const sfDoc = await getDoc(doc(db, 'settings', 'sf_whitelist'));
-      const existing: string[] = sfDoc.exists() ? (sfDoc.data().emails || []) : [];
-      const existingSet = new Set(existing.map(x => String(x).toLowerCase()));
-      const added = fileUnique.filter(x => !existingSet.has(x));
-      const merged = [...existing, ...added];
-      if (!window.confirm(`파일 ${fileUnique.length}명 중 신규 ${added.length}명 추가 → 총 ${merged.length}명 (기존 ${existing.length}명 유지). 등록하시겠습니까?`)) {
-        e.target.value = '';
-        return;
-      }
-      const now = new Date().toISOString();
-      await setDoc(doc(db, 'settings', 'sf_whitelist'), { emails: merged, updatedAt: now, count: merged.length });
-      setSfWhitelistInfo({ count: merged.length, updatedAt: now });
-      alert(`SF 화이트리스트 등록 완료! 신규 ${added.length}명 추가, 총 ${merged.length}명`);
-    } catch (err) { alert('등록 실패: ' + err); }
+    await applySfWhitelistMerge(parsed, 'file');
     e.target.value = '';
+  };
+
+  // 수동 추가 (쉼표·공백·줄바꿈으로 여러 개 입력 가능)
+  const [sfManualInput, setSfManualInput] = useState('');
+  const handleSfManualAdd = async () => {
+    const candidates = sfManualInput.split(/[\s,;]+/).filter(Boolean);
+    const ok = await applySfWhitelistMerge(candidates, 'manual');
+    if (ok) setSfManualInput('');
   };
 
   // Channel viewing state
@@ -2089,6 +2106,23 @@ const [activeTab, setActiveTab] = useState<'users' | 'packages' | 'topics' | 'in
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={sfManualInput}
+                    onChange={(e) => setSfManualInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSfManualAdd(); }}
+                    placeholder="이메일 직접 추가 (여러 개는 쉼표/줄바꿈)"
+                    className="w-64 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSfManualAdd}
+                    disabled={!sfManualInput.trim()}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-bold hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all whitespace-nowrap"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">person_add</span>
+                    추가
+                  </button>
                   <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/30 text-xs font-bold text-orange-600 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-all cursor-pointer">
                     <span className="material-symbols-outlined text-[14px]">upload</span>
                     명단 업로드
