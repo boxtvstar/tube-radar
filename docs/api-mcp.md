@@ -7,10 +7,12 @@
 | 파일 | 역할 |
 |---|---|
 | `api/mcp.py` | MCP 서버(JSON-RPC, Streamable HTTP) + REST `/api/v1/*` + 쇼츠 탐색 서버판(3시간 캐시) + 키 검증·일일 한도 |
-| `api/keys.py` | 키 발급/목록/폐기. Firebase ID 토큰으로 로그인 검증, 골드 이상만 발급 |
+| (`api/mcp.py` 안) `/api/keys` | 키 발급/목록/폐기. Firebase ID 토큰으로 로그인 검증, 골드 이상만 발급. 별도 파일이 아니라 mcp.py에 합쳐져 있음 (아래 함수 수 제한 참고) |
 | `src/components/ApiIntegrationPanel.tsx` | 마이페이지 "API 연동" 탭 UI (발급·목록·폐기 + 클라이언트별 연결 안내) |
 
 모든 서버 함수는 자립형이다 (Vercel이 함수를 격리하므로 옆 파일 import 금지 — `daily_rising` 사고 참고).
+
+⚠️ **Vercel Hobby 플랜은 배포당 서버리스 함수 12개가 상한이다** (`exceeded_serverless_functions_per_deployment`). 현재 `api/*.py`가 정확히 12개라 **새 함수를 추가하려면 기존 것을 합치거나 지워야 한다**. 이 때문에 키 관리도 mcp.py에 합쳤고, 미사용이던 transcript.py를 삭제했다.
 
 ## 엔드포인트
 

@@ -5,6 +5,7 @@ Vercel Serverless Function: TubeRadar 공개 API + MCP 서버
 - POST /api/mcp            MCP Streamable HTTP (JSON-RPC 2.0): initialize / tools/list / tools/call
 - POST /api/mcp/<key>      위와 같되 키를 경로로 전달 (claude.ai 커스텀 커넥터처럼 헤더를 못 붙이는 클라이언트용)
 - GET  /api/v1/<tool>      같은 도구를 REST로 호출 (shorts | hot-posts | rising-channels)
+- GET/POST/DELETE /api/keys   키 목록/발급/폐기 (프론트 전용, Firebase idToken) — Hobby 12함수 제한 때문에 여기 합쳐둠
 
 인증: Authorization: Bearer <키>  또는  ?key=<키>  또는 경로 /api/mcp/<키>
 키는 api/keys.py 에서 발급되며 Firestore `api_keys/{sha256}` 에 해시로만 저장된다.
@@ -20,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import time
 
 import requests
@@ -27,6 +29,7 @@ import requests
 PROTOCOL_VERSION = "2025-03-26"
 SERVER_INFO = {"name": "tuberadar", "version": "1.0.0"}
 DAILY_CALL_LIMIT = 300
+MAX_KEYS_PER_USER = 5
 SHORTS_CACHE_TTL = 3 * 3600
 SHORTS_RESULT_LIMIT = 30
 
@@ -105,6 +108,30 @@ class Firestore:
         body = {"fields": {k: _fs_encode(v) for k, v in data.items()}}
         r = requests.patch(f"{self.base}/{path}?{mask}", headers=self._h(), json=body, timeout=15)
         r.raise_for_status()
+
+    def set(self, path: str, data: dict):
+        body = {"fields": {k: _fs_encode(v) for k, v in data.items()}}
+        r = requests.patch(f"{self.base}/{path}", headers=self._h(), json=body, timeout=15)
+        r.raise_for_status()
+
+    def query_keys_by_uid(self, uid: str) -> list[dict]:
+        body = {"structuredQuery": {
+            "from": [{"collectionId": "api_keys"}],
+            "where": {"fieldFilter": {"field": {"fieldPath": "uid"}, "op": "EQUAL", "value": {"stringValue": uid}}},
+            "limit": 50,
+        }}
+        r = requests.post(f"https://firestore.googleapis.com/v1/projects/{self.project}/databases/(default)/documents:runQuery",
+                          headers=self._h(), json=body, timeout=15)
+        r.raise_for_status()
+        out = []
+        for row in r.json():
+            d = row.get("document")
+            if not d:
+                continue
+            doc = {k: _fs_decode(v) for k, v in d.get("fields", {}).items()}
+            doc["id"] = d["name"].rsplit("/", 1)[-1]
+            out.append(doc)
+        return out
 
 
 _fs_singleton: Firestore | None = None
@@ -389,6 +416,86 @@ def run_tool(name: str, args: dict, headers) -> dict:
 REST_TOOL_BY_PATH = {"shorts": "get_trending_shorts", "hot-posts": "get_community_hot_posts", "rising-channels": "get_rising_channels"}
 
 
+# ---------------------------------------------------------------- API 키 발급/조회/폐기 (/api/keys → ?path=keys)
+# 프론트가 Firebase 로그인 ID 토큰을 보내면 identitytoolkit 으로 검증한다. API 키 인증과는 별개 경로.
+
+def verify_id_token(id_token: str) -> dict | None:
+    web_key = os.environ.get("VITE_FIREBASE_API_KEY", "")
+    if not id_token or not web_key:
+        return None
+    r = requests.post(f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={web_key}",
+                      json={"idToken": id_token}, timeout=15)
+    if not r.ok:
+        return None
+    users = r.json().get("users") or []
+    if not users:
+        return None
+    return {"uid": users[0].get("localId"), "email": (users[0].get("email") or "").lower()}
+
+
+def is_allowed(user_doc: dict | None) -> tuple[bool, str]:
+    if not user_doc:
+        return False, "회원 정보를 찾을 수 없습니다"
+    if user_doc.get("role") == "admin":
+        return True, ""
+    status = str(user_doc.get("status") or "").lower()
+    if status not in ("gold", "platinum"):
+        return False, "API 연동은 골드 등급 이상 회원만 사용할 수 있습니다"
+    exp = user_doc.get("expiresAt")
+    if exp:
+        try:
+            if datetime.fromisoformat(str(exp).replace("Z", "+00:00")) < datetime.now(timezone.utc):
+                return False, "멤버십이 만료되었습니다"
+        except Exception:
+            pass
+    return True, ""
+
+
+def _public_key_view(doc: dict) -> dict:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    usage = doc.get("usage") or {}
+    return {
+        "id": doc.get("id"), "name": doc.get("name") or "", "prefix": doc.get("prefix") or "",
+        "createdAt": doc.get("createdAt"), "lastUsedAt": doc.get("lastUsedAt"),
+        "revoked": bool(doc.get("revoked")), "todayCalls": int(usage.get(today, 0)), "dailyLimit": DAILY_CALL_LIMIT,
+    }
+
+
+def keys_list(user: dict) -> tuple[int, dict]:
+    fs = _firestore()
+    keys = sorted(fs.query_keys_by_uid(user["uid"]), key=lambda d: d.get("createdAt") or "", reverse=True)
+    return 200, {"keys": [_public_key_view(k) for k in keys]}
+
+
+def keys_issue(user: dict, name: str) -> tuple[int, dict]:
+    fs = _firestore()
+    ok, why = is_allowed(fs.get(f"users/{user['uid']}"))
+    if not ok:
+        return 403, {"error": "forbidden", "message": why}
+    active = [k for k in fs.query_keys_by_uid(user["uid"]) if not k.get("revoked")]
+    if len(active) >= MAX_KEYS_PER_USER:
+        return 400, {"error": "too_many_keys", "message": f"활성 키는 최대 {MAX_KEYS_PER_USER}개까지입니다. 사용하지 않는 키를 폐기해주세요."}
+    key = "tr_" + secrets.token_hex(24)
+    h = _hash_key(key)
+    now = datetime.now(timezone.utc).isoformat()
+    name = (name or "").strip()[:40] or "기본 키"
+    prefix = key[:10] + "…" + key[-4:]
+    fs.set(f"api_keys/{h}", {"uid": user["uid"], "email": user["email"], "name": name, "prefix": prefix,
+                             "createdAt": now, "lastUsedAt": None, "revoked": False, "usage": {}})
+    return 200, {"key": key, "id": h, "name": name, "prefix": prefix, "createdAt": now, "dailyLimit": DAILY_CALL_LIMIT}
+
+
+def keys_revoke(user: dict, key_id: str) -> tuple[int, dict]:
+    if not key_id:
+        return 400, {"error": "missing_keyId"}
+    fs = _firestore()
+    doc = fs.get(f"api_keys/{key_id}")
+    if not doc or doc.get("uid") != user["uid"]:
+        return 404, {"error": "not_found"}
+    fs.update_fields(f"api_keys/{key_id}", {"revoked": True, "revokedAt": datetime.now(timezone.utc).isoformat()})
+    return 200, {"ok": True}
+
+
 # ---------------------------------------------------------------- HTTP handler
 
 def _rpc_error(id_, code, message):
@@ -398,7 +505,7 @@ def _rpc_error(id_, code, message):
 class handler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, Mcp-Protocol-Version")
 
     def _send(self, status: int, body=None):
@@ -431,6 +538,37 @@ class handler(BaseHTTPRequestHandler):
             return None
         return doc
 
+    def _read_json(self) -> dict:
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            return json.loads(self.rfile.read(n) or b"{}") if n else {}
+        except Exception:
+            return {}
+
+    def _keys_user_or_reply(self, id_token: str) -> dict | None:
+        if _firestore() is None:
+            self._send(503, {"error": "not_configured"})
+            return None
+        user = verify_id_token(id_token)
+        if not user:
+            self._send(401, {"error": "invalid_token", "message": "로그인이 필요합니다"})
+            return None
+        return user
+
+    def do_DELETE(self):
+        params = parse_qs(urlparse(self.path).query)
+        if (params.get("path", [""])[0] or "").strip("/") != "keys":
+            self._send(405, {"error": "method_not_allowed"})
+            return
+        body = self._read_json()
+        user = self._keys_user_or_reply(body.get("idToken", ""))
+        if user is None:
+            return
+        try:
+            self._send(*keys_revoke(user, str(body.get("keyId") or "")))
+        except Exception as e:
+            self._send(500, {"error": str(e)[:200]})
+
     def do_OPTIONS(self):
         self._send(204)
 
@@ -438,6 +576,15 @@ class handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         rest_path = (params.get("path", [""])[0] or "").strip("/")
+        if rest_path == "keys":
+            user = self._keys_user_or_reply(params.get("idToken", [""])[0])
+            if user is None:
+                return
+            try:
+                self._send(*keys_list(user))
+            except Exception as e:
+                self._send(500, {"error": str(e)[:200]})
+            return
         if not rest_path:
             # MCP 엔드포인트에 GET → SSE 미지원 (Streamable HTTP 허용 동작)
             self._send(405, {"error": "method_not_allowed", "message": "POST JSON-RPC 또는 GET /api/v1/{shorts|hot-posts|rising-channels}"})
@@ -461,6 +608,16 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
+        if (params.get("path", [""])[0] or "").strip("/") == "keys":
+            body = self._read_json()
+            user = self._keys_user_or_reply(body.get("idToken", ""))
+            if user is None:
+                return
+            try:
+                self._send(*keys_issue(user, str(body.get("name") or "")))
+            except Exception as e:
+                self._send(500, {"error": str(e)[:200]})
+            return
         try:
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length) if length else b""

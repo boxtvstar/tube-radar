@@ -32,9 +32,6 @@
     },
     "api/mcp.py": {
       "maxDuration": 60
-    },
-    "api/keys.py": {
-      "maxDuration": 15
     }
   },
   "crons": [
@@ -91,6 +88,10 @@
     {
       "source": "/api/v1/:path*",
       "destination": "/api/mcp?path=:path*"
+    },
+    {
+      "source": "/api/keys",
+      "destination": "/api/mcp?path=keys"
     }
   ]
 }

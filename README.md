@@ -42,6 +42,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1upggWguSrMyEZLMit2WWA7
 
 - 환경변수는 **두 프로젝트에 각각** 등록해야 함 (실서비스 기준은 `tube-radar` 프로젝트)
 - 로컬 `.vercel/project.json`은 테스트 프로젝트(`tuberadar`)에 연결되어 있음 — `vercel` CLI 명령은 테스트 프로젝트를 대상으로 동작함
+- **Hobby 플랜 제한: 서버리스 함수(`api/*.py`) 배포당 최대 12개.** 초과하면 빌드는 성공해도 배포가 `exceeded_serverless_functions_per_deployment`로 실패함. 새 함수가 필요하면 기존 파일에 합치거나 미사용 함수를 지울 것 (현재 12개)
 
 ### 롤백
 
