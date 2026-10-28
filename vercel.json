@@ -29,21 +29,68 @@
     },
     "api/daily_rising.py": {
       "maxDuration": 60
+    },
+    "api/mcp.py": {
+      "maxDuration": 60
+    },
+    "api/keys.py": {
+      "maxDuration": 15
     }
   },
   "crons": [
-    { "path": "/api/daily_topic", "schedule": "0 0 * * *" },
-    { "path": "/api/daily_rising", "schedule": "0 23 * * *" }
+    {
+      "path": "/api/daily_topic",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/daily_rising",
+      "schedule": "0 23 * * *"
+    }
   ],
   "rewrites": [
-    { "source": "/api/community/hot-posts", "destination": "/api/community" },
-    { "source": "/api/community/preview", "destination": "/api/preview" },
-    { "source": "/api/shorts-music", "destination": "/api/shorts_music" },
-    { "source": "/api/rising-channels", "destination": "/api/rising_channels" },
-    { "source": "/api/tiktok/profile", "destination": "/api/tiktok" },
-    { "source": "/api/instagram/profile", "destination": "/api/instagram" },
-    { "source": "/api/threads/profile", "destination": "/api/threads" },
-    { "source": "/api/image-proxy", "destination": "/api/image_proxy" },
-    { "source": "/api/apify-transcript", "destination": "/api/apify_transcript" }
+    {
+      "source": "/api/community/hot-posts",
+      "destination": "/api/community"
+    },
+    {
+      "source": "/api/community/preview",
+      "destination": "/api/preview"
+    },
+    {
+      "source": "/api/shorts-music",
+      "destination": "/api/shorts_music"
+    },
+    {
+      "source": "/api/rising-channels",
+      "destination": "/api/rising_channels"
+    },
+    {
+      "source": "/api/tiktok/profile",
+      "destination": "/api/tiktok"
+    },
+    {
+      "source": "/api/instagram/profile",
+      "destination": "/api/instagram"
+    },
+    {
+      "source": "/api/threads/profile",
+      "destination": "/api/threads"
+    },
+    {
+      "source": "/api/image-proxy",
+      "destination": "/api/image_proxy"
+    },
+    {
+      "source": "/api/apify-transcript",
+      "destination": "/api/apify_transcript"
+    },
+    {
+      "source": "/api/mcp/:key",
+      "destination": "/api/mcp?key=:key"
+    },
+    {
+      "source": "/api/v1/:path*",
+      "destination": "/api/mcp?path=:path*"
+    }
   ]
 }

@@ -5,6 +5,7 @@ import { getUserProposals, sendInquiry, getUserInquiries, saveTopicToDb, savePac
 import { getChannelInfo, fetchChannelPopularVideos } from '../../services/youtubeService';
 import { SavedChannel } from '../../types';
 import { MembershipStatus } from '../lib/membership';
+import { ApiIntegrationPanel } from './ApiIntegrationPanel';
 
 interface MyPageModalProps {
   onClose: () => void;
@@ -21,7 +22,7 @@ interface MyPageModalProps {
   source?: 'tuberadar' | 'shoppingfactory' | 'both' | null;
   onLogout: () => void;
   onMarkRead: (id: string) => void;
-  initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage';
+  initialTab?: 'dashboard' | 'activity' | 'notifications' | 'support' | 'usage' | 'api';
   ytKey: string;
   onYtKeyChange: (val: string) => void;
   ytApiStatus: 'idle' | 'valid' | 'invalid' | 'loading';
@@ -86,7 +87,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   // ... rest of component ...
 
 // ... (Top of file remains same until state)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage'>(initialTab as any);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'notifications' | 'support' | 'usage' | 'api'>(initialTab as any);
   // ...
 
 
@@ -401,6 +402,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
               <span className="material-symbols-outlined text-[20px]">analytics</span>
               포인트 사용량
             </button>
+            <button
+              onClick={() => setActiveTab('api')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${activeTab === 'api' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-500' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300'}`}
+            >
+              <span className="material-symbols-outlined text-[20px]">api</span>
+              API 연동
+            </button>
             
             <div className="mt-auto">
               <button 
@@ -421,6 +429,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                { id: 'notifications', icon: 'notifications', label: '알림' },
                { id: 'support', icon: 'support_agent', label: '문의' },
                { id: 'usage', icon: 'analytics', label: '포인트' },
+               { id: 'api', icon: 'api', label: 'API 연동' },
              ].map(tab => (
                <button
                  key={tab.id}
@@ -983,6 +992,10 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             )}
             
             {/* 5. Usage Tab */}
+            {activeTab === 'api' && (
+              <ApiIntegrationPanel isAllowed={role === 'admin' || status === 'gold' || status === 'platinum'} />
+            )}
+
             {activeTab === 'usage' && (
               <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">포인트 사용량 분석</h3>
