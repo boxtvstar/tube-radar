@@ -30,6 +30,8 @@ PROTOCOL_VERSION = "2025-03-26"
 SERVER_INFO = {"name": "tuberadar", "version": "1.0.0"}
 DAILY_CALL_LIMIT = 300
 MAX_KEYS_PER_USER = 5
+ADMIN_EMAIL = "boxtvstar@gmail.com"  # src/lib/membership.ts 와 동일
+SHORTS_CACHE_DOC = "system_data/shorts_cache"  # 인스턴스 간 공유 캐시 (Vercel은 메모리가 인스턴스별)
 SHORTS_CACHE_TTL = 3 * 3600
 SHORTS_RESULT_LIMIT = 30
 
@@ -169,6 +171,10 @@ def authenticate(key: str) -> tuple[dict | None, str]:
         return None, "invalid_key"
     if doc.get("revoked"):
         return None, "revoked"
+    # 매 호출마다 골드 멤버십이 유효한지 재확인 (등급 하락·만료 시 기존 키도 즉시 차단)
+    ok, _why = is_allowed(fs.get(f"users/{doc.get('uid', '')}") if doc.get("uid") else None)
+    if not ok:
+        return None, "membership_inactive"
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     usage = doc.get("usage") or {}
     used = int(usage.get(today, 0))
@@ -218,15 +224,51 @@ def _duration_sec(iso: str | None) -> int:
     return h * 3600 + mi * 60 + s
 
 
+def _shared_cache_get(ck: str):
+    """Firestore 공유 캐시에서 신선한 항목을 읽는다. 실패/만료 시 None."""
+    try:
+        fs = _firestore()
+        if fs is None:
+            return None
+        doc = fs.get(SHORTS_CACHE_DOC) or {}
+        ent = doc.get(ck)
+        if ent and time.time() - float(ent.get("at", 0)) < SHORTS_CACHE_TTL:
+            return ent.get("items") or []
+    except Exception:
+        pass
+    return None
+
+
+def _shared_cache_put(ck: str, items: list):
+    try:
+        fs = _firestore()
+        if fs is None:
+            return
+        doc = fs.get(SHORTS_CACHE_DOC) or {}
+        doc[ck] = {"at": time.time(), "items": items[:SHORTS_RESULT_LIMIT]}
+        # 오래된 항목 정리
+        for k in list(doc.keys()):
+            if k != ck and isinstance(doc[k], dict) and time.time() - float(doc[k].get("at", 0)) > SHORTS_CACHE_TTL * 2:
+                del doc[k]
+        fs.set(SHORTS_CACHE_DOC, doc)
+    except Exception:
+        pass
+
+
 def tool_trending_shorts(region: str = "KR", deep: bool = False, limit: int = SHORTS_RESULT_LIMIT) -> list[dict]:
     """클라이언트 autoDetectShortsChannels 와 같은 알고리즘. deep=True 면 검색 1회(100유닛) 추가."""
     region = (region or "KR").upper()
     if region not in SHORTS_REGIONS:
         region = "KR"
-    ck = f"{region}:{int(deep)}"
+    ck = f"{region}_{int(deep)}"
     hit = _shorts_cache.get(ck)
     if hit and time.time() - hit[0] < SHORTS_CACHE_TTL:
         return hit[1][:limit]
+    # L2: 인스턴스 간 공유 캐시 (다른 인스턴스가 최근에 스캔했으면 재사용 → 유튜브 쿼터 절약)
+    shared = _shared_cache_get(ck)
+    if shared is not None:
+        _shorts_cache[ck] = (time.time(), shared)
+        return shared[:limit]
 
     videos: list[dict] = []
     for cat in SHORTS_CATEGORY_IDS:
@@ -284,6 +326,7 @@ def tool_trending_shorts(region: str = "KR", deep: bool = False, limit: int = SH
     cands = sorted(chan.values(), key=lambda c: c["total"] * (1 + c["fresh"] * 0.35), reverse=True)[:100]
     if not cands:
         _shorts_cache[ck] = (time.time(), [])
+        _shared_cache_put(ck, [])
         return []
 
     items: list[dict] = []
@@ -330,6 +373,7 @@ def tool_trending_shorts(region: str = "KR", deep: bool = False, limit: int = SH
         })
     out.sort(key=lambda x: x["viralScore"], reverse=True)
     _shorts_cache[ck] = (time.time(), out)
+    _shared_cache_put(ck, out)
     return out[:limit]
 
 
@@ -438,12 +482,34 @@ def verify_id_token(id_token: str) -> dict | None:
     return {"uid": users[0].get("localId"), "email": (users[0].get("email") or "").lower()}
 
 
+def _derive_status(d: dict) -> str:
+    """src/lib/membership.ts deriveStatusFromLegacy 와 동일한 규칙"""
+    st = d.get("status")
+    if st in ("pending", "trial", "silver", "gold", "platinum"):
+        return st
+    try:
+        trial_exp = datetime.fromisoformat(str(d.get("trialExpiresAt") or "").replace("Z", "+00:00"))
+        if d.get("trialStatus") == "active" and trial_exp > datetime.now(timezone.utc):
+            return "trial"
+    except Exception:
+        pass
+    plan, role = d.get("plan"), d.get("role")
+    if plan == "platinum":
+        return "platinum"
+    if plan == "gold" or role == "pro":
+        return "gold"
+    if plan == "silver" or role == "regular":
+        return "silver"
+    return "pending"
+
+
 def is_allowed(user_doc: dict | None) -> tuple[bool, str]:
+    """골드 이상(또는 관리자)만. 발급 시와 매 API 호출 시 모두 적용."""
     if not user_doc:
         return False, "회원 정보를 찾을 수 없습니다"
-    if user_doc.get("role") == "admin":
+    if user_doc.get("role") == "admin" or str(user_doc.get("email") or "").lower() == ADMIN_EMAIL:
         return True, ""
-    status = str(user_doc.get("status") or "").lower()
+    status = _derive_status(user_doc)
     if status not in ("gold", "platinum"):
         return False, "API 연동은 골드 등급 이상 회원만 사용할 수 있습니다"
     exp = user_doc.get("expiresAt")
@@ -538,8 +604,11 @@ class handler(BaseHTTPRequestHandler):
             self._send(503, {"error": "not_configured", "message": "서버에 API 설정이 없습니다"})
             return None
         if err:
-            msgs = {"invalid_key": "유효하지 않은 API 키입니다", "revoked": "폐기된 API 키입니다", "rate_limited": f"일일 호출 한도({DAILY_CALL_LIMIT}회)를 초과했습니다"}
-            self._send(429 if err == "rate_limited" else 401, {"error": err, "message": msgs.get(err, err)})
+            msgs = {"invalid_key": "유효하지 않은 API 키입니다", "revoked": "폐기된 API 키입니다",
+                    "rate_limited": f"일일 호출 한도({DAILY_CALL_LIMIT}회)를 초과했습니다",
+                    "membership_inactive": "골드 멤버십이 만료되었거나 등급이 변경되어 API를 사용할 수 없습니다"}
+            code = 429 if err == "rate_limited" else (403 if err == "membership_inactive" else 401)
+            self._send(code, {"error": err, "message": msgs.get(err, err)})
             return None
         return doc
 
