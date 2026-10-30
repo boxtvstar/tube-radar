@@ -28,7 +28,9 @@ import requests
 
 PROTOCOL_VERSION = "2025-03-26"
 SERVER_INFO = {"name": "tuberadar", "version": "1.0.0"}
-DAILY_CALL_LIMIT = 300
+DAILY_CALL_LIMIT = int(os.environ.get("API_DAILY_LIMIT_PER_KEY", "100"))      # 키당 하루 도구 호출 수
+GLOBAL_DAILY_LIMIT = int(os.environ.get("API_DAILY_LIMIT_GLOBAL", "5000"))    # 서비스 전체 하루 도구 호출 수 (서버 비용 상한)
+USAGE_DOC = "system_data/api_usage"
 MAX_KEYS_PER_USER = 5
 ADMIN_EMAIL = "boxtvstar@gmail.com"  # src/lib/membership.ts 와 동일
 SHORTS_CACHE_DOC = "system_data/shorts_cache"  # 인스턴스 간 공유 캐시 (Vercel은 메모리가 인스턴스별)
@@ -158,8 +160,9 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.strip().encode()).hexdigest()
 
 
-def authenticate(key: str) -> tuple[dict | None, str]:
-    """(key_doc, error). error 가 빈 문자열이면 성공."""
+def authenticate(key: str, count: bool = True) -> tuple[dict | None, str]:
+    """(key_doc, error). error 가 빈 문자열이면 성공.
+    count=False 면 키·등급만 검증하고 한도에 반영하지 않는다 (initialize/tools/list/ping 같은 핸드셰이크용)."""
     if not key or not key.startswith("tr_") or len(key) < 20:
         return None, "invalid_key"
     fs = _firestore()
@@ -175,20 +178,32 @@ def authenticate(key: str) -> tuple[dict | None, str]:
     ok, _why = is_allowed(fs.get(f"users/{doc.get('uid', '')}") if doc.get("uid") else None)
     if not ok:
         return None, "membership_inactive"
+    doc["_hash"] = h
+    if not count:
+        return doc, ""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     usage = doc.get("usage") or {}
     used = int(usage.get(today, 0))
     if used >= DAILY_CALL_LIMIT:
         return None, "rate_limited"
-    # 사용량 기록 (같은 날 필드 +1, lastUsedAt 갱신) — 실패해도 호출은 허용
+    # 서비스 전체 상한 (모든 키 합산) — 서버 비용 폭주 방지
+    gdoc = {}
+    try:
+        gdoc = fs.get(USAGE_DOC) or {}
+    except Exception:
+        pass
+    gused = int(gdoc.get(today, 0))
+    if gused >= GLOBAL_DAILY_LIMIT:
+        return None, "service_daily_limit"
+    # 사용량 기록 (키별 + 전체) — 실패해도 호출은 허용
     try:
         fs.update_fields(f"api_keys/{h}", {
             "usage": {**{k: int(v) for k, v in usage.items() if k >= _days_ago(7)}, today: used + 1},
             "lastUsedAt": datetime.now(timezone.utc).isoformat(),
         })
+        fs.set(USAGE_DOC, {**{k: int(v) for k, v in gdoc.items() if isinstance(v, (int, float)) and k >= _days_ago(31)}, today: gused + 1})
     except Exception:
         pass
-    doc["_hash"] = h
     return doc, ""
 
 
@@ -597,17 +612,18 @@ class handler(BaseHTTPRequestHandler):
             return auth[8:].strip()
         return (params.get("key", [""])[0] or "").strip()
 
-    def _auth_or_reply(self, params) -> dict | None:
+    def _auth_or_reply(self, params, count: bool = True) -> dict | None:
         key = self._extract_key(params)
-        doc, err = authenticate(key)
+        doc, err = authenticate(key, count=count)
         if err == "not_configured":
             self._send(503, {"error": "not_configured", "message": "서버에 API 설정이 없습니다"})
             return None
         if err:
             msgs = {"invalid_key": "유효하지 않은 API 키입니다", "revoked": "폐기된 API 키입니다",
                     "rate_limited": f"일일 호출 한도({DAILY_CALL_LIMIT}회)를 초과했습니다",
-                    "membership_inactive": "골드 멤버십이 만료되었거나 등급이 변경되어 API를 사용할 수 없습니다"}
-            code = 429 if err == "rate_limited" else (403 if err == "membership_inactive" else 401)
+                    "membership_inactive": "골드 멤버십이 만료되었거나 등급이 변경되어 API를 사용할 수 없습니다",
+                    "service_daily_limit": f"오늘 서비스 전체 API 한도({GLOBAL_DAILY_LIMIT}회)에 도달했습니다. 내일 다시 시도해주세요"}
+            code = {"rate_limited": 429, "membership_inactive": 403, "service_daily_limit": 503}.get(err, 401)
             self._send(code, {"error": err, "message": msgs.get(err, err)})
             return None
         return doc
@@ -709,8 +725,8 @@ class handler(BaseHTTPRequestHandler):
         id_ = msg.get("id")
         is_notification = "id" not in msg
 
-        # 인증은 initialize/ping/notifications 를 포함해 모든 메시지에 적용 (키 없이는 도구 목록도 안 보여줌)
-        doc = self._auth_or_reply(params)
+        # 인증은 모든 메시지에 적용 (키 없이는 도구 목록도 안 보여줌). 한도 카운트는 실제 도구 호출(tools/call)만.
+        doc = self._auth_or_reply(params, count=(method == "tools/call"))
         if doc is None:
             return
 

@@ -194,7 +194,7 @@ export const ApiIntegrationPanel: React.FC<Props> = ({ isAllowed }) => {
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h4 className="font-black text-slate-900 dark:text-white flex items-center gap-2"><span className="material-symbols-outlined text-indigo-500">vpn_key</span> API 키</h4>
-          <span className="text-[11px] text-slate-400 font-bold">키당 하루 {keys[0]?.dailyLimit ?? 300}회 · 활성 키 최대 5개</span>
+          <span className="text-[11px] text-slate-400 font-bold">키당 하루 도구 호출 {keys[0]?.dailyLimit ?? 100}회 · 활성 키 최대 5개</span>
         </div>
         <div className="flex items-center gap-2">
           <input

@@ -31,7 +31,8 @@ MCP 메서드: `initialize`, `ping`, `tools/list`, `tools/call`. 알림(id 없�
 
 - 키 형식 `tr_` + 48 hex. Firestore `api_keys/{sha256(key)}` 에 해시만 저장 (평문 미저장).
 - 문서 필드: `uid, email, name, prefix, createdAt, lastUsedAt, revoked, usage{YYYY-MM-DD: n}`
-- 키당 **하루 300회**, 회원당 **활성 키 5개**. 폐기 즉시 401.
+- 키당 **하루 도구 호출 100회**(`API_DAILY_LIMIT_PER_KEY`), 서비스 전체 **하루 5,000회**(`API_DAILY_LIMIT_GLOBAL`, `system_data/api_usage`에 합산) — 둘 다 Vercel 환경변수로 재배포 없이 조정. 회원당 **활성 키 5개**. 폐기 즉시 401.
+- 한도에 세는 것은 **tools/call 과 REST 도구 호출만**. initialize/tools/list/ping/notifications 같은 핸드셰이크는 인증만 하고 카운트하지 않는다 (초과 시에도 핸드셰이크는 되고 도구 호출에서 429/503).
 - 발급 조건: 관리자(`role == admin` 또는 `email == ADMIN_EMAIL`) 또는 골드/플래티넘(프론트 `deriveStatusFromLegacy`와 동일 규칙 — `status` 없으면 `plan`/`role` 폴백) 이고 `expiresAt` 미경과.
 - **매 API 호출마다 회원 등급을 재확인**한다. 골드가 끝나면 이미 발급된 키도 즉시 `403 membership_inactive`.
 - 모든 MCP 메시지(initialize 포함)에 인증 적용 — 키 없이는 도구 목록도 안 보인다.
