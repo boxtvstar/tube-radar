@@ -334,6 +334,11 @@ def tool_trending_shorts(region: str = "KR", deep: bool = False, limit: int = SH
 
 
 def _self_base(headers) -> str:
+    """내부 도구가 자기 공개 엔드포인트를 부를 때 쓰는 기준 주소.
+    PUBLIC_BASE_URL 환경변수가 있으면 그것을, 없으면 요청 Host를 쓴다 (로컬 테스트·프록시 뒤 배포 대비)."""
+    fixed = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if fixed:
+        return fixed
     host = headers.get("x-forwarded-host") or headers.get("host") or "www.tuberadar.kr"
     return f"https://{host}"
 
