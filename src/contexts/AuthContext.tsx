@@ -414,8 +414,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                        }
                     } else {
                        // Whitelist에서 제거된 경우: 유료 등급 사용자를 pending으로 다운그레이드
-                       // 단, 수동 등급 부여 사용자는 보호
-                       if ((nextStatus === 'silver' || nextStatus === 'gold' || nextStatus === 'platinum') && !hasActiveTrial && !data.manualOverride) {
+                       // 단, (1) 수동 등급 부여 사용자, (2) 아직 만료일이 남은 유료 회원은 보호한다.
+                       //     화이트리스트에 채널ID가 없더라도 유효기간이 남았으면 등급을 유지하고,
+                       //     만료일이 지난 경우에만 강등한다. (만료일 없음(무제한)도 유지)
+                       const expiryTimeForGuard = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0;
+                       const membershipExpired = !!currentExpiresAt && expiryTimeForGuard <= Date.now();
+                       if ((nextStatus === 'silver' || nextStatus === 'gold' || nextStatus === 'platinum') && !hasActiveTrial && !data.manualOverride && membershipExpired) {
                           await updateDoc(userRef, {
                              status: 'pending',
                              role: 'pending',
